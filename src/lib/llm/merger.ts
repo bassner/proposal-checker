@@ -13,7 +13,7 @@ const MERGER_SYSTEM_PROMPT = `You are an expert thesis proposal reviewer perform
 3. FILTER: Remove any findings that are not actionable or are actually positive observations (e.g. "The proposal clearly explains the research question" or "Bibliography meets requirements")
 4. RANK: Sort by severity (critical → major → minor → suggestion)
 5. ASSESS: Provide an overall assessment of the proposal quality
-6. LIMIT: Produce exactly 10-25 actionable feedback items total
+6. LIMIT: Produce 0-25 actionable feedback items total. If all check groups returned zero findings (or only positive observations), return an empty findings array. Do not invent issues to fill a quota.
 
 Rules:
 - Keep the severity levels as assigned by the check groups unless clearly wrong
@@ -21,11 +21,24 @@ Rules:
 - If multiple groups flagged the same issue with different severities, use the HIGHER severity
 - When deduplicating or consolidating findings, UNION all locations from the source findings. Preserve every page, section, and quote detail — do not discard locations during merging.
 - The overall assessment should be:
-  - "good" = proposal is ready to submit with only minor tweaks (mostly suggestions/minor issues)
+  - "good" = proposal is ready to submit with only minor tweaks (mostly suggestions/minor issues, or no issues at all)
   - "acceptable" = proposal needs some work but is on the right track (mix of minor and major issues)
   - "needs-work" = significant issues that must be addressed before submission (critical/major issues)
 - Write a 2-3 sentence summary capturing the key strengths and weaknesses`;
 
+/**
+ * The 8th (and final) LLM call in the pipeline. Takes raw findings from all 7
+ * parallel check groups and produces a deduplicated, consolidated, and ranked
+ * set of 0-25 actionable feedback items plus an overall quality assessment.
+ *
+ * Handles failed check groups by informing the LLM so it can adjust confidence
+ * in its overall assessment accordingly.
+ *
+ * @param model   - The LangChain chat model instance (Azure or Ollama).
+ * @param results - Output from all 7 check groups (including any that errored).
+ * @param options - Optional abort signal and streaming callbacks.
+ * @returns Merged feedback with structured findings and token usage stats.
+ */
 export async function mergeFindings(
   model: BaseChatModel,
   results: CheckGroupResult[],

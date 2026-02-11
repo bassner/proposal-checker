@@ -12,6 +12,11 @@ interface FileDropzoneProps {
   onClear: () => void;
 }
 
+/**
+ * PDF upload zone with drag-and-drop support. Shows a drop target when no file
+ * is selected, or a compact file info bar with a clear button when a file is chosen.
+ * Validates file type and size client-side before propagating via `onFileSelect`.
+ */
 export function FileDropzone({
   onFileSelect,
   disabled,
@@ -24,15 +29,19 @@ export function FileDropzone({
     inputRef,
     onDragOver,
     onDragLeave,
+    validate,
     onDrop: hookOnDrop,
     onInputChange: hookOnInputChange,
     openPicker,
   } = useFileUpload();
 
+  // Both handlers call the hook's handler (for internal state) then validate
+  // independently to propagate to the parent. validate() returns null on success,
+  // so `!validate(f)` means the file passed validation.
   const handleDrop = (e: React.DragEvent) => {
     hookOnDrop(e);
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type === "application/pdf") {
+    if (droppedFile && !validate(droppedFile)) {
       onFileSelect(droppedFile);
     }
   };
@@ -40,7 +49,7 @@ export function FileDropzone({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     hookOnInputChange(e);
     const selectedFileFromInput = e.target.files?.[0];
-    if (selectedFileFromInput) {
+    if (selectedFileFromInput && !validate(selectedFileFromInput)) {
       onFileSelect(selectedFileFromInput);
     }
   };

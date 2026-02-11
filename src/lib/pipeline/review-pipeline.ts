@@ -8,23 +8,44 @@ import { runAllChecks } from "@/lib/llm/parallel-runner";
 import { mergeFindings } from "@/lib/llm/merger";
 import { CHECK_GROUP_PROMPTS } from "@/lib/llm/prompts";
 import { CHECK_GROUPS } from "@/types/review";
-import { countTokens } from "@/lib/utils";
+import { countTokens } from "@/lib/llm/tokens";
 
+const PIPELINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Event callbacks from the review pipeline, wired to SSE emission in the route handler.
+ * Each callback maps to a distinct SSE event type the client can render progressively.
+ */
 export interface PipelineCallbacks {
+  /** A pipeline step (extract, check, merge) changed status ("active" | "done"). */
   onStep: (step: string, status: string) => void;
   onCheckStart: (groupId: CheckGroupId) => void;
   onCheckComplete: (groupId: CheckGroupId, findingCount: number, usage: TokenUsage | null) => void;
   onCheckFailed: (groupId: CheckGroupId, error: string) => void;
+  /** Streaming token count update for a running check (throttled by the route). */
   onCheckTokens: (groupId: CheckGroupId, tokens: number, phase: LLMPhase) => void;
   onCheckThinking: (groupId: CheckGroupId, text: string) => void;
   onMergeTokens: (tokens: number, phase: LLMPhase) => void;
   onMergeThinking: (text: string) => void;
   onMergeUsage: (usage: TokenUsage) => void;
+  /** Estimated input token count (for cost/progress display). Called once per stage. */
   onInputEstimate: (tokens: number) => void;
   onResult: (feedback: MergedFeedback) => void;
   onError: (error: string) => void;
 }
 
+/**
+ * End-to-end review pipeline: extract text -> render pages -> run 7 parallel
+ * LLM checks -> merge/deduplicate findings -> deliver results.
+ *
+ * Designed to run fire-and-forget from the route handler. All progress is
+ * communicated via {@link PipelineCallbacks} (which emit SSE events). A 15-minute
+ * timeout aborts the entire pipeline if any step hangs.
+ *
+ * @param pdfBuffer - Raw PDF bytes from the uploaded file.
+ * @param provider  - Which LLM backend to use ("azure" or "ollama").
+ * @param callbacks - Event callbacks wired to the session's SSE emitter.
+ */
 export async function runReviewPipeline(
   pdfBuffer: ArrayBuffer,
   provider: ProviderType,
@@ -32,15 +53,18 @@ export async function runReviewPipeline(
 ): Promise<void> {
   const maxPages = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
 
+  const pipelineAbort = new AbortController();
+  const pipelineTimeout = setTimeout(() => pipelineAbort.abort(), PIPELINE_TIMEOUT_MS);
+
   try {
-    // Copy buffer upfront — unpdf can detach the original ArrayBuffer
+    // Copy buffer — unpdf can detach the original ArrayBuffer
     const bufferCopy = pdfBuffer.slice(0);
 
     // Step 1: Extract text
     callbacks.onStep("extract", "active");
-    console.log(`[pipeline] Extracting text from PDF (${(pdfBuffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`[pipeline] Extracting text from PDF (${(bufferCopy.byteLength / 1024 / 1024).toFixed(2)} MB)`);
 
-    const extraction = await extractPDFText(pdfBuffer);
+    const extraction = await extractPDFText(bufferCopy);
     console.log(`[pipeline] Extracted ${extraction.pageCount} pages, ${extraction.fullText.length} characters`);
 
     if (extraction.pageCount > maxPages) {
@@ -80,6 +104,7 @@ export async function runReviewPipeline(
       proposalText: extraction.fullText,
       pageImages,
       maxConcurrency,
+      signal: pipelineAbort.signal,
       onCheckStart: callbacks.onCheckStart,
       onCheckComplete: callbacks.onCheckComplete,
       onCheckFailed: callbacks.onCheckFailed,
@@ -99,6 +124,7 @@ export async function runReviewPipeline(
     callbacks.onInputEstimate(mergeInputTokens);
 
     const { data: mergedFeedback, usage: mergeUsage } = await mergeFindings(model, checkResults, {
+      signal: pipelineAbort.signal,
       onToken: callbacks.onMergeTokens,
       onThinking: callbacks.onMergeThinking,
     });
@@ -108,10 +134,17 @@ export async function runReviewPipeline(
     }
 
     callbacks.onStep("merge", "done");
+    clearTimeout(pipelineTimeout);
 
     // Step 5: Deliver results
     callbacks.onResult(mergedFeedback as MergedFeedback);
   } catch (error) {
+    clearTimeout(pipelineTimeout);
+    if (pipelineAbort.signal.aborted) {
+      console.error("[pipeline] Review timed out after 15 minutes");
+      callbacks.onError("Review timed out after 15 minutes");
+      return;
+    }
     console.error("[pipeline] Fatal error:", error instanceof Error ? error.message : error);
     callbacks.onError(
       error instanceof Error ? error.message : "An unknown error occurred"

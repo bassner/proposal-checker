@@ -1,3 +1,6 @@
+// Note: The `as any` casts below access LangChain internal properties
+// (useResponsesApi, modelKwargs, additional_kwargs, usage_metadata).
+// Tested with @langchain/openai ^1.2.7 and @langchain/core ^1.1.22.
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessageLike } from "@langchain/core/messages";
 import type { z } from "zod";

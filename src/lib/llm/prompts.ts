@@ -35,7 +35,7 @@ Review the proposal against these specific rules only:
 
 7. **Objective Subsections**: Section 4 (Objectives) must start with a short introduction and bullet list of 3-4 high-level objectives, followed by a subsection for each objective. Each subsection must be at least two paragraphs long. Objectives must fit in one line as bullet points.
 
-Evaluate the proposal and report all findings.`,
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
   "problem-motivation-objectives": `${SHARED_ROLE_PROMPT}
 
@@ -57,7 +57,7 @@ Review the proposal against these specific rules only:
 
 7. **Objectives — Detailed Subsections**: Each objective subsection must be at least two paragraphs long with detailed descriptions.
 
-Evaluate the proposal and report all findings.`,
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
   bibliography: `${SHARED_ROLE_PROMPT}
 
@@ -77,7 +77,7 @@ Review the proposal against these specific rules only:
 
 6. **Thesis References**: If the bibliography references other theses (dissertation, master's thesis, bachelor's thesis), those entries must include the genre (e.g., "Master's thesis") and the university name.
 
-Evaluate the proposal and report all findings.`,
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
   figures: `${SHARED_ROLE_PROMPT}
 
@@ -99,7 +99,7 @@ Review the proposal against these specific rules only. Pay special attention to 
 
 7. **Vector Graphics Preferred**: Figures should preferably be vector graphics (SVG, PDF). Blurry raster images should be flagged.
 
-Evaluate the proposal and report all findings.`,
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
   writing: `${SHARED_ROLE_PROMPT}
 
@@ -123,7 +123,7 @@ Review the proposal against these specific rules only:
 
 8. **Consistent Terminology**: Check for inconsistent naming — the same concept should always use the same term. Avoid confusing synonyms.
 
-Evaluate the proposal and report all findings.`,
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
   "ai-transparency": `${SHARED_ROLE_PROMPT}
 
@@ -143,7 +143,7 @@ Review the proposal against these specific rules only:
 
 6. **Review Confirmation**: The statement must include a sentence confirming that the author has carefully checked all AI-generated text. Specifically, it should contain language similar to: "I have carefully checked all texts created with these tools to ensure that they are correct and make sense."
 
-Evaluate the proposal and report all findings.`,
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
   schedule: `${SHARED_ROLE_PROMPT}
 
@@ -163,5 +163,5 @@ Review the proposal against these specific rules only:
 
 6. **Agile Principles**: The schedule should follow agile principles overall. It should reference the high-level goals from the Objectives section. Flag waterfall-style schedules.
 
-Evaluate the proposal and report all findings.`,
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 };

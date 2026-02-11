@@ -1,12 +1,5 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { getEncoding, type Tiktoken } from "js-tiktoken"
-
-let _enc: Tiktoken | null = null;
-function getTokenizer(): Tiktoken {
-  if (!_enc) _enc = getEncoding("o200k_base");
-  return _enc;
-}
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -28,11 +21,6 @@ export function estimateCost(inputTokens: number, outputTokens: number): string 
     outputTokens * OUTPUT_COST_PER_TOKEN;
   if (cost < 0.005) return "<$0.01";
   return `~$${cost.toFixed(2)}`;
-}
-
-/** Count tokens using the o200k_base tokenizer (same as GPT-4o / GPT-5.2) */
-export function countTokens(text: string): number {
-  return getTokenizer().encode(text).length;
 }
 
 /** Calculate tokens per second given token count and start/end timestamps */

@@ -2,6 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { ProviderType } from "@/types/review";
 
+// TODO: Validate OLLAMA_BASE_URL against allowlist for public deployment (P1-4)
 export function createModel(provider: ProviderType): BaseChatModel {
   if (provider === "azure") {
     // Use ChatOpenAI directly with Azure v1 API endpoint

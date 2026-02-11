@@ -2,8 +2,15 @@
 
 import { useState, useCallback, useRef } from "react";
 
-const MAX_SIZE_MB = 10;
+// Generous client-side limit; server enforces the real limit via MAX_PDF_SIZE_MB env var.
+const MAX_SIZE_MB = 50;
 
+/**
+ * Headless file-upload hook providing drag-and-drop state, validation, and a
+ * hidden `<input>` ref. The `validate` function is also exported so the parent
+ * component (FileDropzone) can validate independently of internal state updates
+ * — needed because React synthetic events lose their data by the next tick.
+ */
 export function useFileUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +92,7 @@ export function useFileUpload() {
     inputRef,
     onDragOver,
     onDragLeave,
+    validate,
     onDrop,
     onInputChange,
     openPicker,

@@ -68,11 +68,13 @@ const severityColumnConfig: Record<
   },
 };
 
+/** Earliest page number referenced by a finding's locations, or Infinity if none. Used as sort key. */
 function minPage(f: Finding): number {
   const pages = f.locations.map((l) => l.page).filter((p): p is number => p != null);
   return pages.length > 0 ? Math.min(...pages) : Infinity;
 }
 
+/** Group findings by severity and sort each group by page number for reading order. */
 function groupBySeverity(findings: Finding[]): Partial<Record<Severity, Finding[]>> {
   const groups: Partial<Record<Severity, Finding[]>> = {};
   for (const f of findings) {
@@ -85,6 +87,12 @@ function groupBySeverity(findings: Finding[]): Partial<Record<Severity, Finding[
   return groups;
 }
 
+/**
+ * Renders the final review results as a multi-column layout grouped by severity.
+ * Shows an overall assessment banner (good/acceptable/needs-work) at the top,
+ * followed by severity columns that dynamically resize based on which severities
+ * are present. Findings within each column are sorted by page number.
+ */
 export function FeedbackList({ feedback }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
@@ -128,6 +136,14 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
         </div>
       </div>
 
+      {feedback.findings.length === 0 && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center backdrop-blur-sm">
+          <p className="text-sm text-emerald-300/80">
+            No issues found. The proposal meets all checked criteria.
+          </p>
+        </div>
+      )}
+
       {/* Severity columns */}
       <div
         className="grid gap-4"
@@ -156,8 +172,8 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
               </div>
               {/* Cards */}
               <div className="space-y-2">
-                {findings.map((finding, i) => (
-                  <FeedbackCard key={i} finding={finding} />
+                {findings.map((finding) => (
+                  <FeedbackCard key={`${finding.severity}-${finding.title}`} finding={finding} />
                 ))}
               </div>
             </div>

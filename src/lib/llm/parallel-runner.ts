@@ -16,6 +16,7 @@ interface ParallelRunnerOptions {
   proposalText: string;
   pageImages?: RenderedPage[];
   maxConcurrency?: number;
+  signal?: AbortSignal;
   onCheckStart?: (groupId: CheckGroupId) => void;
   onCheckComplete?: (groupId: CheckGroupId, findingCount: number, usage: TokenUsage | null) => void;
   onCheckFailed?: (groupId: CheckGroupId, error: string) => void;
@@ -54,6 +55,7 @@ export async function runAllChecks(
     onCheckFailed,
     onCheckTokens,
     onCheckThinking,
+    signal: pipelineSignal,
   } = options;
 
   const concurrency = maxConcurrency ?? CHECK_GROUPS.length;
@@ -72,8 +74,14 @@ export async function runAllChecks(
           console.log(`[parallel] Retrying ${group.id} (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         }
 
+        if (pipelineSignal?.aborted) {
+          lastError = "Pipeline aborted";
+          break;
+        }
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
+        const onPipelineAbort = () => controller.abort();
+        pipelineSignal?.addEventListener("abort", onPipelineAbort, { once: true });
 
         try {
           const result = await runCheckGroup({
@@ -91,6 +99,7 @@ export async function runAllChecks(
           });
 
           clearTimeout(timeout);
+          pipelineSignal?.removeEventListener("abort", onPipelineAbort);
           onCheckComplete?.(group.id, result.findings.length, result.usage);
 
           return {
@@ -99,6 +108,7 @@ export async function runAllChecks(
           };
         } catch (error) {
           clearTimeout(timeout);
+          pipelineSignal?.removeEventListener("abort", onPipelineAbort);
           lastError = error instanceof Error ? error.message : "Unknown error";
           console.error(`[parallel] Check ${group.id} failed (attempt ${attempt + 1}): ${lastError}`);
 

@@ -8,6 +8,9 @@ export async function loadGuideline(filename: string): Promise<string> {
     return cache.get(filename)!;
   }
 
+  if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+    throw new Error("Invalid guideline filename");
+  }
   const filePath = join(process.cwd(), "public", "guidelines", filename);
   const content = await readFile(filePath, "utf-8");
   cache.set(filename, content);

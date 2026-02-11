@@ -8,6 +8,7 @@ export interface RenderedPage {
 
 const canvasImport = () => import("@napi-rs/canvas");
 
+// TODO: Consider reducing scale or capping rendered pages for large PDFs (P1-3)
 export async function renderPDFPages(buffer: ArrayBuffer): Promise<RenderedPage[]> {
   // Pre-resolve the canvas factory so the PDF proxy is created with it.
   // This ensures pdfjs can use it internally for all page operations.

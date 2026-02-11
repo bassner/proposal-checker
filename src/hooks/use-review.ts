@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type {
   ReviewState,
   StepEvent,
@@ -41,31 +41,18 @@ const INITIAL_STATE: ReviewState = {
   startTime: null,
 };
 
+/**
+ * Hook for the home page. POSTs a PDF + provider to `/api/review` and
+ * returns the session UUID on success, or null with an error message on failure.
+ */
 export function useReview() {
-  const [state, setState] = useState<ReviewState>(INITIAL_STATE);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const reset = useCallback(() => {
-    abortRef.current?.abort();
-    setState(INITIAL_STATE);
-  }, []);
+  const [error, setError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const startReview = useCallback(
-    async (file: File, provider: ProviderType) => {
-      reset();
-      const startTime = Date.now();
-
-      setState((prev) => ({
-        ...prev,
-        status: "running",
-        provider,
-        startTime,
-        steps: { ...prev.steps, upload: "active" },
-        currentStep: "upload",
-      }));
-
-      const controller = new AbortController();
-      abortRef.current = controller;
+    async (file: File, provider: ProviderType): Promise<string | null> => {
+      setError(null);
+      setIsUploading(true);
 
       const formData = new FormData();
       formData.append("file", file);
@@ -75,15 +62,57 @@ export function useReview() {
         const response = await fetch("/api/review", {
           method: "POST",
           body: formData,
-          signal: controller.signal,
         });
 
         if (!response.ok) {
           const errorData = await response.json();
+          setError(errorData.error || "Request failed");
+          return null;
+        }
+
+        const { id } = await response.json();
+        return id as string;
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "An unknown error occurred"
+        );
+        return null;
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    []
+  );
+
+  return { startReview, error, isUploading };
+}
+
+/**
+ * Hook for the review page. Opens an SSE connection to `/api/review/[id]/stream`,
+ * replays all stored events to reconstruct current state, then continues with
+ * live updates. Automatically cleans up on unmount via AbortController.
+ */
+export function useReviewStream(id: string) {
+  const [state, setState] = useState<ReviewState>({
+    ...INITIAL_STATE,
+    status: "running",
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function connect() {
+      try {
+        const response = await fetch(`/api/review/${id}/stream`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Review not found" }));
           setState((prev) => ({
             ...prev,
             status: "error",
-            error: errorData.error || "Request failed",
+            error: errorData.error || "Failed to connect to review stream",
           }));
           return;
         }
@@ -98,64 +127,117 @@ export function useReview() {
           return;
         }
 
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let currentEvent = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.startsWith("event: ")) {
-              currentEvent = line.slice(7).trim();
-            } else if (line.startsWith("data: ") && currentEvent) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                handleSSEEvent(currentEvent, data, setState);
-              } catch {
-                // Skip malformed JSON
-              }
-              currentEvent = "";
-            }
-          }
-        }
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") {
-          return;
-        }
+        parseSSEStream(reader, setState);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         setState((prev) => ({
           ...prev,
           status: "error",
-          error:
-            error instanceof Error ? error.message : "An unknown error occurred",
+          error: err instanceof Error ? err.message : "Connection failed",
         }));
       }
-    },
-    [reset]
-  );
+    }
 
-  return { state, startReview, reset };
+    connect();
+
+    return () => {
+      controller.abort();
+    };
+  }, [id]);
+
+  return { state };
 }
 
+/**
+ * Incrementally parses an SSE byte stream into typed events.
+ *
+ * Buffers partial lines across chunks (the server may split a line across two
+ * TCP segments). After the stream closes, any remaining buffered data is also
+ * processed to avoid dropping the final event (fix for P2-2 — chunk boundary bug).
+ */
+async function parseSSEStream(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  setState: React.Dispatch<React.SetStateAction<ReviewState>>
+) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith("data: ") && currentEvent) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          handleSSEEvent(currentEvent, data, setState);
+        } catch {
+          // Skip malformed JSON
+        }
+        currentEvent = "";
+      }
+    }
+  }
+
+  // Process any remaining buffered data
+  if (buffer.trim()) {
+    const remainingLines = buffer.split("\n");
+    for (const line of remainingLines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith("data: ") && currentEvent) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          handleSSEEvent(currentEvent, data, setState);
+        } catch {
+          // Skip malformed JSON
+        }
+        currentEvent = "";
+      }
+    }
+  }
+}
+
+/**
+ * Applies a single SSE event to the ReviewState.
+ *
+ * Uses the server-injected `_ts` timestamp (added by {@link emitEvent} in sessions.ts)
+ * rather than `Date.now()` so that replayed events reconstruct the correct timing
+ * for duration calculations and speed-of-generation displays. Falls back to
+ * `Date.now()` only if `_ts` is missing (should not happen in practice).
+ */
 function handleSSEEvent(
   event: string,
   data: Record<string, unknown>,
   setState: React.Dispatch<React.SetStateAction<ReviewState>>
 ) {
+  const ts = typeof data._ts === "number" ? data._ts : Date.now();
+
   switch (event) {
+    case "_session-info": {
+      const { startTime } = data as { startTime: number };
+      setState((prev) => ({
+        ...prev,
+        startTime,
+      }));
+      break;
+    }
+
     case "step": {
       const { step, status } = data as unknown as StepEvent;
       setState((prev) => ({
         ...prev,
         currentStep: status === "active" ? step : prev.currentStep,
         steps: { ...prev.steps, [step]: status as StepStatus },
-        ...(step === "merge" && status === "active" ? { mergeStartTime: Date.now() } : {}),
-        ...(step === "merge" && status === "done" ? { mergeEndTime: Date.now() } : {}),
+        ...(step === "merge" && status === "active" ? { mergeStartTime: ts } : {}),
+        ...(step === "merge" && status === "done" ? { mergeEndTime: ts } : {}),
       }));
       break;
     }
@@ -166,7 +248,7 @@ function handleSSEEvent(
         ...prev,
         checkGroups: prev.checkGroups.map((g) =>
           g.id === groupId
-            ? { ...g, status: "active" as StepStatus, startTime: Date.now() }
+            ? { ...g, status: "active" as StepStatus, startTime: ts }
             : g
         ),
       }));
@@ -187,9 +269,8 @@ function handleSSEEvent(
             ...g,
             tokenCount: tokens,
             phase,
-            // Record when generation phase starts (first transition to "generating")
             ...(phase === "generating" && !g.generatingStartTime
-              ? { generatingStartTime: Date.now(), generatingStartTokenCount: tokens }
+              ? { generatingStartTime: ts, generatingStartTokenCount: tokens }
               : {}),
           };
         }),
@@ -228,8 +309,7 @@ function handleSSEEvent(
                 ...g,
                 status: "done" as StepStatus,
                 findingCount,
-                endTime: Date.now(),
-                // Overwrite chunk count with actual output tokens from API when available
+                endTime: ts,
                 ...(outputTokens != null ? { tokenCount: outputTokens } : {}),
                 ...(reasoningTokens != null ? { reasoningTokens } : {}),
               }
@@ -248,7 +328,7 @@ function handleSSEEvent(
         ...prev,
         checkGroups: prev.checkGroups.map((g) =>
           g.id === groupId
-            ? { ...g, status: "error" as StepStatus, error, endTime: Date.now() }
+            ? { ...g, status: "error" as StepStatus, error, endTime: ts }
             : g
         ),
       }));
@@ -261,9 +341,8 @@ function handleSSEEvent(
         ...prev,
         mergeTokens: tokens,
         mergePhase: phase,
-        // Record when generation phase starts (first transition to "generating")
         ...(phase === "generating" && !prev.mergeGeneratingStartTime
-          ? { mergeGeneratingStartTime: Date.now(), mergeGeneratingStartTokenCount: tokens }
+          ? { mergeGeneratingStartTime: ts, mergeGeneratingStartTokenCount: tokens }
           : {}),
       }));
       break;
@@ -282,7 +361,6 @@ function handleSSEEvent(
       const { outputTokens, reasoningTokens } = data as { outputTokens: number; reasoningTokens?: number };
       setState((prev) => ({
         ...prev,
-        // Overwrite chunk count with actual output tokens from API
         mergeTokens: outputTokens,
         mergeReasoningTokens: reasoningTokens ?? 0,
       }));

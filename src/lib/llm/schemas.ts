@@ -39,9 +39,8 @@ export const mergedFeedbackSchema = z.object({
     .describe("2-3 sentence overall assessment of the proposal quality"),
   findings: z
     .array(findingSchema)
-    .min(10)
     .max(25)
-    .describe("Deduplicated, consolidated list of 10-25 actionable feedback items, sorted by severity (critical first)"),
+    .describe("Deduplicated, consolidated list of 0-25 actionable feedback items, sorted by severity (critical first). Empty array if no issues found."),
 });
 
 export type CheckGroupOutput = z.infer<typeof checkGroupOutputSchema>;

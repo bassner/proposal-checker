@@ -11,20 +11,26 @@ export interface PDFExtractionResult {
   pageCount: number;
 }
 
+/**
+ * Extract text content from a PDF buffer, returning per-page text and a
+ * combined full-text string with `=== PAGE N ===` delimiters.
+ *
+ * Uses `unpdf` (pdfjs-based) for extraction. Falls back to a single merged
+ * page if per-page extraction returns nothing (e.g., scanned PDFs with OCR layer).
+ *
+ * WARNING: `unpdf` may detach the passed ArrayBuffer. Callers should
+ * `.slice(0)` the buffer first if they need it afterwards.
+ */
 export async function extractPDFText(buffer: ArrayBuffer): Promise<PDFExtractionResult> {
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
   const pageCount = pdf.numPages;
 
   const pages: ExtractedPage[] = [];
 
-  for (let i = 1; i <= pageCount; i++) {
-    const { text } = await extractText(pdf, { mergePages: false });
-    // extractText with mergePages:false returns per-page text as array
-    if (Array.isArray(text)) {
-      for (let j = 0; j < text.length; j++) {
-        pages.push({ pageNumber: j + 1, text: text[j] });
-      }
-      break; // Already got all pages
+  const { text } = await extractText(pdf, { mergePages: false });
+  if (Array.isArray(text)) {
+    for (let j = 0; j < text.length; j++) {
+      pages.push({ pageNumber: j + 1, text: text[j] });
     }
   }
 
