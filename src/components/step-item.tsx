@@ -23,10 +23,10 @@ export function StepItem({ label, status, children, isLast }: StepItemProps) {
   return (
     <div className="flex gap-3">
       {/* Vertical line + icon */}
-      <div className="flex flex-col items-center">
+      <div className="relative flex w-8 shrink-0 flex-col items-center">
         <div
           className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-all",
+            "flex h-8 w-8 items-center justify-center rounded-full border transition-all",
             status === "pending" && "border-white/10 bg-white/5",
             status === "active" && "border-blue-400/50 bg-blue-400/10",
             status === "done" && "border-emerald-400/50 bg-emerald-400/10",
@@ -38,7 +38,7 @@ export function StepItem({ label, status, children, isLast }: StepItemProps) {
         {!isLast && (
           <div
             className={cn(
-              "mt-1 w-px flex-1",
+              "absolute left-1/2 top-8 bottom-0 -translate-x-1/2 w-px",
               status === "done" ? "bg-emerald-400/30" : "bg-white/10"
             )}
           />

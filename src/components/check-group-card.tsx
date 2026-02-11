@@ -29,16 +29,17 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
     group.phase !== "generating" &&
     group.thinkingSummary;
 
-  // Parse thinking summary: first **title**, rest is body
+  // Parse thinking summary: last **title**, text after it is body
   let thinkingTitle = "";
   let thinkingBody = "";
   if (showThinkingSummary) {
-    const match = group.thinkingSummary!.match(/^\*\*(.+?)\*\*([\s\S]*)/);
-    if (match) {
-      thinkingTitle = match[1].trim();
-      thinkingBody = match[2].replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    const matches = [...group.thinkingSummary!.matchAll(/\*\*(.+?)\*\*/g)];
+    if (matches.length > 0) {
+      const last = matches[matches.length - 1];
+      thinkingTitle = last[1].trim();
+      thinkingBody = group.thinkingSummary!.slice(last.index! + last[0].length).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
     } else {
-      thinkingBody = group.thinkingSummary!.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+      thinkingBody = group.thinkingSummary!.replace(/\s+/g, " ").trim();
     }
   }
 

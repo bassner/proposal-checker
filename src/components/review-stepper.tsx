@@ -55,12 +55,13 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
   let mergeThinkingTitle = "";
   let mergeThinkingBody = "";
   if (showMergeThinking) {
-    const match = state.mergeThinkingSummary!.match(/^\*\*(.+?)\*\*([\s\S]*)/);
-    if (match) {
-      mergeThinkingTitle = match[1].trim();
-      mergeThinkingBody = match[2].replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    const matches = [...state.mergeThinkingSummary!.matchAll(/\*\*(.+?)\*\*/g)];
+    if (matches.length > 0) {
+      const last = matches[matches.length - 1];
+      mergeThinkingTitle = last[1].trim();
+      mergeThinkingBody = state.mergeThinkingSummary!.slice(last.index! + last[0].length).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
     } else {
-      mergeThinkingBody = state.mergeThinkingSummary!.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+      mergeThinkingBody = state.mergeThinkingSummary!.replace(/\s+/g, " ").trim();
     }
   }
 

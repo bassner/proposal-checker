@@ -16,7 +16,7 @@ export interface CheckGroupMeta {
 
 export const CHECK_GROUPS: CheckGroupMeta[] = [
   { id: "structure", label: "Structure & Completeness" },
-  { id: "problem-motivation-objectives", label: "Problem / Motivation / Objectives" },
+  { id: "problem-motivation-objectives", label: "Problem & Motivation & Objectives" },
   { id: "bibliography", label: "Bibliography & Citations" },
   { id: "figures", label: "Figures & Diagrams" },
   { id: "writing", label: "Scientific Writing Quality" },
