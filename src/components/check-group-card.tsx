@@ -77,20 +77,20 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
 
         {/* Right-aligned stats: findings → phase → tokens → tok/s → time */}
         {group.status === "done" && group.findingCount !== undefined && (
-          <span className="w-[4.5rem] text-right text-xs text-white/40">
+          <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-xs text-white/40">
             {group.findingCount} {group.findingCount === 1 ? "finding" : "findings"}
           </span>
         )}
 
         {group.status === "active" && (
-          <span className="w-[4.5rem] text-right text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
+          <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
             {group.phase === "generating" ? "Generating" : "Thinking"}
           </span>
         )}
 
         {group.tokenCount !== undefined && group.tokenCount > 0 && group.startTime && (
           <span className={cn(
-            "w-[3.5rem] text-right tabular-nums text-xs",
+            "min-w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
             {formatTokensK(group.tokenCount)}
@@ -100,7 +100,7 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
 
         {group.tokenCount !== undefined && group.tokenCount > 0 && group.startTime && (
           <span className={cn(
-            "w-[3.5rem] text-right tabular-nums text-xs",
+            "w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
             {group.status === "active"
@@ -116,11 +116,11 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
         )}
 
         {group.status === "active" && group.startTime && (
-          <LiveTimer startTime={group.startTime} className="w-[3rem] text-right text-xs text-blue-400/60" />
+          <LiveTimer startTime={group.startTime} className="w-[3rem] shrink-0 whitespace-nowrap text-right text-xs text-blue-400/60" />
         )}
 
         {staticElapsed && (
-          <span className="w-[3rem] text-right tabular-nums text-xs text-white/30">{staticElapsed}s</span>
+          <span className="w-[3rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs text-white/30">{staticElapsed}s</span>
         )}
 
         {group.status === "error" && group.error && (
