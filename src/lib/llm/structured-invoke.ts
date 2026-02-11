@@ -137,10 +137,16 @@ export async function safeStructuredInvoke<T extends z.ZodTypeAny>(
   }
 
   // Attempt 3: One retry asking the model to fix the JSON
-  console.log("[structured-invoke] JSON parse failed, retrying with fix prompt");
+  console.log("[structured-invoke] JSON parse failed, retrying with fix prompt. Raw text starts with:", rawText.slice(0, 200));
+  const cleanedForRetry = rawText
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<thinking>[\s\S]*?<\/thinking>/g, "")
+    .replace(/<think>[\s\S]*/g, "")
+    .replace(/<thinking>[\s\S]*/g, "")
+    .trim();
   const retryMessages: BaseMessageLike[] = [
     ...augmentedMessages,
-    ["assistant", rawText],
+    ["assistant", cleanedForRetry],
     [
       "user",
       `The JSON you provided was invalid. Error: ${parsed.error}\n\nPlease output ONLY valid JSON matching the schema. No markdown fences, no extra text.`,
@@ -284,6 +290,9 @@ function tryParseJson<T extends z.ZodTypeAny>(
     .replace(/```\s*/g, "")
     .replace(/<think>[\s\S]*?<\/think>/g, "")
     .replace(/<thinking>[\s\S]*?<\/thinking>/g, "")
+    // Handle unclosed think tags (model didn't close the tag)
+    .replace(/<think>[\s\S]*/g, "")
+    .replace(/<thinking>[\s\S]*/g, "")
     .trim();
 
   const firstBrace = cleaned.indexOf("{");

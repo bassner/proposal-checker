@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Finding, Severity } from "@/types/review";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,16 @@ function renderQuoteWithBold(quote: string): ReactNode {
 
 export function FeedbackCard({ finding }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
+  const [locationsExpanded, setLocationsExpanded] = useState(false);
+
+  const sortedLocations = [...finding.locations].sort((a, b) => {
+    const pa = a.page ?? Infinity;
+    const pb = b.page ?? Infinity;
+    return pa - pb;
+  });
+
+  const visibleLocations = locationsExpanded ? sortedLocations : sortedLocations.slice(0, 4);
+  const hiddenCount = sortedLocations.length - 4;
 
   return (
     <div
@@ -48,9 +59,9 @@ export function FeedbackCard({ finding }: FeedbackCardProps) {
         <p className="text-xs leading-relaxed text-white/50">
           {finding.description}
         </p>
-        {finding.locations.length > 0 && (
+        {sortedLocations.length > 0 && (
           <div className="space-y-1 pt-1">
-            {finding.locations.map((loc, i) => (
+            {visibleLocations.map((loc, i) => (
               <div key={i} className="text-[11px] leading-snug text-white/35">
                 <span className="font-medium text-white/45">
                   {[loc.page != null && `p.\u00A0${loc.page}`, loc.section]
@@ -63,6 +74,17 @@ export function FeedbackCard({ finding }: FeedbackCardProps) {
                 </span>
               </div>
             ))}
+            {hiddenCount > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-white/30 hover:text-white/50 transition-colors"
+                onClick={() => setLocationsExpanded((e) => !e)}
+              >
+                {locationsExpanded
+                  ? "show less"
+                  : `+${hiddenCount} more source${hiddenCount === 1 ? "" : "s"}`}
+              </button>
+            )}
           </div>
         )}
       </div>
