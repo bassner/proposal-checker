@@ -35,19 +35,16 @@ function totalOutputTokens(state: ReviewState): number {
   return checkTokens + state.mergeTokens;
 }
 
-function totalReasoningTokens(state: ReviewState): number {
-  const checkReasoning = state.checkGroups.reduce(
-    (sum, g) => sum + (g.reasoningTokens ?? 0),
-    0
-  );
-  return checkReasoning + state.mergeReasoningTokens;
-}
-
 export function ReviewStepper({ state }: ReviewStepperProps) {
   const [mergeThinkingExpanded, setMergeThinkingExpanded] = useState(false);
   const outputTokens = totalOutputTokens(state);
-  const reasoningTokens = totalReasoningTokens(state);
   const inputTokens = state.totalInputTokens;
+
+  const mergeInitializing =
+    state.steps.merge === "active" &&
+    state.mergePhase !== "generating" &&
+    state.mergeTokens < 100 &&
+    !state.mergeThinkingSummary;
 
   // Parse merge thinking summary
   const showMergeThinking =
@@ -96,32 +93,37 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                 )}
                 {state.steps.merge === "active" && (
                   <span className="w-[4.5rem] text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
-                    {state.mergePhase === "generating" ? "Generating" : "Thinking"}
+                    {state.mergePhase === "generating"
+                      ? "Generating"
+                      : state.mergeTokens >= 100
+                        ? "Thinking"
+                        : "Initializing"}
                   </span>
                 )}
-                {state.mergeTokens > 0 && (
+                {(state.mergeTokens > 0 || state.steps.merge === "active") && (
                   <span className={cn(
                     "w-[3.5rem] text-right tabular-nums",
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
                   )}>
-                    {formatTokensK(state.mergeTokens)}
-                    {state.mergeReasoningTokens > 0 ? ` (${formatTokensK(state.mergeReasoningTokens)} r)` : ""}
+                    {mergeInitializing ? "0k" : formatTokensK(state.mergeTokens + state.mergeReasoningTokens)}
                   </span>
                 )}
-                {state.mergeTokens > 0 && (
+                {(state.mergeTokens > 0 || state.steps.merge === "active") && (
                   <span className={cn(
                     "w-[3.5rem] text-right tabular-nums",
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
                   )}>
-                    {state.steps.merge === "active"
-                      ? calcTokPerSec(
-                          state.mergeGeneratingStartTime ? state.mergeTokens - state.mergeGeneratingStartTokenCount : state.mergeTokens,
-                          state.mergeGeneratingStartTime ?? state.mergeStartTime,
-                          state.mergeEndTime ?? undefined
-                        ) + " t/s"
-                      : state.mergeGeneratingStartTime
-                        ? calcTokPerSec(state.mergeTokens - state.mergeGeneratingStartTokenCount, state.mergeGeneratingStartTime, state.mergeEndTime ?? undefined) + " t/s"
-                        : ""}
+                    {mergeInitializing
+                      ? "0 t/s"
+                      : state.steps.merge === "active"
+                        ? calcTokPerSec(
+                            state.mergeGeneratingStartTime ? state.mergeTokens - state.mergeGeneratingStartTokenCount : state.mergeTokens,
+                            state.mergeGeneratingStartTime ?? state.mergeStartTime,
+                            state.mergeEndTime ?? undefined
+                          ) + " t/s"
+                        : state.mergeGeneratingStartTime
+                          ? calcTokPerSec(state.mergeTokens - state.mergeGeneratingStartTokenCount, state.mergeGeneratingStartTime, state.mergeEndTime ?? undefined) + " t/s"
+                          : ""}
                   </span>
                 )}
                 {state.steps.merge === "active" && (
@@ -182,7 +184,6 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                 {state.provider === "azure" && (inputTokens > 0 || outputTokens > 0) && (
                   <span className="tabular-nums text-white/30">
                     {estimateCost(inputTokens, outputTokens)}
-                    {reasoningTokens > 0 && ` · ${formatTokensK(reasoningTokens)} reasoning`}
                   </span>
                 )}
               </>

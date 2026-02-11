@@ -18,6 +18,12 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
       ? ((group.endTime - group.startTime) / 1000).toFixed(1)
       : null;
 
+  const isInitializing =
+    group.status === "active" &&
+    group.phase !== "generating" &&
+    (group.tokenCount ?? 0) < 100 &&
+    !group.thinkingSummary;
+
   const showThinkingSummary =
     group.status === "active" &&
     group.phase !== "generating" &&
@@ -84,34 +90,39 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
 
         {group.status === "active" && (
           <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
-            {group.phase === "generating" ? "Generating" : "Thinking"}
+            {group.phase === "generating"
+              ? "Generating"
+              : (group.tokenCount ?? 0) >= 100
+                ? "Thinking"
+                : "Initializing"}
           </span>
         )}
 
-        {group.tokenCount !== undefined && group.tokenCount > 0 && group.startTime && (
+        {((group.tokenCount !== undefined && group.tokenCount > 0) || group.status === "active") && group.startTime && (
           <span className={cn(
             "min-w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
-            {formatTokensK(group.tokenCount)}
-            {group.reasoningTokens ? ` (${formatTokensK(group.reasoningTokens)} r)` : ""}
+            {isInitializing ? "0k" : formatTokensK((group.tokenCount ?? 0) + (group.reasoningTokens ?? 0))}
           </span>
         )}
 
-        {group.tokenCount !== undefined && group.tokenCount > 0 && group.startTime && (
+        {((group.tokenCount !== undefined && group.tokenCount > 0) || group.status === "active") && group.startTime && (
           <span className={cn(
             "w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
-            {group.status === "active"
-              ? calcTokPerSec(
-                  group.generatingStartTime ? group.tokenCount - (group.generatingStartTokenCount ?? 0) : group.tokenCount,
-                  group.generatingStartTime ?? group.startTime,
-                  group.endTime
-                ) + " t/s"
-              : group.generatingStartTime
-                ? calcTokPerSec(group.tokenCount - (group.generatingStartTokenCount ?? 0), group.generatingStartTime, group.endTime) + " t/s"
-                : ""}
+            {isInitializing
+              ? "0 t/s"
+              : group.status === "active"
+                ? calcTokPerSec(
+                    group.generatingStartTime ? group.tokenCount! - (group.generatingStartTokenCount ?? 0) : group.tokenCount!,
+                    group.generatingStartTime ?? group.startTime,
+                    group.endTime
+                  ) + " t/s"
+                : group.generatingStartTime
+                  ? calcTokPerSec(group.tokenCount! - (group.generatingStartTokenCount ?? 0), group.generatingStartTime, group.endTime) + " t/s"
+                  : ""}
           </span>
         )}
 

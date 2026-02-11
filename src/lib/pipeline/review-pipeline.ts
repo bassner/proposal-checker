@@ -50,8 +50,6 @@ export async function runReviewPipeline(
       return;
     }
 
-    callbacks.onStep("extract", "done");
-
     // Step 2: Render page images using the copy (original may be detached)
     let pageImages;
     try {
@@ -61,6 +59,8 @@ export async function runReviewPipeline(
     } catch (err) {
       console.warn("[pipeline] PDF page rendering failed (figures check will use text only):", err instanceof Error ? err.message : err);
     }
+
+    callbacks.onStep("extract", "done");
 
     // Step 3: Run 7 parallel checks
     callbacks.onStep("check", "active");
