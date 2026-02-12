@@ -17,14 +17,15 @@ import {
   FileText,
   Sparkles,
   CheckCircle,
+  ShieldX,
 } from "lucide-react";
 
 /**
- * Root page. Shows the sign-in landing for unauthenticated users, or the
- * upload UI for authenticated users.
+ * Root page. Shows the sign-in landing for unauthenticated users,
+ * an unauthorized message for users without a role, or the upload UI.
  */
 export default function Home() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
 
   if (status === "loading") {
     return (
@@ -36,6 +37,10 @@ export default function Home() {
 
   if (status === "unauthenticated") {
     return <SignInLanding />;
+  }
+
+  if (!session?.user?.role) {
+    return <Unauthorized />;
   }
 
   return <UploadPage />;
@@ -91,6 +96,33 @@ function FeatureRow({ icon, text }: { icon: React.ReactNode; text: string }) {
     <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.03] px-4 py-3">
       <span className="text-blue-400/70">{icon}</span>
       <span className="text-sm text-white/50">{text}</span>
+    </div>
+  );
+}
+
+// ── Unauthorized (authenticated but no role) ──────────────────────────────
+
+function Unauthorized() {
+  return (
+    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-red-500/10 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-red-500/5 blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-md px-6">
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 backdrop-blur-xl">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/20">
+              <ShieldX className="h-6 w-6 text-red-400" />
+            </div>
+            <h1 className="mt-4 text-lg font-semibold text-white">Access Denied</h1>
+            <p className="mt-2 text-sm text-white/40">
+              You are not authorized to use this application.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
