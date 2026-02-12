@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     if (clientId) {
       logoutUrl.searchParams.set("client_id", clientId);
     }
-    logoutUrl.searchParams.set("post_logout_redirect_uri", origin);
+    logoutUrl.searchParams.set("post_logout_redirect_uri", `${origin}/signed-out`);
     redirectUrl = logoutUrl.toString();
     console.log("[signout] idToken present:", !!idToken, "| redirect:", redirectUrl);
   } else {
