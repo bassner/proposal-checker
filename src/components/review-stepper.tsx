@@ -39,10 +39,13 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
   const outputTokens = totalOutputTokens(state);
   const inputTokens = state.totalInputTokens;
 
+  const isOllama = state.provider === "ollama";
+
   const mergeHasNoTokensYet =
     state.steps.merge === "active" &&
-    state.mergePhase !== "generating" &&
-    state.mergeTokens < 100;
+    (isOllama
+      ? state.mergeTokens === 0
+      : state.mergePhase !== "generating" && state.mergeTokens < 100);
 
   // Parse merge thinking summary
   const showMergeThinking =
@@ -78,7 +81,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
               state.steps.check === "done") && (
               <div className="w-full space-y-1.5">
                 {state.checkGroups.map((group) => (
-                  <CheckGroupCard key={group.id} group={group} />
+                  <CheckGroupCard key={group.id} group={group} provider={state.provider} />
                 ))}
               </div>
             )}
@@ -116,13 +119,19 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                       ? "–"
                       : state.steps.merge === "active"
                         ? calcTokPerSec(
-                            state.mergeGeneratingStartTime ? state.mergeTokens - state.mergeGeneratingStartTokenCount : state.mergeTokens,
-                            state.mergeGeneratingStartTime ?? state.mergeStartTime,
+                            isOllama
+                              ? state.mergeTokens
+                              : state.mergeGeneratingStartTime ? state.mergeTokens - state.mergeGeneratingStartTokenCount : state.mergeTokens,
+                            isOllama
+                              ? state.mergeStartTime
+                              : state.mergeGeneratingStartTime ?? state.mergeStartTime,
                             state.mergeEndTime ?? undefined
                           ) + " t/s"
-                        : state.mergeGeneratingStartTime
-                          ? calcTokPerSec(state.mergeTokens - state.mergeGeneratingStartTokenCount, state.mergeGeneratingStartTime, state.mergeEndTime ?? undefined) + " t/s"
-                          : ""}
+                        : (isOllama
+                          ? calcTokPerSec(state.mergeTokens, state.mergeStartTime, state.mergeEndTime ?? undefined) + " t/s"
+                          : state.mergeGeneratingStartTime
+                            ? calcTokPerSec(state.mergeTokens - state.mergeGeneratingStartTokenCount, state.mergeGeneratingStartTime, state.mergeEndTime ?? undefined) + " t/s"
+                            : "")}
                   </span>
                 )}
                 {state.steps.merge === "active" && (

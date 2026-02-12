@@ -2,26 +2,31 @@
 
 import { useState } from "react";
 import { Check, Circle, Loader2, X } from "lucide-react";
-import type { CheckGroupState } from "@/types/review";
+import type { CheckGroupState, ProviderType } from "@/types/review";
 import { cn, formatTokensK, calcTokPerSec } from "@/lib/utils";
 import { LiveTimer } from "./live-timer";
 
 interface CheckGroupCardProps {
   group: CheckGroupState;
+  provider: ProviderType | null;
 }
 
-export function CheckGroupCard({ group }: CheckGroupCardProps) {
+export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const isOllama = provider === "ollama";
 
   const staticElapsed =
     group.startTime && group.endTime
       ? ((group.endTime - group.startTime) / 1000).toFixed(1)
       : null;
 
+  // Azure: hide tokens until generating phase (reasoning tokens are opaque)
+  // Ollama: show tokens from the start (think-tag tokens are streamed)
   const hasNoTokensYet =
     group.status === "active" &&
-    group.phase !== "generating" &&
-    (group.tokenCount ?? 0) < 100;
+    (isOllama
+      ? (group.tokenCount ?? 0) === 0
+      : group.phase !== "generating" && (group.tokenCount ?? 0) < 100);
 
   const showThinkingSummary =
     group.status === "active" &&
@@ -116,13 +121,19 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
               ? "–"
               : group.status === "active"
                 ? calcTokPerSec(
-                    group.generatingStartTime ? group.tokenCount! - (group.generatingStartTokenCount ?? 0) : group.tokenCount!,
-                    group.generatingStartTime ?? group.startTime,
+                    isOllama
+                      ? group.tokenCount!
+                      : group.generatingStartTime ? group.tokenCount! - (group.generatingStartTokenCount ?? 0) : group.tokenCount!,
+                    isOllama
+                      ? group.startTime
+                      : group.generatingStartTime ?? group.startTime,
                     group.endTime
                   ) + " t/s"
-                : group.generatingStartTime
-                  ? calcTokPerSec(group.tokenCount! - (group.generatingStartTokenCount ?? 0), group.generatingStartTime, group.endTime) + " t/s"
-                  : ""}
+                : (isOllama
+                  ? calcTokPerSec(group.tokenCount!, group.startTime, group.endTime) + " t/s"
+                  : group.generatingStartTime
+                    ? calcTokPerSec(group.tokenCount! - (group.generatingStartTokenCount ?? 0), group.generatingStartTime, group.endTime) + " t/s"
+                    : "")}
           </span>
         )}
 
