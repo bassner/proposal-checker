@@ -66,18 +66,19 @@ export function useReview() {
         if (!response.ok) {
           const errorData = await response.json();
           setError(errorData.error || "Request failed");
+          setIsUploading(false);
           return null;
         }
 
         const { id } = await response.json();
+        // Don't reset isUploading on success — page navigates away
         return id as string;
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "An unknown error occurred"
         );
-        return null;
-      } finally {
         setIsUploading(false);
+        return null;
       }
     },
     []
