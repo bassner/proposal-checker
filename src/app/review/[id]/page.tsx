@@ -60,15 +60,15 @@ export default function ReviewPage() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Link href="/">
-                  <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
-                    <RotateCcw className="mr-2 h-4 w-4" />
-                    Review Another
-                  </Button>
-                </Link>
-                <UserMenu />
-              </div>
+              <UserMenu />
+            </div>
+            <div className="mb-6">
+              <Link href="/">
+                <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Review Another
+                </Button>
+              </Link>
             </div>
             <FeedbackList feedback={review.feedback} />
             <footer className="mt-12 pb-4 text-center text-xs text-white/20">
@@ -158,15 +158,15 @@ export default function ReviewPage() {
                 <h1 className="text-lg font-semibold text-white">Review Results</h1>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Link href="/">
-                <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Review Another
-                </Button>
-              </Link>
-              <UserMenu />
-            </div>
+            <UserMenu />
+          </div>
+          <div className="mb-6">
+            <Link href="/">
+              <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Review Another
+              </Button>
+            </Link>
           </div>
           <FeedbackList feedback={state.result!} />
           <footer className="mt-12 pb-4 text-center text-xs text-white/20">
