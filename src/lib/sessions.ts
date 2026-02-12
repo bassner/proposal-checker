@@ -30,6 +30,7 @@ export interface ReviewSession {
   userEmail: string;
   userName: string;
   provider: ProviderType;
+  fileName?: string;
 }
 
 export interface CreateSessionOptions {
@@ -37,6 +38,7 @@ export interface CreateSessionOptions {
   userEmail: string;
   userName: string;
   provider: ProviderType;
+  fileName?: string;
 }
 
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -97,6 +99,7 @@ export function createSession(opts: CreateSessionOptions): string {
     userEmail: opts.userEmail,
     userName: opts.userName,
     provider: opts.provider,
+    fileName: opts.fileName,
   });
   return id;
 }

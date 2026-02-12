@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signIn } from "next-auth/react";
-import { LogOut, Shield } from "lucide-react";
+import { LogOut, Shield, ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 
@@ -29,6 +29,13 @@ export function UserMenu() {
 
   return (
     <div className="flex items-center gap-3">
+      <Link
+        href="/reviews"
+        className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+      >
+        <ClipboardList className="h-3.5 w-3.5" />
+        My Reviews
+      </Link>
       {isAdmin && (
         <Link
           href="/admin"

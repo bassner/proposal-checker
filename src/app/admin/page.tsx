@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { getAllSessions } from "@/lib/sessions";
 import { getAllowedProviders, APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
-import { Shield, ArrowLeft } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList } from "lucide-react";
 import Link from "next/link";
 
 export default async function AdminPage() {
@@ -14,16 +13,6 @@ export default async function AdminPage() {
   ) {
     redirect("/");
   }
-
-  const sessions = getAllSessions().map((s) => ({
-    id: s.id,
-    status: s.status,
-    userId: s.userId,
-    userEmail: s.userEmail,
-    userName: s.userName,
-    provider: s.provider,
-    createdAt: s.createdAt,
-  }));
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -41,7 +30,7 @@ export default async function AdminPage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-white">Admin Panel</h1>
-              <p className="text-xs text-white/40">Review sessions & role configuration</p>
+              <p className="text-xs text-white/40">Role configuration</p>
             </div>
           </div>
           <Link
@@ -78,61 +67,14 @@ export default async function AdminPage() {
           </div>
         </div>
 
-        {/* Recent Sessions */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-white/60">Recent Review Sessions</h2>
-            <p className="text-[10px] text-white/30">
-              In-memory store — completed sessions expire after 10min, all data lost on restart
-            </p>
-          </div>
-          {sessions.length === 0 ? (
-            <p className="py-4 text-center text-sm text-white/30">No active sessions</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="pb-2 pr-4 text-xs font-medium text-white/40">Session ID</th>
-                    <th className="pb-2 pr-4 text-xs font-medium text-white/40">User</th>
-                    <th className="pb-2 pr-4 text-xs font-medium text-white/40">Provider</th>
-                    <th className="pb-2 pr-4 text-xs font-medium text-white/40">Status</th>
-                    <th className="pb-2 text-xs font-medium text-white/40">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions.map((s) => (
-                    <tr key={s.id} className="border-b border-white/5">
-                      <td className="py-2 pr-4 font-mono text-xs text-white/50">
-                        {s.id.slice(0, 8)}...
-                      </td>
-                      <td className="py-2 pr-4 text-white/70">
-                        {s.userName || s.userEmail || s.userId}
-                      </td>
-                      <td className="py-2 pr-4 text-white/50">{s.provider}</td>
-                      <td className="py-2 pr-4">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                            s.status === "done"
-                              ? "bg-green-500/20 text-green-400"
-                              : s.status === "error"
-                                ? "bg-red-500/20 text-red-400"
-                                : "bg-blue-500/20 text-blue-400"
-                          }`}
-                        >
-                          {s.status}
-                        </span>
-                      </td>
-                      <td className="py-2 text-xs text-white/40">
-                        {new Date(s.createdAt).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* Reviews link */}
+        <Link
+          href="/reviews"
+          className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-5 text-white/60 backdrop-blur-xl transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <ClipboardList className="h-5 w-5" />
+          <span className="text-sm font-medium">View all reviews &rarr;</span>
+        </Link>
       </div>
     </div>
   );

@@ -65,7 +65,23 @@ export function useReview() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          setError(errorData.error || "Request failed");
+          let errorMessage = errorData.error || "Request failed";
+
+          // Add retry information for rate limit errors
+          if (response.status === 429 && errorData.retryAfter) {
+            const retrySeconds = errorData.retryAfter;
+            const retryMinutes = Math.ceil(retrySeconds / 60);
+            if (retryMinutes === 1) {
+              errorMessage += ". Try again in 1 minute.";
+            } else if (retryMinutes < 60) {
+              errorMessage += `. Try again in ${retryMinutes} minutes.`;
+            } else {
+              const retryHours = Math.ceil(retryMinutes / 60);
+              errorMessage += `. Try again in ${retryHours} hour${retryHours > 1 ? "s" : ""}.`;
+            }
+          }
+
+          setError(errorMessage);
           setIsUploading(false);
           return null;
         }
@@ -97,6 +113,7 @@ export function useReviewStream(id: string) {
     ...INITIAL_STATE,
     status: "running",
   });
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -108,6 +125,11 @@ export function useReviewStream(id: string) {
         });
 
         if (!response.ok) {
+          // 404 = session not in memory — signal fallback to DB, not an error
+          if (response.status === 404) {
+            setNotFound(true);
+            return;
+          }
           const errorData = await response.json().catch(() => ({ error: "Review not found" }));
           setState((prev) => ({
             ...prev,
@@ -145,7 +167,75 @@ export function useReviewStream(id: string) {
     };
   }, [id]);
 
-  return { state };
+  return { state, notFound };
+}
+
+/** Completed review data from the database. */
+export interface CompletedReview {
+  id: string;
+  status: "running" | "done" | "error";
+  provider: string;
+  fileName: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  feedback: MergedFeedback | null;
+  errorMessage: string | null;
+  isStale?: boolean; // Computed when fetched for running reviews
+}
+
+/**
+ * Fetches a completed review from the database.
+ * Only called when the SSE stream returns 404 (session not in memory).
+ */
+export function useCompletedReview(id: string, enabled: boolean) {
+  const [review, setReview] = useState<CompletedReview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let cancelled = false;
+
+    // Move state updates into the async chain to satisfy linter
+    Promise.resolve()
+      .then(() => {
+        if (cancelled) return;
+        setLoading(true);
+        setError(null);
+        return fetch(`/api/review/${id}`);
+      })
+      .then(async (res) => {
+        if (!res || cancelled) return;
+        if (res.status === 404) {
+          setError("Review not found");
+          return;
+        }
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setError(body.error || "Failed to load review");
+          return;
+        }
+        const data = await res.json();
+        // Compute staleness at fetch time (not render time) to satisfy linter
+        if (data.status === "running") {
+          const STALE_RUNNING_MS = 20 * 60 * 1000;
+          data.isStale = Date.now() - new Date(data.createdAt).getTime() > STALE_RUNNING_MS;
+        }
+        setReview(data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load review");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [id, enabled]);
+
+  return { review, loading, error };
 }
 
 /**
