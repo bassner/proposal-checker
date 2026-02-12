@@ -35,12 +35,13 @@ function extractRole(accessToken: string): AppRole | undefined {
   const clientId = process.env.AUTH_KEYCLOAK_ID;
   const roleMapping = getKeycloakRoleMapping();
 
-  // Collect roles from both client-scoped and realm sources
+  // Collect roles from client-scoped roles, realm roles, and groups
   const clientRoles = clientId
     ? (payload.resource_access as Record<string, { roles?: string[] }>)?.[clientId]?.roles ?? []
     : [];
   const realmRoles = (payload.realm_access as { roles?: string[] })?.roles ?? [];
-  const allRoles = [...clientRoles, ...realmRoles];
+  const groups = Array.isArray(payload.groups) ? (payload.groups as string[]) : [];
+  const allRoles = [...clientRoles, ...realmRoles, ...groups];
 
   // Return the highest-priority recognized role
   for (const appRole of APP_ROLES) {
