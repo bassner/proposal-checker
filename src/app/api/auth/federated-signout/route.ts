@@ -28,7 +28,6 @@ export async function GET(request: NextRequest) {
     }
     logoutUrl.searchParams.set("post_logout_redirect_uri", `${origin}/signed-out`);
     redirectUrl = logoutUrl.toString();
-    console.log("[signout] idToken present:", !!idToken, "| redirect:", redirectUrl);
   } else {
     // No Keycloak issuer configured — just redirect home
     redirectUrl = origin;

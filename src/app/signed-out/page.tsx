@@ -1,5 +1,6 @@
 "use client";
 
+import { signIn } from "next-auth/react";
 import { GraduationCap, LogIn } from "lucide-react";
 
 export default function SignedOutPage() {
@@ -17,13 +18,13 @@ export default function SignedOutPage() {
           <h1 className="text-lg font-semibold text-white">Signed out</h1>
           <p className="mt-1 text-sm text-white/40">You have been successfully signed out.</p>
         </div>
-        <a
-          href="/"
+        <button
+          onClick={() => signIn("keycloak", { redirectTo: "/" }, { prompt: "login" })}
           className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/60 transition-colors hover:bg-white/10 hover:text-white"
         >
           <LogIn className="h-4 w-4" />
           Sign in again
-        </a>
+        </button>
       </div>
     </div>
   );
