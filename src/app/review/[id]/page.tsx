@@ -117,11 +117,9 @@ function ResultsView({ feedback, fileName }: { feedback: MergedFeedback; fileNam
               <h1 className="text-lg font-semibold text-white">Review Results</h1>
               {fileName && <p className="text-xs text-white/40">{fileName}</p>}
             </div>
-          </div>
-          <div className="flex items-center gap-3">
             <ReviewAnotherButton size="sm" />
-            <UserMenu />
           </div>
+          <UserMenu />
         </div>
         <FeedbackList feedback={feedback} />
         <Footer />
