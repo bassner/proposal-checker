@@ -5,6 +5,8 @@ import type { ProviderType, CheckGroupId, LLMPhase } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
+import { requireAuth } from "@/lib/auth/helpers";
+import { canUseProvider } from "@/lib/auth/roles";
 
 /**
  * POST /api/review — Accepts a PDF upload + provider choice, creates a session,
@@ -14,6 +16,13 @@ import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
  * Returns 202 with `{ id }` on success, 400 on validation errors.
  */
 export async function POST(request: NextRequest) {
+  let session;
+  try {
+    session = await requireAuth();
+  } catch (response) {
+    return response as Response;
+  }
+
   const formData = await request.formData();
   const fileEntry = formData.get("file");
   const file = fileEntry instanceof File ? fileEntry : null;
@@ -32,6 +41,13 @@ export async function POST(request: NextRequest) {
   }
   const provider: ProviderType = providerRaw;
 
+  if (!canUseProvider(session.user.role, provider)) {
+    return new Response(
+      JSON.stringify({ error: "Your role does not allow this provider" }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   if (file.type !== "application/pdf") {
     return new Response(
       JSON.stringify({ error: "Only PDF files are accepted" }),
@@ -47,8 +63,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const sessionId = createSession();
-  console.log(`[api] Review ${sessionId}: ${file.name} (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}`);
+  const sessionId = createSession({
+    userId: session.user.id,
+    userEmail: session.user.email ?? "",
+    userName: session.user.name ?? "",
+    provider,
+  });
+  console.log(`[api] Review ${sessionId}: ${file.name} (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, user: ${session.user.id}`);
 
   const pdfBuffer = await file.arrayBuffer();
 

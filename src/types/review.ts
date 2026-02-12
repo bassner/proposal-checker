@@ -118,15 +118,3 @@ export interface ModelConfig {
   model: string;
 }
 
-export const AVAILABLE_MODELS: ModelConfig[] = [
-  {
-    provider: "azure",
-    label: "Azure OpenAI (GPT-5.2)",
-    model: "gpt-5.2",
-  },
-  {
-    provider: "ollama",
-    label: "Ollama (GPT-OSS 120B)",
-    model: "gpt-oss:120b",
-  },
-];

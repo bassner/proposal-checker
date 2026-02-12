@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import type { ProviderType } from "@/types/review";
 
 /** A single SSE event stored in the session's replay log. */
 interface SSEEvent {
@@ -24,6 +25,18 @@ export interface ReviewSession {
   /** Currently connected SSE writers (one per browser tab). */
   writers: Set<SSEWriter>;
   createdAt: number;
+  /** User who submitted the review. */
+  userId: string;
+  userEmail: string;
+  userName: string;
+  provider: ProviderType;
+}
+
+export interface CreateSessionOptions {
+  userId: string;
+  userEmail: string;
+  userName: string;
+  provider: ProviderType;
 }
 
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -60,7 +73,7 @@ if (!globalSessions.__reviewSessionsCleanup) {
 }
 
 /** Create a new review session and return its UUID. The session starts in "running" status. */
-export function createSession(): string {
+export function createSession(opts: CreateSessionOptions): string {
   if (sessions.size >= MAX_SESSIONS) {
     // Evict oldest completed session, or oldest running if none completed
     let oldestId: string | null = null;
@@ -80,8 +93,17 @@ export function createSession(): string {
     events: [],
     writers: new Set(),
     createdAt: Date.now(),
+    userId: opts.userId,
+    userEmail: opts.userEmail,
+    userName: opts.userName,
+    provider: opts.provider,
   });
   return id;
+}
+
+/** Return all sessions (for admin panel). Sorted by creation time, newest first. */
+export function getAllSessions(): ReviewSession[] {
+  return Array.from(sessions.values()).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** Look up a session by UUID. Returns null if expired or non-existent. */

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSession, subscribe, unsubscribe } from "@/lib/sessions";
+import { requireAuth } from "@/lib/auth/helpers";
 
 function sseEncode(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -22,6 +23,13 @@ export async function GET(
 ) {
   const { id } = await params;
 
+  let authSession;
+  try {
+    authSession = await requireAuth();
+  } catch (response) {
+    return response as Response;
+  }
+
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!UUID_RE.test(id)) {
     return new Response(JSON.stringify({ error: "Invalid review ID" }), {
@@ -31,7 +39,17 @@ export async function GET(
 
   const session = getSession(id);
 
+  // Normalize error: return the same 404 for missing sessions AND ownership
+  // failures to prevent UUID enumeration (IDOR prevention).
   if (!session) {
+    return new Response(JSON.stringify({ error: "Review not found" }), {
+      status: 404, headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const isOwner = session.userId === authSession.user.id;
+  const isAdmin = authSession.user.role === "admin";
+  if (!isOwner && !isAdmin) {
     return new Response(JSON.stringify({ error: "Review not found" }), {
       status: 404, headers: { "Content-Type": "application/json" },
     });

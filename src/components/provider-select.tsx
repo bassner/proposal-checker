@@ -7,19 +7,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ProviderType } from "@/types/review";
-import { AVAILABLE_MODELS } from "@/types/review";
+import type { ProviderType, ModelConfig } from "@/types/review";
 
 interface ProviderSelectProps {
   value: ProviderType;
   onChange: (value: ProviderType) => void;
   disabled?: boolean;
+  models: ModelConfig[];
 }
 
 export function ProviderSelect({
   value,
   onChange,
   disabled,
+  models,
 }: ProviderSelectProps) {
   return (
     <div className="space-y-2">
@@ -33,7 +34,7 @@ export function ProviderSelect({
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="border-white/10 bg-slate-900">
-          {AVAILABLE_MODELS.map((m) => (
+          {models.map((m) => (
             <SelectItem key={m.provider} value={m.provider}>
               {m.label}
             </SelectItem>

@@ -1,9 +1,18 @@
-import { NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth/helpers";
+import { getAllowedProviders } from "@/lib/auth/roles";
 
 export async function GET() {
+  let session;
+  try {
+    session = await requireAuth();
+  } catch (response) {
+    return response as Response;
+  }
+
+  const allowedProviders = getAllowedProviders(session.user.role);
   const models = [];
 
-  if (process.env.AZURE_OPENAI_API_KEY) {
+  if (allowedProviders.includes("azure") && process.env.AZURE_OPENAI_API_KEY) {
     models.push({
       provider: "azure",
       label: "Azure OpenAI (GPT-5.2)",
@@ -11,7 +20,7 @@ export async function GET() {
     });
   }
 
-  if (process.env.OLLAMA_API_KEY) {
+  if (allowedProviders.includes("ollama") && process.env.OLLAMA_API_KEY) {
     models.push({
       provider: "ollama",
       label: `Ollama (${process.env.OLLAMA_MODEL || "gpt-oss:120b"})`,
@@ -19,13 +28,16 @@ export async function GET() {
     });
   }
 
-  // If no keys configured, show both as options (they'll fail at runtime with a clear error)
+  // If allowed providers are configured but no API keys, show them anyway
+  // (they'll fail at runtime with a clear error)
   if (models.length === 0) {
-    models.push(
-      { provider: "azure", label: "Azure OpenAI (GPT-5.2)", model: "gpt-5.2" },
-      { provider: "ollama", label: "Ollama (GPT-OSS 120B)", model: "gpt-oss:120b" }
-    );
+    if (allowedProviders.includes("azure")) {
+      models.push({ provider: "azure", label: "Azure OpenAI (GPT-5.2)", model: "gpt-5.2" });
+    }
+    if (allowedProviders.includes("ollama")) {
+      models.push({ provider: "ollama", label: "Ollama (GPT-OSS 120B)", model: "gpt-oss:120b" });
+    }
   }
 
-  return NextResponse.json({ models });
+  return Response.json({ models });
 }

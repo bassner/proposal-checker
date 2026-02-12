@@ -6,6 +6,7 @@ import { FeedbackList } from "@/components/feedback-list";
 import { ThinkingBubble } from "@/components/thinking-bubble";
 import { Button } from "@/components/ui/button";
 import { useReviewStream } from "@/hooks/use-review";
+import { UserMenu } from "@/components/auth/user-menu";
 import { GraduationCap, RotateCcw } from "lucide-react";
 import Link from "next/link";
 
@@ -40,12 +41,15 @@ export default function ReviewPage() {
                 <h1 className="text-lg font-semibold text-white">Review Results</h1>
               </div>
             </div>
-            <Link href="/">
-              <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Review Another
-              </Button>
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href="/">
+                <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Review Another
+                </Button>
+              </Link>
+              <UserMenu />
+            </div>
           </div>
           <FeedbackList feedback={state.result!} />
           <footer className="mt-12 pb-4 text-center text-xs text-white/20">
@@ -65,14 +69,17 @@ export default function ReviewPage() {
         <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
       </div>
       <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-6 py-8">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
-            <GraduationCap className="h-5 w-5 text-blue-400" />
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+              <GraduationCap className="h-5 w-5 text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-white">Proposal Checker</h1>
+              <p className="text-xs text-white/40">Reviewing proposal...</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-white">Proposal Checker</h1>
-            <p className="text-xs text-white/40">Reviewing proposal...</p>
-          </div>
+          <UserMenu />
         </div>
 
         {isRunning && (

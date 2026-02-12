@@ -6,18 +6,22 @@ import { FileDropzone } from "@/components/file-dropzone";
 import { ProviderSelect } from "@/components/provider-select";
 import { Button } from "@/components/ui/button";
 import { useReview } from "@/hooks/use-review";
-import type { ProviderType } from "@/types/review";
+import { UserMenu } from "@/components/auth/user-menu";
+import type { ProviderType, ModelConfig } from "@/types/review";
 import { GraduationCap, Play, Loader2 } from "lucide-react";
 
 /**
  * Landing page. Lets the user select a PDF, choose an LLM provider, and kick
  * off a review. On success, navigates to `/review/[id]` for live progress.
  * Provider preference is persisted to localStorage.
+ * Models are fetched from /api/config (filtered by role).
  */
 export default function Home() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [provider, setProviderRaw] = useState<ProviderType>("azure");
+  const [models, setModels] = useState<ModelConfig[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const setProvider = useCallback((v: ProviderType) => {
     setProviderRaw(v);
     localStorage.setItem("proposal-checker:provider", v);
@@ -25,9 +29,28 @@ export default function Home() {
   const { startReview, error, isUploading } = useReview();
 
   useEffect(() => {
-    const saved = localStorage.getItem("proposal-checker:provider");
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration-safe localStorage read
-    if (saved === "azure" || saved === "ollama") setProviderRaw(saved);
+    async function fetchModels() {
+      try {
+        const res = await fetch("/api/config");
+        if (!res.ok) return;
+        const data = await res.json();
+        const fetched: ModelConfig[] = data.models ?? [];
+        setModels(fetched);
+
+        // Normalize localStorage: if saved provider isn't in allowed list, reset
+        const saved = localStorage.getItem("proposal-checker:provider");
+        const providerIds = fetched.map((m: ModelConfig) => m.provider);
+        if (saved && providerIds.includes(saved as ProviderType)) {
+          setProviderRaw(saved as ProviderType);
+        } else if (fetched.length > 0) {
+          setProviderRaw(fetched[0].provider);
+          localStorage.setItem("proposal-checker:provider", fetched[0].provider);
+        }
+      } finally {
+        setModelsLoading(false);
+      }
+    }
+    fetchModels();
   }, []);
 
   const handleStart = async () => {
@@ -47,18 +70,21 @@ export default function Home() {
 
       <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-6 py-8">
         {/* Header */}
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
-            <GraduationCap className="h-5 w-5 text-blue-400" />
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+              <GraduationCap className="h-5 w-5 text-blue-400" />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold text-white">
+                Proposal Checker
+              </h1>
+              <p className="text-xs text-white/40">
+                AI-powered thesis proposal review
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-white">
-              Proposal Checker
-            </h1>
-            <p className="text-xs text-white/40">
-              AI-powered thesis proposal review
-            </p>
-          </div>
+          <UserMenu />
         </div>
 
         {/* Upload + Config card */}
@@ -70,15 +96,27 @@ export default function Home() {
             disabled={isUploading}
           />
 
-          <ProviderSelect
-            value={provider}
-            onChange={setProvider}
-            disabled={isUploading}
-          />
+          {modelsLoading ? (
+            <div className="flex items-center gap-2 py-2">
+              <Loader2 className="h-4 w-4 animate-spin text-white/40" />
+              <span className="text-sm text-white/40">Loading providers...</span>
+            </div>
+          ) : models.length === 0 ? (
+            <p className="text-sm text-amber-400">
+              No models available for your role — contact an admin.
+            </p>
+          ) : (
+            <ProviderSelect
+              value={provider}
+              onChange={setProvider}
+              disabled={isUploading}
+              models={models}
+            />
+          )}
 
           <Button
             onClick={handleStart}
-            disabled={!file || isUploading}
+            disabled={!file || isUploading || models.length === 0}
             className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
           >
             {isUploading ? (
