@@ -109,10 +109,7 @@ export function useReview() {
  * live updates. Automatically cleans up on unmount via AbortController.
  */
 export function useReviewStream(id: string) {
-  const [state, setState] = useState<ReviewState>({
-    ...INITIAL_STATE,
-    status: "running",
-  });
+  const [state, setState] = useState<ReviewState>(INITIAL_STATE);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {

@@ -80,7 +80,7 @@ export default function ReviewPage() {
 
   // ── Live SSE: processing / error view ───────────────────────────────────
   return (
-    <PageShell title="Proposal Checker" subtitle="Reviewing proposal...">
+    <PageShell title="Proposal Checker" subtitle={state.status === "idle" ? "Connecting..." : "Reviewing proposal..."}>
       {isRunning && (
         <div className="mb-4 flex items-center justify-center gap-2 py-2">
           <ThinkingBubble />
