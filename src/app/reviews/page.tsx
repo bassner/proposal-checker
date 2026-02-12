@@ -5,7 +5,17 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { UserMenu } from "@/components/auth/user-menu";
 import { Button } from "@/components/ui/button";
-import { ClipboardList, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
+import {
+  ClipboardList,
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeft,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Search,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes
@@ -27,6 +37,8 @@ interface ReviewsResponse {
   page: number;
   limit: number;
 }
+
+type SortColumn = "created_at" | "file_name" | "provider" | "status" | "user_name";
 
 function statusBadge(status: string, createdAt: string) {
   const isStale = status === "running" && Date.now() - new Date(createdAt).getTime() > STALE_RUNNING_MS;
@@ -53,6 +65,15 @@ function statusBadge(status: string, createdAt: string) {
   );
 }
 
+function SortIcon({ column, activeSort, activeDir }: { column: string; activeSort: string; activeDir: "asc" | "desc" }) {
+  if (column !== activeSort) {
+    return <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-40" />;
+  }
+  return activeDir === "asc"
+    ? <ArrowUp className="ml-1 inline h-3 w-3" />
+    : <ArrowDown className="ml-1 inline h-3 w-3" />;
+}
+
 export default function ReviewsPage() {
   const { data: session } = useSession();
   const router = useRouter();
@@ -62,13 +83,34 @@ export default function ReviewsPage() {
   const [page, setPage] = useState(1);
   const limit = 20;
 
+  const [sort, setSort] = useState<SortColumn>("created_at");
+  const [dir, setDir] = useState<"asc" | "desc">("desc");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
   const isAdmin = session?.user?.role === "admin";
 
-  const fetchReviews = useCallback(async (p: number) => {
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const fetchReviews = useCallback(async (p: number, s: SortColumn, d: "asc" | "desc", q: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/reviews?page=${p}&limit=${limit}`);
+      const params = new URLSearchParams({
+        page: String(p),
+        limit: String(limit),
+        sort: s,
+        dir: d,
+      });
+      if (q) params.set("search", q);
+      const res = await fetch(`/api/reviews?${params}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error || "Failed to load reviews");
@@ -83,10 +125,23 @@ export default function ReviewsPage() {
   }, []);
 
   useEffect(() => {
-    fetchReviews(page);
-  }, [page, fetchReviews]);
+    fetchReviews(page, sort, dir, debouncedSearch);
+  }, [page, sort, dir, debouncedSearch, fetchReviews]);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / limit)) : 1;
+
+  function handleSort(column: SortColumn) {
+    if (sort === column) {
+      setDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSort(column);
+      setDir("desc");
+    }
+    setPage(1);
+  }
+
+  const thClass = "pb-2 pr-4 text-xs font-medium text-white/40";
+  const sortableThClass = `${thClass} cursor-pointer select-none hover:text-white/70 transition-colors`;
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -124,6 +179,26 @@ export default function ReviewsPage() {
 
         {/* Content */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          {/* Search bar */}
+          <div className="relative mb-4">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+            <input
+              type="text"
+              placeholder="Search by file name, user name, or email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-9 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-blue-500/50 focus:bg-white/[0.07]"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
           {loading && !data && (
             <p className="py-8 text-center text-sm text-white/30">Loading reviews...</p>
           )}
@@ -133,7 +208,9 @@ export default function ReviewsPage() {
           )}
 
           {data && data.reviews.length === 0 && (
-            <p className="py-8 text-center text-sm text-white/30">No reviews yet</p>
+            <p className="py-8 text-center text-sm text-white/30">
+              {debouncedSearch ? "No reviews match your search" : "No reviews yet"}
+            </p>
           )}
 
           {data && data.reviews.length > 0 && (
@@ -142,12 +219,22 @@ export default function ReviewsPage() {
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/10">
-                      <th className="pb-2 pr-4 text-xs font-medium text-white/40">Date</th>
-                      <th className="pb-2 pr-4 text-xs font-medium text-white/40">File</th>
-                      <th className="pb-2 pr-4 text-xs font-medium text-white/40">Provider</th>
-                      <th className="pb-2 pr-4 text-xs font-medium text-white/40">Status</th>
+                      <th className={sortableThClass} onClick={() => handleSort("created_at")}>
+                        Date <SortIcon column="created_at" activeSort={sort} activeDir={dir} />
+                      </th>
+                      <th className={sortableThClass} onClick={() => handleSort("file_name")}>
+                        File <SortIcon column="file_name" activeSort={sort} activeDir={dir} />
+                      </th>
+                      <th className={sortableThClass} onClick={() => handleSort("provider")}>
+                        Provider <SortIcon column="provider" activeSort={sort} activeDir={dir} />
+                      </th>
+                      <th className={sortableThClass} onClick={() => handleSort("status")}>
+                        Status <SortIcon column="status" activeSort={sort} activeDir={dir} />
+                      </th>
                       {isAdmin && (
-                        <th className="pb-2 pr-4 text-xs font-medium text-white/40">User</th>
+                        <th className={sortableThClass} onClick={() => handleSort("user_name")}>
+                          User <SortIcon column="user_name" activeSort={sort} activeDir={dir} />
+                        </th>
                       )}
                       <th className="pb-2 text-xs font-medium text-white/40"></th>
                     </tr>

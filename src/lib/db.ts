@@ -237,39 +237,82 @@ export async function getReviewById(id: string): Promise<ReviewRow | null> {
   return rowToReview(result.rows[0]);
 }
 
-export async function getReviewsByUser(
-  userId: string,
-  limit: number,
-  offset: number
-): Promise<ReviewRow[]> {
+// Allowed sort columns — whitelist to prevent SQL injection
+const ALLOWED_SORT_COLUMNS = new Set([
+  "created_at",
+  "file_name",
+  "provider",
+  "status",
+  "user_name",
+]);
+
+export interface ReviewQueryOptions {
+  userId?: string; // undefined = all reviews (admin)
+  limit: number;
+  offset: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  search?: string;
+}
+
+export async function queryReviews(opts: ReviewQueryOptions): Promise<ReviewRow[]> {
   if (!pool) return [];
   await ensureSchema();
-  const result = await pool.query(
-    "SELECT * FROM reviews WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3",
-    [userId, limit, offset]
-  );
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let paramIdx = 1;
+
+  if (opts.userId) {
+    conditions.push(`user_id = $${paramIdx++}`);
+    params.push(opts.userId);
+  }
+
+  if (opts.search) {
+    const pattern = `%${opts.search}%`;
+    conditions.push(
+      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx})`
+    );
+    paramIdx++;
+    params.push(pattern);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const sortCol = opts.sortBy && ALLOWED_SORT_COLUMNS.has(opts.sortBy) ? opts.sortBy : "created_at";
+  const sortDir = opts.sortDir === "asc" ? "ASC" : "DESC";
+
+  const query = `SELECT * FROM reviews ${where} ORDER BY ${sortCol} ${sortDir}, id DESC LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
+  params.push(opts.limit, opts.offset);
+
+  const result = await pool.query(query, params);
   return result.rows.map(rowToReview);
 }
 
-export async function getAllReviews(
-  limit: number,
-  offset: number
-): Promise<ReviewRow[]> {
-  if (!pool) return [];
-  await ensureSchema();
-  const result = await pool.query(
-    "SELECT * FROM reviews ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2",
-    [limit, offset]
-  );
-  return result.rows.map(rowToReview);
-}
-
-export async function getReviewCount(userId?: string): Promise<number> {
+export async function getReviewCount(userId?: string, search?: string): Promise<number> {
   if (!pool) return 0;
   await ensureSchema();
-  const result = userId
-    ? await pool.query("SELECT COUNT(*) FROM reviews WHERE user_id = $1", [userId])
-    : await pool.query("SELECT COUNT(*) FROM reviews");
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let paramIdx = 1;
+
+  if (userId) {
+    conditions.push(`user_id = $${paramIdx++}`);
+    params.push(userId);
+  }
+
+  if (search) {
+    const pattern = `%${search}%`;
+    conditions.push(
+      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx})`
+    );
+    paramIdx++;
+    params.push(pattern);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const result = await pool.query(`SELECT COUNT(*) FROM reviews ${where}`, params);
   return parseInt(result.rows[0].count, 10);
 }
 

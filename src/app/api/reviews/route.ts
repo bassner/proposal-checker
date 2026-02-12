@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getAllReviews, getReviewsByUser, getReviewCount } from "@/lib/db";
+import { isAvailable, queryReviews, getReviewCount } from "@/lib/db";
 
-const MAX_PAGE = 1000; // Prevent excessive OFFSET scans
+const MAX_PAGE = 1000;
+const ALLOWED_SORT = new Set(["created_at", "file_name", "provider", "status", "user_name"]);
+const MAX_SEARCH_LEN = 200;
 
 /**
- * GET /api/reviews?page=1&limit=20
+ * GET /api/reviews?page=1&limit=20&sort=created_at&dir=desc&search=proposal
  *
  * Returns paginated reviews. Admin sees all; others see only their own.
  */
@@ -25,7 +27,6 @@ export async function GET(request: NextRequest) {
   const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "20", 10) || 20));
 
-  // Prevent excessive DB load from large OFFSET values
   if (page > MAX_PAGE) {
     return Response.json(
       { error: `Page number too large (max: ${MAX_PAGE})` },
@@ -35,12 +36,22 @@ export async function GET(request: NextRequest) {
 
   const offset = (page - 1) * limit;
 
+  // Sort params
+  const sortParam = url.searchParams.get("sort") ?? "created_at";
+  const sortBy = ALLOWED_SORT.has(sortParam) ? sortParam : "created_at";
+  const dirParam = url.searchParams.get("dir");
+  const sortDir: "asc" | "desc" = dirParam === "asc" ? "asc" : "desc";
+
+  // Search param
+  const rawSearch = url.searchParams.get("search")?.trim() ?? "";
+  const search = rawSearch.slice(0, MAX_SEARCH_LEN) || undefined;
+
   const isAdmin = session.user.role === "admin";
-  const userId = session.user.id;
+  const userId = isAdmin ? undefined : session.user.id;
 
   const [reviews, total] = await Promise.all([
-    isAdmin ? getAllReviews(limit, offset) : getReviewsByUser(userId, limit, offset),
-    isAdmin ? getReviewCount() : getReviewCount(userId),
+    queryReviews({ userId, limit, offset, sortBy, sortDir, search }),
+    getReviewCount(userId, search),
   ]);
 
   return Response.json({ reviews, total, page, limit });
