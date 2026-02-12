@@ -63,7 +63,7 @@ function SignInLanding() {
         </div>
         <h1 className="mt-5 text-2xl font-bold text-white">Proposal Checker</h1>
         <p className="mt-2 text-center text-sm text-white/40">
-          AI-powered thesis proposal review for the research group
+          Research Group for Applied Education Technologies
         </p>
 
         <div className="mt-8 w-full space-y-3">
@@ -188,7 +188,7 @@ function UploadPage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-white">Proposal Checker</h1>
-              <p className="text-xs text-white/40">AI-powered thesis proposal review</p>
+              <p className="text-xs text-white/40">Research Group for Applied Education Technologies</p>
             </div>
           </div>
           <UserMenu />
