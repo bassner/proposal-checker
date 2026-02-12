@@ -112,14 +112,16 @@ function ResultsView({ feedback, fileName }: { feedback: MergedFeedback; fileNam
       <div className="relative mx-auto w-full px-6 py-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <ReviewAnotherButton size="sm" />
             <IconBadge />
             <div>
               <h1 className="text-lg font-semibold text-white">Review Results</h1>
               {fileName && <p className="text-xs text-white/40">{fileName}</p>}
             </div>
           </div>
-          <UserMenu />
+          <div className="flex items-center gap-3">
+            <ReviewAnotherButton size="sm" />
+            <UserMenu />
+          </div>
         </div>
         <FeedbackList feedback={feedback} />
         <Footer />
