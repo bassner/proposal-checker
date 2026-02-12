@@ -4,5 +4,5 @@ export { auth as middleware } from "@/auth";
 // API routes are excluded — they use requireAuth()/requireRole() and return JSON 401/403.
 // Static assets and favicon are also excluded.
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|signed-out).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|signed-out|sign-in).*)"],
 };

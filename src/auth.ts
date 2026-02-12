@@ -104,6 +104,9 @@ async function refreshAccessToken(token: Record<string, unknown>): Promise<Recor
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Keycloak],
+  pages: {
+    signIn: "/sign-in",
+  },
   session: {
     strategy: "jwt",
     maxAge: 8 * 60 * 60, // 8 hours — access token refreshes keep role current
