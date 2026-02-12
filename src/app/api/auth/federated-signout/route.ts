@@ -37,10 +37,16 @@ export async function GET(request: NextRequest) {
 
   // Clear all authjs cookies, including chunked session tokens (.0, .1, etc.)
   // Auth.js chunks large JWT cookies — we must clear every chunk to fully log out.
+  // __Secure- prefixed cookies (used in production/HTTPS) require secure: true
+  // to be accepted by the browser — without it the Set-Cookie is silently ignored.
   const allCookies = request.cookies.getAll();
   for (const cookie of allCookies) {
     if (cookie.name.includes("authjs.")) {
-      response.cookies.set(cookie.name, "", { maxAge: 0, path: "/" });
+      response.cookies.set(cookie.name, "", {
+        maxAge: 0,
+        path: "/",
+        secure: cookie.name.startsWith("__Secure-"),
+      });
     }
   }
 
