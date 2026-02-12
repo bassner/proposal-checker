@@ -1,12 +1,32 @@
-// TODO: Add rate limiting if exposed publicly (P1-1)
-// TODO: Consider prompt injection mitigations for public deployment (P1-5)
 import { NextRequest } from "next/server";
 import type { ProviderType, CheckGroupId, LLMPhase } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
+import { insertReview, completeReview, failReview } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/roles";
+import { checkRateLimit, REVIEW_RATE_LIMIT } from "@/lib/rate-limiter";
+
+/**
+ * Sanitize error for client/DB to avoid leaking internal details.
+ * Logs full error server-side, returns generic message.
+ */
+function sanitizeError(error: unknown, sessionId: string): string {
+  // Log full error details server-side for debugging
+  console.error(`[api] Review ${sessionId} failed:`, error);
+
+  // Return generic message to client/DB
+  if (typeof error === "string") {
+    // If it's already a string, check if it's safe to expose
+    if (error.length > 200 || error.includes("Error:") || error.includes("at ")) {
+      return "Review processing failed";
+    }
+    return error;
+  }
+
+  return "Review processing failed";
+}
 
 /**
  * POST /api/review — Accepts a PDF upload + provider choice, creates a session,
@@ -21,6 +41,24 @@ export async function POST(request: NextRequest) {
     session = await requireAuth();
   } catch (response) {
     return response as Response;
+  }
+
+  // Rate limiting: prevent abuse (20 reviews per user per hour)
+  const rateLimitResult = checkRateLimit(session.user.id, REVIEW_RATE_LIMIT);
+  if (!rateLimitResult.allowed) {
+    return new Response(
+      JSON.stringify({
+        error: "Rate limit exceeded (20 reviews per hour)",
+        retryAfter: rateLimitResult.retryAfter,
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(rateLimitResult.retryAfter ?? 60),
+        },
+      }
+    );
   }
 
   const formData = await request.formData();
@@ -63,13 +101,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const sessionId = createSession({
+  const dbMeta = {
     userId: session.user.id,
     userEmail: session.user.email ?? "",
     userName: session.user.name ?? "",
     provider,
-  });
-  console.log(`[api] Review ${sessionId}: ${file.name} (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, user: ${session.user.id}`);
+    fileName: file.name,
+  };
+
+  const sessionId = createSession(dbMeta);
+  console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}`);
+
+  // Persist to DB (fire-and-forget — don't block the response)
+  insertReview({ id: sessionId, ...dbMeta })
+    .catch((err) => console.error("[api] DB insert failed:", err));
 
   const pdfBuffer = await file.arrayBuffer();
 
@@ -119,10 +164,15 @@ export async function POST(request: NextRequest) {
       send("result", { feedback });
       send("done", {});
       setSessionStatus(sessionId, "done");
+      completeReview(sessionId, feedback, dbMeta)
+        .catch((err) => console.error("[api] DB complete failed:", err));
     },
     onError: (error) => {
-      send("error", { error });
+      const sanitizedError = sanitizeError(error, sessionId);
+      send("error", { error: sanitizedError });
       setSessionStatus(sessionId, "error");
+      failReview(sessionId, sanitizedError, dbMeta)
+        .catch((err) => console.error("[api] DB fail failed:", err));
     },
   });
 
