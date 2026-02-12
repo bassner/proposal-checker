@@ -39,11 +39,10 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
   const outputTokens = totalOutputTokens(state);
   const inputTokens = state.totalInputTokens;
 
-  const mergeInitializing =
+  const mergeHasNoTokensYet =
     state.steps.merge === "active" &&
     state.mergePhase !== "generating" &&
-    state.mergeTokens < 100 &&
-    !state.mergeThinkingSummary;
+    state.mergeTokens < 100;
 
   // Parse merge thinking summary
   const showMergeThinking =
@@ -95,7 +94,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                   <span className="w-[4.5rem] text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
                     {state.mergePhase === "generating"
                       ? "Generating"
-                      : state.mergeTokens >= 100
+                      : state.mergePhase === "thinking" || state.mergeTokens >= 100
                         ? "Thinking"
                         : "Initializing"}
                   </span>
@@ -105,7 +104,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                     "w-[3.5rem] text-right tabular-nums",
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
                   )}>
-                    {mergeInitializing ? "0k" : formatTokensK(state.mergeTokens + state.mergeReasoningTokens)}
+                    {mergeHasNoTokensYet ? "–" : formatTokensK(state.mergeTokens + state.mergeReasoningTokens)}
                   </span>
                 )}
                 {(state.mergeTokens > 0 || state.steps.merge === "active") && (
@@ -113,8 +112,8 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                     "w-[3.5rem] text-right tabular-nums",
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
                   )}>
-                    {mergeInitializing
-                      ? "0 t/s"
+                    {mergeHasNoTokensYet
+                      ? "–"
                       : state.steps.merge === "active"
                         ? calcTokPerSec(
                             state.mergeGeneratingStartTime ? state.mergeTokens - state.mergeGeneratingStartTokenCount : state.mergeTokens,

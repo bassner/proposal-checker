@@ -19,6 +19,7 @@ type SSEWriter = (event: string, data: unknown) => void;
 export interface ReviewSession {
   id: string;
   status: "running" | "done" | "error";
+  provider: string;
   /** Append-only event log — replayed to late-joining clients. */
   events: SSEEvent[];
   /** Currently connected SSE writers (one per browser tab). */
@@ -60,7 +61,7 @@ if (!globalSessions.__reviewSessionsCleanup) {
 }
 
 /** Create a new review session and return its UUID. The session starts in "running" status. */
-export function createSession(): string {
+export function createSession(provider: string): string {
   if (sessions.size >= MAX_SESSIONS) {
     // Evict oldest completed session, or oldest running if none completed
     let oldestId: string | null = null;
@@ -77,6 +78,7 @@ export function createSession(): string {
   sessions.set(id, {
     id,
     status: "running",
+    provider,
     events: [],
     writers: new Set(),
     createdAt: Date.now(),
@@ -144,7 +146,7 @@ export function subscribe(id: string, writer: SSEWriter): boolean {
     }
   }
 
-  try { writer("_session-info", { startTime: session.createdAt }); } catch {
+  try { writer("_session-info", { startTime: session.createdAt, provider: session.provider }); } catch {
     session.writers.delete(writer);
     return false;
   }

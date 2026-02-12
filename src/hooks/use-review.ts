@@ -222,10 +222,11 @@ function handleSSEEvent(
 
   switch (event) {
     case "_session-info": {
-      const { startTime } = data as { startTime: number };
+      const { startTime, provider } = data as { startTime: number; provider?: string };
       setState((prev) => ({
         ...prev,
         startTime,
+        ...(provider ? { provider: provider as ReviewState["provider"] } : {}),
       }));
       break;
     }
@@ -287,7 +288,7 @@ function handleSSEEvent(
         ...prev,
         checkGroups: prev.checkGroups.map((g) =>
           g.id === groupId
-            ? { ...g, thinkingSummary: text }
+            ? { ...g, thinkingSummary: text, phase: g.phase ?? "thinking" }
             : g
         ),
       }));
@@ -354,6 +355,7 @@ function handleSSEEvent(
       setState((prev) => ({
         ...prev,
         mergeThinkingSummary: text,
+        mergePhase: prev.mergePhase ?? "thinking",
       }));
       break;
     }

@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const sessionId = createSession();
+  const sessionId = createSession(provider);
   console.log(`[api] Review ${sessionId}: ${file.name} (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}`);
 
   const pdfBuffer = await file.arrayBuffer();
