@@ -105,7 +105,7 @@ async function refreshAccessToken(token: Record<string, unknown>): Promise<Recor
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Keycloak],
   pages: {
-    signIn: "/sign-in",
+    signIn: "/",
   },
   session: {
     strategy: "jwt",
