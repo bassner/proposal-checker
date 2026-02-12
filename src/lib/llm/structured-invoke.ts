@@ -216,7 +216,7 @@ async function streamCollect(
         .join("");
     }
     fullText += content;
-    tokenCount++;
+    if (content.length > 0) tokenCount++;
 
     // Phase detection:
     // - Responses API: reasoning summary chunks = thinking, content = generating
@@ -328,6 +328,11 @@ function zodToJsonDescription(schema: z.ZodTypeAny): string {
   }
 }
 
+/**
+ * Minimal Zod-to-JSON-schema converter for LLM prompt instructions.
+ * Supported: ZodObject, ZodArray, ZodEnum, ZodOptional, ZodNullable, ZodString, ZodNumber.
+ * Unsupported types (ZodDefault, ZodEffects, ZodUnion, etc.) fall through to "unknown".
+ */
 function zodToSimpleSchema(schema: z.ZodTypeAny): unknown {
   const def = schema._def;
 

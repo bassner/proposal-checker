@@ -15,7 +15,8 @@ import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
  */
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
-  const file = formData.get("file") as File | null;
+  const fileEntry = formData.get("file");
+  const file = fileEntry instanceof File ? fileEntry : null;
   const providerRaw = formData.get("provider") as string | null;
 
   if (!file) {

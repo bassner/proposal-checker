@@ -72,7 +72,7 @@ export async function mergeFindings(
 ${JSON.stringify(allFindings, null, 2)}
 ${failedInfo}
 
-Now deduplicate, consolidate, rank, and produce the final 10-25 feedback items with an overall assessment.`,
+Now deduplicate, consolidate, rank, and produce the final 0-25 feedback items with an overall assessment.`,
     ],
   ];
 

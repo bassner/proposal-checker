@@ -12,7 +12,6 @@ const MAX_SIZE_MB = 50;
  * — needed because React synthetic events lose their data by the next tick.
  */
 export function useFileUpload() {
-  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,13 +29,7 @@ export function useFileUpload() {
   const handleFile = useCallback(
     (f: File) => {
       const err = validate(f);
-      if (err) {
-        setError(err);
-        setFile(null);
-      } else {
-        setError(null);
-        setFile(f);
-      }
+      setError(err);
     },
     [validate]
   );
@@ -78,7 +71,6 @@ export function useFileUpload() {
   }, []);
 
   const clear = useCallback(() => {
-    setFile(null);
     setError(null);
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -86,7 +78,6 @@ export function useFileUpload() {
   }, []);
 
   return {
-    file,
     error,
     isDragging,
     inputRef,

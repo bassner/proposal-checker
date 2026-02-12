@@ -172,8 +172,8 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
               </div>
               {/* Cards */}
               <div className="space-y-2">
-                {findings.map((finding) => (
-                  <FeedbackCard key={`${finding.severity}-${finding.title}`} finding={finding} />
+                {findings.map((finding, index) => (
+                  <FeedbackCard key={`${finding.severity}-${index}`} finding={finding} />
                 ))}
               </div>
             </div>

@@ -67,7 +67,7 @@ export type SSEEventType =
   | "error";
 
 export interface StepEvent {
-  step: "upload" | "extract" | "check" | "merge" | "results";
+  step: "upload" | "extract" | "check" | "merge";
   status: "pending" | "active" | "done" | "error";
 }
 

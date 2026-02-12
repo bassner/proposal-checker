@@ -21,6 +21,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(id)) {
+    return new Response(JSON.stringify({ error: "Invalid review ID" }), {
+      status: 400, headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const session = getSession(id);
 
   if (!session) {
@@ -39,6 +47,12 @@ export async function GET(
         if (closed) return;
         try {
           controller.enqueue(encoder.encode(sseEncode(event, data)));
+          // Close stream after terminal events
+          if (event === "done" || event === "error") {
+            try { controller.close(); } catch { /* already closed */ }
+            closed = true;
+            if (writerFn) unsubscribe(id, writerFn);
+          }
         } catch {
           closed = true;
         }

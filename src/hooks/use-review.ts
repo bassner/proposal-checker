@@ -21,7 +21,6 @@ const INITIAL_STATE: ReviewState = {
     extract: "pending",
     check: "pending",
     merge: "pending",
-    results: "pending",
   },
   checkGroups: CHECK_GROUPS.map((g) => ({
     id: g.id,
@@ -310,6 +309,7 @@ function handleSSEEvent(
                 status: "done" as StepStatus,
                 findingCount,
                 endTime: ts,
+                // Intentional: replace streaming estimate with accurate API-reported count
                 ...(outputTokens != null ? { tokenCount: outputTokens } : {}),
                 ...(reasoningTokens != null ? { reasoningTokens } : {}),
               }
@@ -371,7 +371,7 @@ function handleSSEEvent(
       const { tokens } = data as { tokens: number };
       setState((prev) => ({
         ...prev,
-        totalInputTokens: prev.totalInputTokens + tokens,
+        totalInputTokens: tokens, // cumulative total from server, not a delta
       }));
       break;
     }

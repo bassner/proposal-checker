@@ -17,7 +17,6 @@ const STEP_LABELS: Record<StepEvent["step"], string> = {
   extract: "Extract Text & Render Pages",
   check: "Inspect Proposal",
   merge: "Merge & Deduplicate",
-  results: "Done",
 };
 
 const STEP_ORDER: StepEvent["step"][] = [

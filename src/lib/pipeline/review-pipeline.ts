@@ -93,11 +93,13 @@ export async function runReviewPipeline(
     console.log(`[pipeline] Using provider: ${provider}, concurrency: ${maxConcurrency ?? "unlimited"}`);
 
     // Count input tokens for all 7 checks using tiktoken (exact same tokenizer as the model)
+    let cumulativeInputTokens = 0;
     const userMessage = `Here is the proposal text to review:\n\n${extraction.fullText}`;
     const checkInputTokens = CHECK_GROUPS.reduce((sum, g) => {
       return sum + countTokens(CHECK_GROUP_PROMPTS[g.id]) + countTokens(userMessage);
     }, 0);
-    callbacks.onInputEstimate(checkInputTokens);
+    cumulativeInputTokens += checkInputTokens;
+    callbacks.onInputEstimate(cumulativeInputTokens);
 
     const checkResults = await runAllChecks({
       model,
@@ -121,7 +123,8 @@ export async function runReviewPipeline(
     const allFindings = checkResults.flatMap((r) => r.findings);
     const mergeInputStr = JSON.stringify(allFindings, null, 2);
     const mergeInputTokens = countTokens(mergeInputStr) + countTokens("You are an expert thesis proposal reviewer"); // approximate system prompt
-    callbacks.onInputEstimate(mergeInputTokens);
+    cumulativeInputTokens += mergeInputTokens;
+    callbacks.onInputEstimate(cumulativeInputTokens);
 
     const { data: mergedFeedback, usage: mergeUsage } = await mergeFindings(model, checkResults, {
       signal: pipelineAbort.signal,
@@ -134,20 +137,20 @@ export async function runReviewPipeline(
     }
 
     callbacks.onStep("merge", "done");
-    clearTimeout(pipelineTimeout);
 
     // Step 5: Deliver results
     callbacks.onResult(mergedFeedback as MergedFeedback);
   } catch (error) {
-    clearTimeout(pipelineTimeout);
     if (pipelineAbort.signal.aborted) {
       console.error("[pipeline] Review timed out after 15 minutes");
-      callbacks.onError("Review timed out after 15 minutes");
+      try { callbacks.onError("Review timed out after 15 minutes"); } catch { /* writer may be dead */ }
       return;
     }
     console.error("[pipeline] Fatal error:", error instanceof Error ? error.message : error);
-    callbacks.onError(
-      error instanceof Error ? error.message : "An unknown error occurred"
-    );
+    try {
+      callbacks.onError(error instanceof Error ? error.message : "An unknown error occurred");
+    } catch { /* writer may be dead */ }
+  } finally {
+    clearTimeout(pipelineTimeout);
   }
 }

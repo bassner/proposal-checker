@@ -1,3 +1,4 @@
+import "server-only";
 import { getEncoding, type Tiktoken } from "js-tiktoken";
 
 /** Lazily initialized singleton — encoding init is expensive, so we cache it. */

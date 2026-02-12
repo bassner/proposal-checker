@@ -1,3 +1,4 @@
+import "server-only";
 import { randomUUID } from "crypto";
 
 /** A single SSE event stored in the session's replay log. */
@@ -26,6 +27,11 @@ export interface ReviewSession {
 }
 
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
+const COMPLETED_SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes for done/error sessions
+const MAX_SESSIONS = 50;
+
+/** Transient event types that are overwritten by later events — safe to prune after completion. */
+const TRANSIENT_EVENTS = new Set(["check-thinking", "merge-thinking", "check-tokens", "merge-tokens"]);
 
 // Attach the session map to globalThis so it survives Next.js dev server
 // hot reloads (HMR re-evaluates modules, but globalThis persists).
@@ -45,7 +51,8 @@ if (!globalSessions.__reviewSessionsCleanup) {
   setInterval(() => {
     const now = Date.now();
     for (const [id, session] of sessions) {
-      if (now - session.createdAt > SESSION_TTL_MS) {
+      const ttl = session.status === "running" ? SESSION_TTL_MS : COMPLETED_SESSION_TTL_MS;
+      if (now - session.createdAt > ttl) {
         sessions.delete(id);
       }
     }
@@ -54,6 +61,18 @@ if (!globalSessions.__reviewSessionsCleanup) {
 
 /** Create a new review session and return its UUID. The session starts in "running" status. */
 export function createSession(): string {
+  if (sessions.size >= MAX_SESSIONS) {
+    // Evict oldest completed session, or oldest running if none completed
+    let oldestId: string | null = null;
+    let oldestSession: ReviewSession | null = null;
+    for (const [sid, s] of sessions) {
+      if (!oldestSession || (s.status !== "running" && oldestSession.status === "running") || s.createdAt < oldestSession.createdAt) {
+        oldestId = sid;
+        oldestSession = s;
+      }
+    }
+    if (oldestId) sessions.delete(oldestId);
+  }
   const id = randomUUID();
   sessions.set(id, {
     id,
@@ -76,29 +95,60 @@ export function emitEvent(id: string, event: string, data: unknown): void {
   const session = sessions.get(id);
   if (!session) return;
   const ts = Date.now();
-  const stamped = { ...(data as Record<string, unknown>), _ts: ts };
+  const payload = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : { value: data };
+  const stamped = { ...payload, _ts: ts };
   session.events.push({ event, data: stamped, ts });
   for (const writer of session.writers) {
     try { writer(event, stamped); } catch { /* writer dead, will be cleaned up */ }
   }
 }
 
-/** Mark session as done or error */
+/** Mark session as done or error. Prunes transient events to save memory. */
 export function setSessionStatus(id: string, status: "done" | "error"): void {
   const session = sessions.get(id);
-  if (session) session.status = status;
+  if (!session) return;
+  session.status = status;
+  // Prune transient events — keep only the last per source key (thinking/tokens
+  // are cumulative snapshots, so only the final value matters for replay)
+  const seen = new Map<string, number>();
+  for (let i = session.events.length - 1; i >= 0; i--) {
+    const evt = session.events[i];
+    if (!TRANSIENT_EVENTS.has(evt.event)) continue;
+    const groupId = (evt.data as Record<string, unknown>)?.groupId ?? "";
+    const key = `${evt.event}:${groupId}`;
+    if (seen.has(key)) {
+      session.events[i] = null!; // mark for removal
+    } else {
+      seen.set(key, i);
+    }
+  }
+  session.events = session.events.filter(Boolean);
 }
 
-/** Subscribe a writer. Replays all past events, then adds to live set. */
+/** Subscribe a writer. Adds to live set first, then replays past events.
+ *  Events emitted during replay are delivered live (indices >= snapshot). */
 export function subscribe(id: string, writer: SSEWriter): boolean {
   const session = sessions.get(id);
   if (!session) return false;
-  for (const evt of session.events) {
-    try { writer(evt.event, evt.data); } catch { return false; }
-  }
-  // Also send a synthetic _startTime event so the client knows when the review began
-  try { writer("_session-info", { startTime: session.createdAt }); } catch { return false; }
+
+  // Snapshot event count and add writer BEFORE replay so no events are lost
+  const replayEnd = session.events.length;
   session.writers.add(writer);
+
+  // Replay [0, replayEnd) — live events with index >= replayEnd flow via broadcast
+  for (let i = 0; i < replayEnd; i++) {
+    const evt = session.events[i];
+    try { writer(evt.event, evt.data); } catch {
+      session.writers.delete(writer);
+      return false;
+    }
+  }
+
+  try { writer("_session-info", { startTime: session.createdAt }); } catch {
+    session.writers.delete(writer);
+    return false;
+  }
+
   return true;
 }
 

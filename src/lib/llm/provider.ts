@@ -1,3 +1,4 @@
+import "server-only";
 import { ChatOpenAI } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { ProviderType } from "@/types/review";
