@@ -19,7 +19,7 @@ const globalDb = globalThis as unknown as {
 if (!globalDb.__dbPool) {
   if (DATABASE_URL) {
     const sslConfig =
-      process.env.NODE_ENV === "production"
+      process.env.DATABASE_SSL === "true"
         ? { ssl: { rejectUnauthorized: true } }
         : {};
 

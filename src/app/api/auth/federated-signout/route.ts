@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   const issuer = process.env.AUTH_KEYCLOAK_ISSUER;
   const clientId = process.env.AUTH_KEYCLOAK_ID;
-  const origin = new URL(request.url).origin;
+  const origin = process.env.AUTH_URL || new URL(request.url).origin;
 
   let redirectUrl: string;
 
