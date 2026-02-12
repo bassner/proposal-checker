@@ -110,7 +110,8 @@ export interface ReviewState {
   startTime: number | null;
 }
 
-export type ProviderType = "azure" | "ollama";
+export const PROVIDER_TYPES = ["azure", "ollama"] as const;
+export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
 export interface ModelConfig {
   provider: ProviderType;

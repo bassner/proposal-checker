@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { getAllowedProviders, APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
+import { getAllowedProviders } from "@/lib/auth/provider-access";
+import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
-import { Shield, ArrowLeft, ClipboardList } from "lucide-react";
+import type { ProviderType } from "@/types/review";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -13,6 +16,22 @@ export default async function AdminPage() {
   ) {
     redirect("/");
   }
+
+  // Load config from DB for each role
+  const configResults = await Promise.all(
+    APP_ROLES.map(async (role) => ({
+      role,
+      result: await getAllowedProviders(role),
+    }))
+  );
+
+  const configUnavailable = configResults.some(
+    ({ result }) => result.status === "unavailable"
+  );
+
+  const configMap = Object.fromEntries(
+    configResults.map(({ role, result }) => [role, result.providers])
+  ) as Record<AppRole, ProviderType[]>;
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -45,26 +64,13 @@ export default async function AdminPage() {
         {/* Role-Provider Mapping */}
         <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
           <h2 className="mb-4 text-sm font-medium text-white/60">Role-Provider Mapping</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-white/10">
-                  <th className="pb-2 pr-6 text-xs font-medium text-white/40">Role</th>
-                  <th className="pb-2 text-xs font-medium text-white/40">Allowed Providers</th>
-                </tr>
-              </thead>
-              <tbody>
-                {APP_ROLES.map((role: AppRole) => (
-                  <tr key={role} className="border-b border-white/5">
-                    <td className="py-2 pr-6 font-medium text-white/70">{role}</td>
-                    <td className="py-2 text-white/50">
-                      {getAllowedProviders(role).join(", ")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {configUnavailable && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              Provider configuration could not be loaded from the database. Changes may not be saved.
+            </div>
+          )}
+          <RoleConfigEditor initialConfig={configMap} />
         </div>
 
         {/* Reviews link */}

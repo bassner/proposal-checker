@@ -1,5 +1,7 @@
 import "server-only";
 import pg from "pg";
+import type { AppRole } from "@/lib/auth/roles";
+import type { ProviderType } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -11,6 +13,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 // (HMR re-evaluates modules, but globalThis persists, preventing connection leaks)
 const globalDb = globalThis as unknown as {
   __dbPool?: pg.Pool | null;
+  __schemaInitialized?: boolean;
 };
 
 if (!globalDb.__dbPool) {
@@ -44,10 +47,8 @@ const pool = globalDb.__dbPool;
 // Schema auto-init (runs once on first successful connection)
 // ---------------------------------------------------------------------------
 
-let schemaInitialized = false;
-
 async function ensureSchema(): Promise<void> {
-  if (schemaInitialized || !pool) return;
+  if (globalDb.__schemaInitialized || !pool) return;
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS reviews (
@@ -69,8 +70,24 @@ async function ensureSchema(): Promise<void> {
         ON reviews(user_id, created_at DESC, id DESC);
       CREATE INDEX IF NOT EXISTS idx_reviews_created
         ON reviews(created_at DESC, id DESC);
+
+      CREATE TABLE IF NOT EXISTS role_provider_config (
+        role TEXT PRIMARY KEY CHECK (role IN ('admin', 'phd', 'student')),
+        providers TEXT[] NOT NULL CHECK (
+          cardinality(providers) > 0 AND
+          providers <@ ARRAY['azure', 'ollama']::text[]
+        ),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Seed with current hardcoded defaults
+      INSERT INTO role_provider_config (role, providers) VALUES
+        ('admin', ARRAY['azure', 'ollama']::TEXT[]),
+        ('phd', ARRAY['azure', 'ollama']::TEXT[]),
+        ('student', ARRAY['ollama']::TEXT[])
+      ON CONFLICT (role) DO NOTHING;
     `);
-    schemaInitialized = true;
+    globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
   } catch (err) {
     console.error("[db] Schema init failed:", err);
@@ -254,4 +271,55 @@ export async function getReviewCount(userId?: string): Promise<number> {
     ? await pool.query("SELECT COUNT(*) FROM reviews WHERE user_id = $1", [userId])
     : await pool.query("SELECT COUNT(*) FROM reviews");
   return parseInt(result.rows[0].count, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Role-provider configuration
+// ---------------------------------------------------------------------------
+
+export interface RoleProviderRow {
+  role: AppRole;
+  providers: ProviderType[];
+  updatedAt: string;
+}
+
+export async function getRoleProviderConfig(): Promise<RoleProviderRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT role, providers, updated_at FROM role_provider_config ORDER BY role"
+  );
+  return result.rows.map((row) => ({
+    role: row.role,
+    providers: row.providers,
+    updatedAt: (row.updated_at as Date).toISOString(),
+  }));
+}
+
+export async function updateRoleProviders(
+  role: AppRole,
+  providers: ProviderType[]
+): Promise<RoleProviderRow> {
+  if (!pool) {
+    throw new Error("Database pool not initialized");
+  }
+  await ensureSchema();
+
+  // Canonicalize: dedupe + sort
+  const canonical = [...new Set(providers)].sort();
+
+  const result = await pool.query(
+    `INSERT INTO role_provider_config (role, providers)
+     VALUES ($1, $2)
+     ON CONFLICT (role) DO UPDATE
+     SET providers = EXCLUDED.providers, updated_at = NOW()
+     RETURNING role, providers, updated_at`,
+    [role, canonical]
+  );
+
+  return {
+    role: result.rows[0].role,
+    providers: result.rows[0].providers,
+    updatedAt: (result.rows[0].updated_at as Date).toISOString(),
+  };
 }

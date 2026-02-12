@@ -1,15 +1,9 @@
-import type { ProviderType } from "@/types/review";
-
 export type AppRole = "admin" | "phd" | "student";
 
-/**
- * Single source of truth for role configuration.
- * Hierarchy level determines access control (higher = more privileged).
- */
-const ROLE_CONFIG: { name: AppRole; level: number; providers: ProviderType[] }[] = [
-  { name: "admin", level: 3, providers: ["azure", "ollama"] },
-  { name: "phd", level: 2, providers: ["azure", "ollama"] },
-  { name: "student", level: 1, providers: ["ollama"] },
+const ROLE_CONFIG: { name: AppRole; level: number }[] = [
+  { name: "admin", level: 3 },
+  { name: "phd", level: 2 },
+  { name: "student", level: 1 },
 ];
 
 /** All recognized app roles, in priority order (highest first). */
@@ -19,10 +13,6 @@ export const APP_ROLES: AppRole[] = ROLE_CONFIG.map((r) => r.name);
 export const ROLE_HIERARCHY: Record<AppRole, number> = Object.fromEntries(
   ROLE_CONFIG.map((r) => [r.name, r.level])
 ) as Record<AppRole, number>;
-
-const ROLE_PROVIDERS: Record<AppRole, ProviderType[]> = Object.fromEntries(
-  ROLE_CONFIG.map((r) => [r.name, r.providers])
-) as Record<AppRole, ProviderType[]>;
 
 /**
  * Build a mapping from Keycloak role names to app roles.
@@ -43,12 +33,4 @@ export function getKeycloakRoleMapping(): Record<string, AppRole> {
     mapping[keycloakName] = role;
   }
   return mapping;
-}
-
-export function getAllowedProviders(role: AppRole): ProviderType[] {
-  return ROLE_PROVIDERS[role];
-}
-
-export function canUseProvider(role: AppRole, provider: ProviderType): boolean {
-  return ROLE_PROVIDERS[role].includes(provider);
 }

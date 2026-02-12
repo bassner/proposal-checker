@@ -5,7 +5,7 @@ import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
 import { insertReview, completeReview, failReview } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/helpers";
-import { canUseProvider } from "@/lib/auth/roles";
+import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT } from "@/lib/rate-limiter";
 
 /**
@@ -79,7 +79,14 @@ export async function POST(request: NextRequest) {
   }
   const provider: ProviderType = providerRaw;
 
-  if (!canUseProvider(session.user.role, provider)) {
+  const { allowed, status } = await canUseProvider(session.user.role, provider);
+  if (status === "unavailable") {
+    return new Response(
+      JSON.stringify({ error: "Provider configuration unavailable" }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
+    );
+  }
+  if (!allowed) {
     return new Response(
       JSON.stringify({ error: "Your role does not allow this provider" }),
       { status: 403, headers: { "Content-Type": "application/json" } }

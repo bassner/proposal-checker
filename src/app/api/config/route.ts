@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { getAllowedProviders } from "@/lib/auth/roles";
+import { getAllowedProviders } from "@/lib/auth/provider-access";
 
 export async function GET() {
   let session;
@@ -9,7 +9,13 @@ export async function GET() {
     return response as Response;
   }
 
-  const allowedProviders = getAllowedProviders(session.user.role);
+  const { providers: allowedProviders, status } = await getAllowedProviders(session.user.role);
+  if (status === "unavailable") {
+    return Response.json({
+      models: [],
+      configStatus: "unavailable"
+    }, { status: 503 });
+  }
   const models = [];
 
   if (allowedProviders.includes("azure") && process.env.AZURE_OPENAI_API_KEY) {
