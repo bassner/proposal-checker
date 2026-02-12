@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     if (clientId) {
       logoutUrl.searchParams.set("client_id", clientId);
     }
-    logoutUrl.searchParams.set("post_logout_redirect_uri", `${origin}/sign-in`);
+    logoutUrl.searchParams.set("post_logout_redirect_uri", origin);
     redirectUrl = logoutUrl.toString();
   } else {
     // No Keycloak issuer configured — just redirect home
