@@ -18,11 +18,10 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
       ? ((group.endTime - group.startTime) / 1000).toFixed(1)
       : null;
 
-  const isInitializing =
+  const hasNoTokensYet =
     group.status === "active" &&
     group.phase !== "generating" &&
-    (group.tokenCount ?? 0) < 100 &&
-    !group.thinkingSummary;
+    (group.tokenCount ?? 0) < 100;
 
   const showThinkingSummary =
     group.status === "active" &&
@@ -93,7 +92,7 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
           <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
             {group.phase === "generating"
               ? "Generating"
-              : (group.tokenCount ?? 0) >= 100
+              : group.phase === "thinking" || (group.tokenCount ?? 0) >= 100
                 ? "Thinking"
                 : "Initializing"}
           </span>
@@ -104,7 +103,7 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
             "min-w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
-            {isInitializing ? "0k" : formatTokensK((group.tokenCount ?? 0) + (group.reasoningTokens ?? 0))}
+            {hasNoTokensYet ? "–" : formatTokensK((group.tokenCount ?? 0) + (group.reasoningTokens ?? 0))}
           </span>
         )}
 
@@ -113,8 +112,8 @@ export function CheckGroupCard({ group }: CheckGroupCardProps) {
             "w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
-            {isInitializing
-              ? "0 t/s"
+            {hasNoTokensYet
+              ? "–"
               : group.status === "active"
                 ? calcTokPerSec(
                     group.generatingStartTime ? group.tokenCount! - (group.generatingStartTokenCount ?? 0) : group.tokenCount!,

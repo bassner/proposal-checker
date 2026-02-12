@@ -166,7 +166,7 @@ export function subscribe(id: string, writer: SSEWriter): boolean {
     }
   }
 
-  try { writer("_session-info", { startTime: session.createdAt }); } catch {
+  try { writer("_session-info", { startTime: session.createdAt, provider: session.provider }); } catch {
     session.writers.delete(writer);
     return false;
   }
