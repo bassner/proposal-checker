@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, GitCompareArrows } from "lucide-react";
+import { ArrowLeft, GitCompareArrows, AlertOctagon, AlertTriangle, AlertCircle, Lightbulb } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { UserMenu } from "@/components/auth/user-menu";
 import type { Finding, MergedFeedback, Severity } from "@/types/review";
 import { cn } from "@/lib/utils";
@@ -87,16 +88,18 @@ function diffFindings(findingsA: Finding[], findingsB: Finding[]): DiffRow[] {
 // Severity badge (reused)
 // ---------------------------------------------------------------------------
 
-const severityColors: Record<Severity, string> = {
-  critical: "bg-red-500/20 text-red-400",
-  major: "bg-orange-500/20 text-orange-400",
-  minor: "bg-yellow-500/20 text-yellow-400",
-  suggestion: "bg-blue-500/20 text-blue-400",
+const severityStyles: Record<Severity, { color: string; icon: LucideIcon }> = {
+  critical: { color: "bg-red-500/20 text-red-400", icon: AlertOctagon },
+  major: { color: "bg-orange-500/20 text-orange-400", icon: AlertTriangle },
+  minor: { color: "bg-yellow-500/20 text-yellow-400", icon: AlertCircle },
+  suggestion: { color: "bg-blue-500/20 text-blue-400", icon: Lightbulb },
 };
 
 function SeverityBadge({ severity }: { severity: Severity }) {
+  const { color, icon: SevIcon } = severityStyles[severity];
   return (
-    <span className={cn("inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium", severityColors[severity])}>
+    <span className={cn("inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium", color)}>
+      <SevIcon className="h-2.5 w-2.5" aria-hidden="true" />
       {severity}
     </span>
   );

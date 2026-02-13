@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from "react";
 import type { Finding, Severity, AnnotationStatus, AnnotationEntry, Comment } from "@/types/review";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Check, X, Wrench, MessageSquare, Send, Trash2 } from "lucide-react";
+import { Check, X, Wrench, MessageSquare, Send, Trash2, AlertOctagon, AlertTriangle, AlertCircle, Lightbulb } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 interface FeedbackCardProps {
   finding: Finding;
@@ -18,12 +19,12 @@ interface FeedbackCardProps {
 
 const severityConfig: Record<
   Severity,
-  { borderColor: string }
+  { borderColor: string; icon: LucideIcon; iconColor: string }
 > = {
-  critical: { borderColor: "border-l-red-500" },
-  major: { borderColor: "border-l-orange-500" },
-  minor: { borderColor: "border-l-yellow-500" },
-  suggestion: { borderColor: "border-l-blue-500" },
+  critical: { borderColor: "border-l-red-500", icon: AlertOctagon, iconColor: "text-red-400" },
+  major: { borderColor: "border-l-orange-500", icon: AlertTriangle, iconColor: "text-orange-400" },
+  minor: { borderColor: "border-l-yellow-500", icon: AlertCircle, iconColor: "text-yellow-400" },
+  suggestion: { borderColor: "border-l-blue-500", icon: Lightbulb, iconColor: "text-blue-400" },
 };
 
 const annotationButtons: { status: AnnotationStatus; icon: typeof Check; label: string }[] = [
@@ -124,12 +125,14 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
 
 export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, commentSubmitting }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
+  const SevIcon = config.icon;
   const [locationsExpanded, setLocationsExpanded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (focused && cardRef.current) {
-      cardRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      cardRef.current.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "nearest" });
     }
   }, [focused]);
 
@@ -161,6 +164,10 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
     >
       <div className="space-y-1.5">
         <div className="flex items-start gap-1.5">
+          <SevIcon
+            className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", config.iconColor, isDismissed && "opacity-40")}
+            aria-label={finding.severity}
+          />
           <p className={cn(
             "flex-1 text-xs font-medium leading-snug text-white/90",
             isDismissed && "line-through text-white/40"
@@ -200,6 +207,8 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
                 type="button"
                 className="text-[11px] text-white/30 hover:text-white/50 transition-colors"
                 onClick={() => setLocationsExpanded((e) => !e)}
+                aria-expanded={locationsExpanded}
+                aria-label={locationsExpanded ? "Show fewer source locations" : `Show ${hiddenCount} more source location${hiddenCount === 1 ? "" : "s"}`}
               >
                 {locationsExpanded
                   ? "show less"

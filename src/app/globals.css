@@ -150,6 +150,26 @@
   animation: shimmer-glow 2.5s ease-in-out infinite;
 }
 
+/* Disable animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .thinking-shimmer {
+    animation: none;
+    background: none;
+    background-clip: unset;
+    -webkit-background-clip: unset;
+    -webkit-text-fill-color: rgb(96 165 250 / 0.8);
+  }
+}
+
 /* ── Print / PDF export styles ──────────────────────────────────────────── */
 
 /* Print-only header hidden on screen */

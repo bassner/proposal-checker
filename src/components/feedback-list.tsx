@@ -3,7 +3,8 @@
 import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 interface FeedbackListProps {
   feedback: MergedFeedback;
@@ -58,28 +59,32 @@ const GRID_COLS: Record<number, string> = {
 
 const severityColumnConfig: Record<
   Severity,
-  { label: string; headerBg: string; headerText: string; countColor: string }
+  { label: string; icon: LucideIcon; headerBg: string; headerText: string; countColor: string }
 > = {
   critical: {
     label: "Critical",
+    icon: AlertOctagon,
     headerBg: "bg-red-500/15",
     headerText: "text-red-300",
     countColor: "text-red-400",
   },
   major: {
     label: "Major",
+    icon: AlertTriangle,
     headerBg: "bg-orange-500/15",
     headerText: "text-orange-300",
     countColor: "text-orange-400",
   },
   minor: {
     label: "Minor",
+    icon: AlertCircle,
     headerBg: "bg-yellow-500/15",
     headerText: "text-yellow-300",
     countColor: "text-yellow-400",
   },
   suggestion: {
     label: "Suggestions",
+    icon: Lightbulb,
     headerBg: "bg-blue-500/15",
     headerText: "text-blue-300",
     countColor: "text-blue-400",
@@ -128,6 +133,8 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
     <div className="space-y-6">
       {/* Overall assessment banner */}
       <div
+        role="banner"
+        aria-label={`Assessment: ${config.label}`}
         className={cn(
           "rounded-xl border bg-gradient-to-r p-4 backdrop-blur-sm",
           config.gradient,
@@ -146,8 +153,10 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
                   const count = grouped[s]?.length || 0;
                   if (count === 0) return null;
                   const col = severityColumnConfig[s];
+                  const SevIcon = col.icon;
                   return (
-                    <span key={s} className={col.countColor}>
+                    <span key={s} className={cn("inline-flex items-center gap-1", col.countColor)}>
+                      <SevIcon className="h-3 w-3" aria-hidden="true" />
                       {count} {col.label.toLowerCase()}
                     </span>
                   );
@@ -209,6 +218,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
         {presentSeverities.map((severity) => {
           const items = grouped[severity]!;
           const col = severityColumnConfig[severity];
+          const ColIcon = col.icon;
           return (
             <div key={severity} className="min-w-0">
               {/* Column header */}
@@ -217,8 +227,12 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
                   "mb-3 flex items-center justify-between rounded-lg px-3 py-2",
                   col.headerBg
                 )}
+                role="heading"
+                aria-level={3}
+                aria-label={`${col.label}: ${items.length} finding${items.length === 1 ? "" : "s"}`}
               >
-                <span className={cn("text-xs font-semibold uppercase tracking-wider", col.headerText)}>
+                <span className={cn("inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider", col.headerText)}>
+                  <ColIcon className="h-3.5 w-3.5" aria-hidden="true" />
                   {col.label}
                 </span>
                 <span className={cn("text-xs font-bold", col.countColor)}>
