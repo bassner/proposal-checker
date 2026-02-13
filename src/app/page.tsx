@@ -70,7 +70,17 @@ export default function Home() {
 
 // ── Sign-in landing (unauthenticated) ─────────────────────────────────────
 
+const DEV_LOGIN_USERS = [
+  { key: "admin", label: "Dev Admin", desc: "Full access", badge: "admin", color: "bg-red-500/20 text-red-400" },
+  { key: "phd", label: "Dr. Supervisor", desc: "Supervisor role", badge: "phd", color: "bg-purple-500/20 text-purple-400" },
+  { key: "phd2", label: "Prof. Reviewer", desc: "Second supervisor", badge: "phd", color: "bg-purple-500/20 text-purple-400" },
+  { key: "student1", label: "Alice Student", desc: "Student role", badge: "student", color: "bg-blue-500/20 text-blue-400" },
+  { key: "student2", label: "Bob Student", desc: "Second student", badge: "student", color: "bg-blue-500/20 text-blue-400" },
+];
+
 function SignInLanding() {
+  const devMode = process.env.NEXT_PUBLIC_AUTH_DEV_MODE === "true";
+
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -94,13 +104,35 @@ function SignInLanding() {
           <FeatureRow icon={<CheckCircle className="h-4 w-4" />} text="Actionable feedback streamed in real-time" />
         </div>
 
-        <button
-          onClick={() => signIn("keycloak", { redirectTo: "/" })}
-          className="mt-10 flex w-full items-center justify-center gap-2.5 rounded-xl bg-blue-600 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-        >
-          <LogIn className="h-4 w-4" />
-          Sign in with TUM ID
-        </button>
+        {devMode ? (
+          <div className="mt-8 w-full space-y-2">
+            <p className="text-center text-xs font-medium uppercase tracking-wider text-amber-400">Dev Mode — Select User</p>
+            {DEV_LOGIN_USERS.map((u) => (
+              <button
+                key={u.key}
+                onClick={() => signIn("dev-login", { redirectTo: "/", userId: u.key })}
+                className="flex w-full items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-left transition-colors hover:bg-white/10"
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-xs font-bold text-white/60">
+                  {u.label[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white/80">{u.label}</p>
+                  <p className="text-[10px] text-white/30">{u.desc}</p>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${u.color}`}>{u.badge}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <button
+            onClick={() => signIn("keycloak", { redirectTo: "/" })}
+            className="mt-10 flex w-full items-center justify-center gap-2.5 rounded-xl bg-blue-600 px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+          >
+            <LogIn className="h-4 w-4" />
+            Sign in with TUM ID
+          </button>
+        )}
 
         <Link
           href="/guidelines"

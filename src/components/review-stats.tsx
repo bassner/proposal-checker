@@ -9,12 +9,8 @@ import {
   AlertTriangle,
   AlertCircle,
   Lightbulb,
-  FileText,
   CheckCircle2,
   Layers,
-  ShieldCheck,
-  ShieldAlert,
-  ShieldX,
 } from "lucide-react";
 
 interface ReviewStatsProps {
@@ -27,13 +23,25 @@ const SEVERITY_ORDER: Severity[] = ["critical", "major", "minor", "suggestion"];
 
 const severityMeta: Record<
   Severity,
-  { label: string; color: string; bg: string; barColor: string; icon: typeof AlertOctagon }
+  { label: string; color: string; barColor: string; icon: typeof AlertOctagon }
 > = {
-  critical: { label: "Critical", color: "text-red-400", bg: "bg-red-500/15", barColor: "bg-red-500", icon: AlertOctagon },
-  major: { label: "Major", color: "text-orange-400", bg: "bg-orange-500/15", barColor: "bg-orange-500", icon: AlertTriangle },
-  minor: { label: "Minor", color: "text-yellow-400", bg: "bg-yellow-500/15", barColor: "bg-yellow-400", icon: AlertCircle },
-  suggestion: { label: "Suggestions", color: "text-blue-400", bg: "bg-blue-500/15", barColor: "bg-blue-500", icon: Lightbulb },
+  critical: { label: "Critical", color: "text-red-400", barColor: "bg-red-500", icon: AlertOctagon },
+  major: { label: "Major", color: "text-orange-400", barColor: "bg-orange-500", icon: AlertTriangle },
+  minor: { label: "Minor", color: "text-yellow-400", barColor: "bg-yellow-400", icon: AlertCircle },
+  suggestion: { label: "Suggestions", color: "text-blue-400", barColor: "bg-blue-500", icon: Lightbulb },
 };
+
+/** Category bar colors — cycle through a palette to differentiate visually. */
+const CATEGORY_COLORS = [
+  "bg-violet-500",
+  "bg-cyan-500",
+  "bg-pink-500",
+  "bg-teal-500",
+  "bg-amber-500",
+  "bg-indigo-500",
+  "bg-rose-500",
+  "bg-emerald-500",
+];
 
 /** Compute unique page numbers referenced by all findings. */
 function getReferencedPages(findings: Finding[]): Set<number> {
@@ -58,50 +66,7 @@ function groupByCategory(findings: Finding[]): Map<string, Finding[]> {
   return map;
 }
 
-/** SVG progress ring component. */
-function ProgressRing({
-  progress,
-  size = 48,
-  strokeWidth = 4,
-  className,
-}: {
-  progress: number;
-  size?: number;
-  strokeWidth?: number;
-  className?: string;
-}) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - progress);
-
-  return (
-    <svg width={size} height={size} className={cn("-rotate-90", className)}>
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        className="text-white/10"
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        className="text-emerald-400 transition-all duration-500"
-      />
-    </svg>
-  );
-}
-
-export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsProps) {
+export function ReviewStats({ feedback, annotations }: ReviewStatsProps) {
   const findings = feedback.findings;
   const totalFindings = findings.length;
 
@@ -116,10 +81,9 @@ export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsP
 
   const maxSeverityCount = Math.max(...Object.values(severityCounts), 1);
 
-  // Page density
+  // Page density (moved to header hint)
   const referencedPages = useMemo(() => getReferencedPages(findings), [findings]);
   const pageCount = referencedPages.size;
-  const density = pageCount > 0 ? (totalFindings / pageCount).toFixed(1) : "0";
 
   // Annotation progress
   const addressedCount = useMemo(() => {
@@ -129,28 +93,14 @@ export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsP
   const hasAnnotations = annotations != null && Object.keys(annotations).length > 0;
   const annotationProgress = totalFindings > 0 ? addressedCount / totalFindings : 0;
 
-  // Check group coverage (from live SSE state)
-  const hasCheckGroups = checkGroups != null && checkGroups.length > 0;
-  const groupCoverage = useMemo(() => {
-    if (!hasCheckGroups) return null;
-    const clean = checkGroups!.filter((g) => g.status === "done" && (g.findingCount == null || g.findingCount === 0));
-    const withFindings = checkGroups!.filter((g) => g.status === "done" && g.findingCount != null && g.findingCount > 0);
-    const failed = checkGroups!.filter((g) => g.status === "error");
-    return { clean, withFindings, failed, total: checkGroups!.length };
-  }, [checkGroups, hasCheckGroups]);
-
-  // Category breakdown (fallback when check groups not available)
+  // Category breakdown
   const categoryGroups = useMemo(() => groupByCategory(findings), [findings]);
-  const categoriesWithIssues = categoryGroups.size;
   const categoriesSorted = useMemo(() => {
     return [...categoryGroups.entries()].sort((a, b) => b[1].length - a[1].length);
   }, [categoryGroups]);
+  const maxCategoryCount = categoriesSorted.length > 0 ? categoriesSorted[0][1].length : 1;
 
   if (totalFindings === 0) return null;
-
-  // Determine grid column count based on visible sections
-  const sectionCount = 2 + (hasAnnotations ? 1 : 0) + 1; // severity + density + progress? + coverage/category
-  const gridCols = sectionCount >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3";
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm">
@@ -158,165 +108,103 @@ export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsP
       <div className="flex items-center gap-2.5 px-4 py-3">
         <BarChart3 className="h-4 w-4 shrink-0 text-white/40" />
         <span className="flex-1 text-sm font-medium text-white/70">Review Statistics</span>
-        <span className="text-xs text-white/30">{totalFindings} finding{totalFindings !== 1 ? "s" : ""}</span>
+        <span className="text-xs text-white/30">
+          {totalFindings} finding{totalFindings !== 1 ? "s" : ""}
+          {pageCount > 0 && <span> across {pageCount} page{pageCount !== 1 ? "s" : ""}</span>}
+        </span>
       </div>
 
-      {/* Content */}
-      <div className="border-t border-white/5 px-4 pb-4 pt-3">
-          <div className={cn("grid gap-4 sm:grid-cols-2", gridCols)}>
-            {/* 1. Severity breakdown bar chart */}
-            <div className="space-y-2">
-              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-                <Layers className="h-3 w-3" />
-                By Severity
-              </h3>
-              <div className="space-y-1.5">
-                {SEVERITY_ORDER.map((sev) => {
-                  const count = severityCounts[sev];
-                  const meta = severityMeta[sev];
-                  const SevIcon = meta.icon;
-                  const widthPercent = (count / maxSeverityCount) * 100;
-                  return (
-                    <div key={sev} className="flex items-center gap-2">
-                      <SevIcon className={cn("h-3 w-3 shrink-0", meta.color)} aria-hidden />
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-white/50">{meta.label}</span>
-                          <span className={cn("font-bold tabular-nums", count > 0 ? meta.color : "text-white/20")}>
-                            {count}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 h-1.5 rounded-full bg-white/5">
-                          <div
-                            className={cn("h-full rounded-full transition-all duration-500", meta.barColor)}
-                            style={{ width: count > 0 ? `${Math.max(widthPercent, 4)}%` : "0%" }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 2. Page density */}
-            <div className="space-y-2">
-              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-                <FileText className="h-3 w-3" />
-                Page Density
-              </h3>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold tabular-nums text-white/80">{density}</span>
-                <span className="text-[11px] text-white/30">findings/page</span>
-              </div>
-              <p className="text-[10px] text-white/25">
-                {totalFindings} finding{totalFindings !== 1 ? "s" : ""} across {pageCount} page{pageCount !== 1 ? "s" : ""}
-              </p>
-            </div>
-
-            {/* 3. Annotation progress (only if annotations exist) */}
-            {hasAnnotations && (
-              <div className="space-y-2">
-                <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Progress
-                </h3>
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <ProgressRing progress={annotationProgress} size={48} strokeWidth={4} />
-                    <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold tabular-nums text-white/70">
-                      {Math.round(annotationProgress * 100)}%
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-xs text-white/60">
-                      <span className="font-semibold text-emerald-400">{addressedCount}</span>
-                      <span className="text-white/30"> / {totalFindings}</span>
-                    </p>
-                    <p className="text-[10px] text-white/25">addressed</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 4. Check group coverage (when available) or category fallback */}
-            <div className={cn("space-y-2", !hasAnnotations && "sm:col-span-2 lg:col-span-1")}>
-              {hasCheckGroups && groupCoverage ? (
-                <>
-                  <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-                    <ShieldCheck className="h-3 w-3" />
-                    Check Groups
-                  </h3>
-                  <div className="space-y-1">
-                    {/* Groups with findings */}
-                    {groupCoverage.withFindings.map((g) => (
-                      <div key={g.id} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <ShieldAlert className="h-3 w-3 shrink-0 text-amber-400" />
-                          <span className="truncate text-[11px] text-white/50">{g.label}</span>
-                        </div>
-                        <span className="shrink-0 text-[10px] font-medium tabular-nums text-amber-400">
-                          {g.findingCount}
+      {/* Two-column bar charts: Severity + Category */}
+      <div className="border-t border-white/5 px-4 pb-3 pt-3">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Severity breakdown */}
+          <div className="space-y-2">
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
+              <Layers className="h-3 w-3" />
+              By Severity
+            </h3>
+            <div className="space-y-1.5">
+              {SEVERITY_ORDER.map((sev) => {
+                const count = severityCounts[sev];
+                const meta = severityMeta[sev];
+                const SevIcon = meta.icon;
+                const widthPercent = (count / maxSeverityCount) * 100;
+                return (
+                  <div key={sev} className="flex items-center gap-2">
+                    <SevIcon className={cn("h-3 w-3 shrink-0", meta.color)} aria-hidden />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-white/50">{meta.label}</span>
+                        <span className={cn("font-bold tabular-nums", count > 0 ? meta.color : "text-white/20")}>
+                          {count}
                         </span>
                       </div>
-                    ))}
-                    {/* Clean groups */}
-                    {groupCoverage.clean.map((g) => (
-                      <div key={g.id} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-400/60" />
-                          <span className="truncate text-[11px] text-white/30">{g.label}</span>
-                        </div>
-                        <span className="shrink-0 text-[10px] font-medium text-emerald-400/60">clean</span>
+                      <div className="mt-0.5 h-1.5 rounded-full bg-white/5">
+                        <div
+                          className={cn("h-full rounded-full transition-all duration-500", meta.barColor)}
+                          style={{ width: count > 0 ? `${Math.max(widthPercent, 4)}%` : "0%" }}
+                        />
                       </div>
-                    ))}
-                    {/* Failed groups */}
-                    {groupCoverage.failed.map((g) => (
-                      <div key={g.id} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <ShieldX className="h-3 w-3 shrink-0 text-red-400/60" />
-                          <span className="truncate text-[11px] text-white/30">{g.label}</span>
-                        </div>
-                        <span className="shrink-0 text-[10px] font-medium text-red-400/60">failed</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Category breakdown — horizontal bar chart */}
+          <div className="space-y-2">
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
+              <BarChart3 className="h-3 w-3" />
+              By Category
+            </h3>
+            <div className="space-y-1.5">
+              {categoriesSorted.map(([category, items], idx) => {
+                const widthPercent = (items.length / maxCategoryCount) * 100;
+                const barColor = CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
+                return (
+                  <div key={category} className="flex items-center gap-2">
+                    <div className={cn("h-3 w-3 shrink-0 rounded-sm", barColor)} style={{ opacity: 0.7 }} aria-hidden />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="truncate text-white/50">{category}</span>
+                        <span className="font-bold tabular-nums text-white/40">{items.length}</span>
                       </div>
-                    ))}
+                      <div className="mt-0.5 h-1.5 rounded-full bg-white/5">
+                        <div
+                          className={cn("h-full rounded-full transition-all duration-500", barColor)}
+                          style={{ width: `${Math.max(widthPercent, 4)}%`, opacity: 0.7 }}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[10px] text-white/20">
-                    {groupCoverage.withFindings.length} of {groupCoverage.total} groups found issues
-                  </p>
-                </>
-              ) : (
-                <>
-                  <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-                    <BarChart3 className="h-3 w-3" />
-                    By Category
-                  </h3>
-                  <div className="space-y-1">
-                    {categoriesSorted.map(([category, items]) => {
-                      const hasCritical = items.some((f) => f.severity === "critical");
-                      const hasMajor = items.some((f) => f.severity === "major");
-                      return (
-                        <div key={category} className="flex items-center justify-between gap-2">
-                          <span className="truncate text-[11px] text-white/50">{category}</span>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            {hasCritical && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
-                            {hasMajor && !hasCritical && <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />}
-                            <span className="text-[10px] font-medium tabular-nums text-white/40">{items.length}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {categoriesWithIssues > 0 && (
-                    <p className="text-[10px] text-white/20">
-                      {categoriesWithIssues} categor{categoriesWithIssues === 1 ? "y" : "ies"} with findings
-                    </p>
-                  )}
-                </>
-              )}
+                );
+              })}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Progress bar (full-width, bottom) — only if annotations exist */}
+      {hasAnnotations && (
+        <div className="border-t border-white/5 px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-white/30" />
+            <div className="flex-1">
+              <div className="h-1.5 rounded-full bg-white/5">
+                <div
+                  className="h-full rounded-full bg-emerald-400 transition-all duration-500"
+                  style={{ width: `${Math.max(annotationProgress * 100, addressedCount > 0 ? 2 : 0)}%` }}
+                />
+              </div>
+            </div>
+            <span className="text-[11px] tabular-nums text-white/40">
+              <span className="font-semibold text-emerald-400">{addressedCount}</span>
+              <span className="text-white/25"> / {totalFindings} addressed</span>
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

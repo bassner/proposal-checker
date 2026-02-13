@@ -592,6 +592,63 @@ async function ensureSchema(): Promise<void> {
       ON CONFLICT (id) DO NOTHING;
     `);
 
+    // ── Deduplicate users by email, then add UNIQUE constraint ──
+    // If the same person logged in with different Keycloak subs, merge into one row.
+    // Keeps the most recently updated row per email; re-points reviews to the kept id.
+    try {
+      // Find duplicate emails (more than one row per email)
+      const dupes = await pool.query(`
+        SELECT email, array_agg(id ORDER BY updated_at DESC) AS ids
+        FROM users
+        WHERE email != ''
+        GROUP BY email
+        HAVING count(*) > 1
+      `);
+      for (const row of dupes.rows) {
+        const keepId = row.ids[0]; // most recently updated
+        const removeIds = row.ids.slice(1);
+        // Migrate reviews to the kept id
+        for (const oldId of removeIds) {
+          await pool.query(`UPDATE reviews SET user_id = $1 WHERE user_id = $2`, [keepId, oldId]);
+          await pool.query(`UPDATE reviews SET student_id = $1 WHERE student_id = $2`, [keepId, oldId]);
+          await pool.query(`UPDATE reviews SET supervisor_id = $1 WHERE supervisor_id = $2`, [keepId, oldId]);
+          await pool.query(`UPDATE review_audit_log SET user_id = $1 WHERE user_id = $2`, [keepId, oldId]);
+          await pool.query(`DELETE FROM users WHERE id = $1`, [keepId === oldId ? 'SKIP' : oldId]);
+        }
+      }
+      if (dupes.rows.length > 0) {
+        console.log(`[db] Deduplicated ${dupes.rows.length} email(s) in users table`);
+      }
+    } catch (err) {
+      console.error("[db] User dedup migration failed:", err);
+    }
+
+    // Add UNIQUE constraint on email (idempotent)
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(email) WHERE email != '';
+    `).catch((err) => {
+      console.error("[db] Failed to create unique email index:", err);
+    });
+
+    // Seed dev users when AUTH_DEV_MODE is enabled
+    if (process.env.AUTH_DEV_MODE === "true") {
+      const devUsers = [
+        { id: "dev-admin-00000000-0000-0000-0000-000000000001", name: "Dev Admin", email: "admin@test.local", role: "admin" },
+        { id: "dev-phd-00000000-0000-0000-0000-000000000002", name: "Dr. Supervisor", email: "phd@test.local", role: "phd" },
+        { id: "dev-student-00000000-0000-0000-0000-000000000003", name: "Alice Student", email: "alice@test.local", role: "student" },
+        { id: "dev-student-00000000-0000-0000-0000-000000000004", name: "Bob Student", email: "bob@test.local", role: "student" },
+        { id: "dev-phd-00000000-0000-0000-0000-000000000005", name: "Prof. Reviewer", email: "phd2@test.local", role: "phd" },
+      ];
+      for (const u of devUsers) {
+        await pool.query(
+          `INSERT INTO users (id, email, name, role) VALUES ($1, $2, $3, $4)
+           ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role, updated_at = NOW()`,
+          [u.id, u.email, u.name, u.role]
+        );
+      }
+      console.log("[db] Dev users seeded");
+    }
+
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
   } catch (err) {
@@ -648,6 +705,25 @@ export async function upsertUser(
   const cacheKey = `${id}:${role}`;
   if (upsertedUsers.has(cacheKey)) return;
   await ensureSchema();
+
+  // If a user with this email already exists under a different id (Keycloak sub changed),
+  // migrate their reviews and delete the old row before upserting with the new id.
+  if (email) {
+    const existing = await pool.query(
+      `SELECT id FROM users WHERE email = $1 AND id != $2`,
+      [email, id]
+    );
+    for (const row of existing.rows) {
+      const oldId = row.id;
+      await pool.query(`UPDATE reviews SET user_id = $1 WHERE user_id = $2`, [id, oldId]);
+      await pool.query(`UPDATE reviews SET student_id = $1 WHERE student_id = $2`, [id, oldId]);
+      await pool.query(`UPDATE reviews SET supervisor_id = $1 WHERE supervisor_id = $2`, [id, oldId]);
+      await pool.query(`UPDATE review_audit_log SET user_id = $1 WHERE user_id = $2`, [id, oldId]);
+      await pool.query(`DELETE FROM users WHERE id = $1`, [oldId]);
+      console.log(`[db] Migrated user identity: ${oldId} -> ${id} (${email})`);
+    }
+  }
+
   await pool.query(
     `INSERT INTO users (id, email, name, role, updated_at)
      VALUES ($1, $2, $3, $4, NOW())

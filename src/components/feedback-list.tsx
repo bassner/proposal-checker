@@ -549,16 +549,20 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, 
         )}
       >
         <div className="flex items-start gap-4">
-          <div className="relative shrink-0">
-            <ScoreRing score={score} maxScore={maxScore} size={64} strokeWidth={5} />
-            <span
-              className={cn(
-                "absolute inset-0 flex items-center justify-center text-lg font-bold tabular-nums",
-                scoreColor
-              )}
-            >
-              {score}
-            </span>
+          <div className="shrink-0 flex flex-col items-center gap-0.5">
+            <div className="relative">
+              <ScoreRing score={score} maxScore={maxScore} size={64} strokeWidth={5} />
+              <span
+                className={cn(
+                  "absolute inset-0 flex items-center justify-center tabular-nums",
+                  scoreColor
+                )}
+              >
+                <span className="text-lg font-bold">{score}</span>
+                <span className="text-[10px] font-medium text-white/25">/{maxScore}</span>
+              </span>
+            </div>
+            <span className="text-[9px] font-medium uppercase tracking-wider text-white/25">Quality Score</span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">

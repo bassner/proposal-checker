@@ -1,8 +1,25 @@
 import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
+import Credentials from "next-auth/providers/credentials";
 import { APP_ROLES, getKeycloakRoleMapping } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import "@/types/auth";
+
+// ---------------------------------------------------------------------------
+// Dev mode test users (only available when AUTH_DEV_MODE=true)
+// ---------------------------------------------------------------------------
+
+const DEV_USERS: Record<string, { id: string; name: string; email: string; role: AppRole }> = {
+  admin: { id: "dev-admin-00000000-0000-0000-0000-000000000001", name: "Dev Admin", email: "admin@test.local", role: "admin" },
+  phd: { id: "dev-phd-00000000-0000-0000-0000-000000000002", name: "Dr. Supervisor", email: "phd@test.local", role: "phd" },
+  student1: { id: "dev-student-00000000-0000-0000-0000-000000000003", name: "Alice Student", email: "alice@test.local", role: "student" },
+  student2: { id: "dev-student-00000000-0000-0000-0000-000000000004", name: "Bob Student", email: "bob@test.local", role: "student" },
+  phd2: { id: "dev-phd-00000000-0000-0000-0000-000000000005", name: "Prof. Reviewer", email: "phd2@test.local", role: "phd" },
+};
+
+// ---------------------------------------------------------------------------
+// Keycloak helpers
+// ---------------------------------------------------------------------------
 
 /**
  * Decode the payload of a JWT without verifying the signature.
@@ -22,11 +39,6 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 /**
  * Extract the highest-priority app role from a Keycloak access token.
- * Collects roles from both `resource_access[clientId].roles` (client-scoped)
- * and `realm_access.roles`, then returns the highest-priority app role found
- * across both sources (admin > phd > student).
- * Role names are configurable via AUTH_ROLE_ADMIN / AUTH_ROLE_PHD / AUTH_ROLE_STUDENT env vars.
- * Returns undefined if no recognized role is found (fail-closed).
  */
 function extractRole(accessToken: string): AppRole | undefined {
   const payload = decodeJwtPayload(accessToken);
@@ -35,7 +47,6 @@ function extractRole(accessToken: string): AppRole | undefined {
   const clientId = process.env.AUTH_KEYCLOAK_ID;
   const roleMapping = getKeycloakRoleMapping();
 
-  // Collect roles from client-scoped roles, realm roles, and groups
   const clientRoles = clientId
     ? (payload.resource_access as Record<string, { roles?: string[] }>)?.[clientId]?.roles ?? []
     : [];
@@ -43,7 +54,6 @@ function extractRole(accessToken: string): AppRole | undefined {
   const groups = Array.isArray(payload.groups) ? (payload.groups as string[]) : [];
   const allRoles = [...clientRoles, ...realmRoles, ...groups];
 
-  // Return the highest-priority recognized role
   for (const appRole of APP_ROLES) {
     const keycloakNames = Object.entries(roleMapping)
       .filter(([, ar]) => ar === appRole)
@@ -55,8 +65,6 @@ function extractRole(accessToken: string): AppRole | undefined {
 
 /**
  * Refresh the Keycloak access token using the stored refresh token.
- * Re-extracts the role from the fresh access token so role changes
- * propagate within ~5 minutes (Keycloak's default access token lifetime).
  */
 async function refreshAccessToken(token: Record<string, unknown>): Promise<Record<string, unknown>> {
   const issuer = process.env.AUTH_KEYCLOAK_ISSUER;
@@ -76,7 +84,7 @@ async function refreshAccessToken(token: Record<string, unknown>): Promise<Recor
       client_secret: clientSecret,
       refresh_token: token.refreshToken as string,
     }),
-    signal: AbortSignal.timeout(10_000), // Prevent hanging if Keycloak is unreachable
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!response.ok) {
@@ -95,25 +103,59 @@ async function refreshAccessToken(token: Record<string, unknown>): Promise<Recor
     refreshToken: data.refresh_token ?? token.refreshToken,
     idToken: data.id_token ?? token.idToken,
     expiresAt: Math.floor(Date.now() / 1000) + (data.expires_in ?? 300),
-    // Re-extract role from the fresh token — propagates Keycloak role changes
     role: newRole,
-    // Clear any previous refresh error
     error: newRole ? undefined : "NoRole",
   };
 }
 
+// ---------------------------------------------------------------------------
+// Providers
+// ---------------------------------------------------------------------------
+
+const isDevMode = process.env.AUTH_DEV_MODE === "true" || process.env.NEXT_PUBLIC_AUTH_DEV_MODE === "true";
+
+const providers = isDevMode
+  ? [
+      Credentials({
+        id: "dev-login",
+        name: "Dev Login",
+        credentials: {
+          userId: { label: "User", type: "text" },
+        },
+        authorize(credentials) {
+          const userId = credentials?.userId as string | undefined;
+          if (!userId || !(userId in DEV_USERS)) return null;
+          const u = DEV_USERS[userId];
+          return { id: u.id, name: u.name, email: u.email, role: u.role };
+        },
+      }),
+    ]
+  : [Keycloak];
+
+// ---------------------------------------------------------------------------
+// NextAuth config
+// ---------------------------------------------------------------------------
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: [Keycloak],
+  providers,
   pages: {
     signIn: "/",
   },
   session: {
     strategy: "jwt",
-    maxAge: 8 * 60 * 60, // 8 hours — access token refreshes keep role current
+    maxAge: 8 * 60 * 60,
   },
   callbacks: {
-    jwt({ token, account }) {
-      // Initial sign-in: extract everything from the OIDC response
+    jwt({ token, account, user }) {
+      // Dev mode: credentials provider — store role directly
+      if (isDevMode && user) {
+        token.sub = (user as { id: string }).id;
+        token.role = (user as { role?: AppRole }).role;
+        token.expiresAt = Math.floor(Date.now() / 1000) + 8 * 60 * 60;
+        return token;
+      }
+
+      // Keycloak: initial sign-in
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
@@ -131,10 +173,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return token;
       }
 
+      // Dev mode doesn't need refresh
+      if (isDevMode) return token;
+
       // Access token expired — refresh it
       return refreshAccessToken(token).catch((err) => {
         console.error("[auth] Token refresh failed:", err);
-        // Clear role and tokens so the user is denied by authorized() and requireAuth()
         return { ...token, role: undefined, accessToken: undefined, error: "RefreshTokenError" as const };
       });
     },
@@ -142,15 +186,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.sub) session.user.id = token.sub;
       if (token.role) session.user.role = token.role as AppRole;
       if (token.idToken) session.idToken = token.idToken as string;
-      // Signal client that refresh failed — should re-login
       if (token.error) session.error = token.error as string;
       return session;
     },
     authorized({ auth }) {
-      // User must be authenticated AND have a recognized role AND no auth error.
-      // Fail-closed: users without a mapped role or with a failed token refresh
-      // are denied even if they authenticated successfully via Keycloak.
       return !!auth?.user?.role && !auth?.error;
     },
   },
 });
+
+/** Dev users — exported for use in dev-mode login UI. */
+export { DEV_USERS, isDevMode };
