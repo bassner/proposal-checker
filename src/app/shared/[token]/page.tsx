@@ -220,7 +220,7 @@ export default function SharedReviewPage() {
 
 function SharedResultsView({ review }: { review: SharedReview }) {
   const canComment = review.canComment === true;
-  const { annotations, addComment, deleteComment, submitting } = useComments(
+  const { annotations, addComment, replyComment, resolveThread, deleteComment, submitting } = useComments(
     review.id,
     review.annotations
   );
@@ -234,6 +234,14 @@ function SharedResultsView({ review }: { review: SharedReview }) {
 
   const handleDeleteComment = canComment
     ? async (findingIndex: number, commentId: string) => { await deleteComment(findingIndex, commentId); }
+    : undefined;
+
+  const handleReplyComment = canComment
+    ? async (findingIndex: number, parentId: string, text: string) => { await replyComment(findingIndex, parentId, text); }
+    : undefined;
+
+  const handleResolveThread = canComment
+    ? async (findingIndex: number, commentId: string, status: "resolved" | "open") => { await resolveThread(findingIndex, commentId, status); }
     : undefined;
 
   return (
@@ -274,6 +282,8 @@ function SharedResultsView({ review }: { review: SharedReview }) {
             annotations={displayAnnotations}
             onAddComment={handleAddComment}
             onDeleteComment={handleDeleteComment}
+            onReplyComment={handleReplyComment}
+            onResolveThread={handleResolveThread}
             commentSubmitting={submitting}
           />
         </main>

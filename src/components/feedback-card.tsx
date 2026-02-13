@@ -1,24 +1,31 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import type { Finding, Severity, AnnotationStatus, AnnotationEntry, Comment } from "@/types/review";
 import { FINDING_CATEGORIES, normalizeFindingCategory } from "@/types/review";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Check, X, Wrench, MessageSquare, Send, Trash2, AlertOctagon, AlertTriangle, AlertCircle, Lightbulb, FileText } from "lucide-react";
+import { Check, X, Wrench, MessageSquare, Send, AlertOctagon, AlertTriangle, AlertCircle, Lightbulb, FileText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { COMMENT_TEMPLATES } from "@/lib/comment-templates";
 import { ConflictIndicator } from "@/components/conflict-indicator";
 import type { AnnotationConflict } from "@/types/review";
+import { CommentThread, ThreadSummary } from "@/components/comment-thread";
 
 interface FeedbackCardProps {
   finding: Finding;
   annotation?: AnnotationEntry;
   onAnnotate?: (status: AnnotationStatus) => void;
   focused?: boolean;
+  /** Add a new top-level comment. */
   onAddComment?: (text: string) => Promise<void>;
+  /** Delete a comment by ID. */
   onDeleteComment?: (commentId: string) => Promise<void>;
+  /** Add a reply to an existing comment thread. */
+  onReplyComment?: (parentId: string, text: string) => Promise<void>;
+  /** Resolve or reopen a thread. */
+  onResolveThread?: (commentId: string, status: "resolved" | "open") => Promise<void>;
   commentSubmitting?: boolean;
   /** Called when a page reference in the finding is clicked (for PDF viewer navigation). */
   onPageClick?: (page: number) => void;
@@ -55,43 +62,30 @@ function renderQuoteWithBold(quote: string): ReactNode {
   );
 }
 
-function formatCommentDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
-    " " +
-    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
+/** Organize flat comments into threads: top-level comments with their replies. */
+function organizeThreads(comments: Comment[]): { comment: Comment; replies: Comment[] }[] {
+  const topLevel = comments.filter((c) => !c.parentId);
+  const replyMap = new Map<string, Comment[]>();
 
-function CommentItem({ comment, onDelete }: { comment: Comment; onDelete?: (id: string) => Promise<void> }) {
-  const [deleting, setDeleting] = useState(false);
+  for (const c of comments) {
+    if (c.parentId) {
+      if (!replyMap.has(c.parentId)) replyMap.set(c.parentId, []);
+      replyMap.get(c.parentId)!.push(c);
+    }
+  }
 
-  return (
-    <div className="group flex gap-2 rounded-md bg-slate-50 px-2.5 py-2 dark:bg-white/[0.03]">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-purple-600 dark:text-purple-300/80">{comment.authorName}</span>
-          <span className="text-[9px] text-slate-400 dark:text-white/20">{formatCommentDate(comment.createdAt)}</span>
-        </div>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600 whitespace-pre-wrap break-words dark:text-white/60">
-          {comment.text}
-        </p>
-      </div>
-      {onDelete && (
-        <button
-          type="button"
-          disabled={deleting}
-          onClick={async () => {
-            setDeleting(true);
-            try { await onDelete(comment.id); } finally { setDeleting(false); }
-          }}
-          className="no-print shrink-0 self-start opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500 dark:text-white/20 dark:hover:text-red-400"
-          aria-label="Delete comment"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      )}
-    </div>
-  );
+  // Sort replies by creation time
+  for (const replies of replyMap.values()) {
+    replies.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  // Sort threads by creation time (oldest first)
+  topLevel.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  return topLevel.map((comment) => ({
+    comment,
+    replies: replyMap.get(comment.id) ?? [],
+  }));
 }
 
 function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Promise<void>; submitting?: boolean }) {
@@ -122,7 +116,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
         ref={textareaRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Add supervisor comment..."
+        placeholder="Start a new discussion thread..."
         rows={1}
         className="flex-1 resize-none rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 placeholder:text-slate-400 focus:border-purple-400 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:placeholder:text-white/20 dark:focus:border-purple-500/40"
         onKeyDown={(e) => {
@@ -182,7 +176,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
   );
 }
 
-export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, commentSubmitting, onPageClick, conflict }: FeedbackCardProps) {
+export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflict }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
   const SevIcon = config.icon;
   const [locationsExpanded, setLocationsExpanded] = useState(false);
@@ -206,8 +200,16 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
 
   const isDismissed = annotation?.status === "dismissed";
   const isFixed = annotation?.status === "fixed";
-  const comments = annotation?.comments ?? [];
-  const commentCount = comments.length;
+  const comments = useMemo(() => annotation?.comments ?? [], [annotation?.comments]);
+
+  // Organize comments into threads
+  const threads = useMemo(() => organizeThreads(comments), [comments]);
+  const threadCount = threads.length;
+  const unresolvedCount = threads.filter((t) => t.comment.threadStatus !== "resolved").length;
+  const totalCommentCount = comments.length;
+
+  // Whether the user can manage threads (has onReplyComment or onResolveThread means they're a supervisor)
+  const canManage = !!(onReplyComment || onResolveThread);
 
   return (
     <div
@@ -233,10 +235,10 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
           )}>
             {finding.title}
           </p>
-          {commentCount > 0 && (
+          {totalCommentCount > 0 && (
             <span className="no-print flex shrink-0 items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-medium text-purple-600 dark:bg-purple-500/15 dark:text-purple-300/80">
               <MessageSquare className="h-2.5 w-2.5" />
-              {commentCount}
+              {totalCommentCount}
             </span>
           )}
         </div>
@@ -336,20 +338,30 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
           </div>
         )}
 
-        {/* Supervisor comments */}
-        {commentCount > 0 && (
-          <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-white/5">
-            {comments.map((comment) => (
-              <CommentItem
-                key={comment.id}
-                comment={comment}
+        {/* Threaded comments */}
+        {threadCount > 0 && (
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-white/5">
+            <ThreadSummary
+              comments={comments}
+              threadCount={threadCount}
+              unresolvedCount={unresolvedCount}
+            />
+            {threads.map((thread) => (
+              <CommentThread
+                key={thread.comment.id}
+                comment={thread.comment}
+                replies={thread.replies}
+                canManage={canManage}
+                onReply={onReplyComment}
                 onDelete={onDeleteComment}
+                onResolve={onResolveThread}
+                submitting={commentSubmitting}
               />
             ))}
           </div>
         )}
 
-        {/* Comment form for supervisors */}
+        {/* Comment form for supervisors (starts a new thread) */}
         {onAddComment && (
           <div className="pt-1.5">
             <CommentForm onSubmit={onAddComment} submitting={commentSubmitting} />

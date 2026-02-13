@@ -138,7 +138,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
   const canComment = isSupervisor; // Admin/PhD can comment on any review
 
   const { annotations, toggleAnnotation, bulkAnnotate, clearAllAnnotations } = useAnnotations(reviewId, initialAnnotations);
-  const { annotations: commentAnnotations, addComment, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
+  const { annotations: commentAnnotations, addComment, replyComment, resolveThread, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
   const { conflicts } = useConflicts(reviewId, isSupervisor);
 
   // PDF viewer state
@@ -202,6 +202,18 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
   const handleDeleteComment = canComment
     ? async (findingIndex: number, commentId: string) => {
         await deleteComment(findingIndex, commentId);
+      }
+    : undefined;
+
+  const handleReplyComment = canComment
+    ? async (findingIndex: number, parentId: string, text: string) => {
+        await replyComment(findingIndex, parentId, text);
+      }
+    : undefined;
+
+  const handleResolveThread = canComment
+    ? async (findingIndex: number, commentId: string, status: "resolved" | "open") => {
+        await resolveThread(findingIndex, commentId, status);
       }
     : undefined;
 
@@ -271,6 +283,8 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
               focusedPosition={focusedPosition}
               onAddComment={handleAddComment}
               onDeleteComment={handleDeleteComment}
+              onReplyComment={handleReplyComment}
+              onResolveThread={handleResolveThread}
               commentSubmitting={commentSubmitting}
               onPageClick={handlePageClick}
               conflicts={conflicts}
