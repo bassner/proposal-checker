@@ -3,6 +3,8 @@
  * to warn users about obvious issues before submitting for a full review.
  */
 
+import type { ReviewMode } from "@/types/review";
+
 export type PreflightSeverity = "warning" | "info";
 
 export interface PreflightWarning {
@@ -22,7 +24,7 @@ const CHARS_PER_PAGE = 2750;
  * Run preflight checks on extracted PDF text. Returns an array of warnings.
  * These are lightweight heuristic checks, not LLM-powered.
  */
-export function runPreflightChecks(fullText: string, pageCount: number): PreflightWarning[] {
+export function runPreflightChecks(fullText: string, pageCount: number, mode: ReviewMode = "proposal"): PreflightWarning[] {
   const warnings: PreflightWarning[] = [];
   const lower = fullText.toLowerCase();
 
@@ -77,7 +79,7 @@ export function runPreflightChecks(fullText: string, pageCount: number): Preflig
   // lines that look like headings (short, capitalized, no period at end)
   const hasNumberedHeadings = /\n\s*\d+(\.\d+)*\.?\s+[A-Z]/.test(fullText);
   const hasCommonHeadings =
-    /\b(introduction|abstract|conclusion|methodology|approach|related\s+work|background|evaluation|discussion|results|schedule|timeline|motivation|problem\s+statement|objectives)\b/i.test(
+    /\b(introduction|abstract|conclusion|related\s+work|background|evaluation|discussion|results|schedule|timeline|motivation|problem|objectives?)\b/i.test(
       fullText
     );
   if (!hasNumberedHeadings && !hasCommonHeadings) {
@@ -86,28 +88,49 @@ export function runPreflightChecks(fullText: string, pageCount: number): Preflig
       severity: "warning",
       message: "No section headings detected in the document",
       suggestion:
-        "Structure your proposal with clear section headings (e.g., Introduction, Problem Statement, Methodology, Schedule).",
+        "Structure your proposal with clear section headings (e.g., Introduction, Problem, Motivation, Objective, Schedule).",
     });
   }
 
-  // 5. Missing common sections
-  const missingSections: { name: string; patterns: RegExp }[] = [
+  // 5. Missing required sections (mode-dependent)
+  // Proposal: Introduction, Problem, Motivation, Objective, Schedule
+  // Thesis:   Introduction, Problem, Motivation, Conclusion (content chapters are flexible)
+  const commonSections: { name: string; patterns: RegExp }[] = [
     {
       name: "Introduction",
       patterns: /\b(introduction|einleitung)\b/i,
     },
     {
-      name: "Problem Statement or Motivation",
-      patterns: /\b(problem\s+statement|motivation|problem\s+description|research\s+question)\b/i,
+      name: "Problem",
+      patterns: /\b(problem|problemstellung)\b/i,
     },
     {
-      name: "Methodology or Approach",
-      patterns: /\b(method(ology)?|approach|proposed\s+(solution|approach|method)|technical\s+approach)\b/i,
+      name: "Motivation",
+      patterns: /\b(motivation)\b/i,
+    },
+  ];
+
+  const proposalOnlySections: { name: string; patterns: RegExp }[] = [
+    {
+      name: "Objective",
+      patterns: /\b(objectives?|zielsetzung|goals?)\b/i,
     },
     {
-      name: "Schedule or Timeline",
-      patterns: /\b(schedule|timeline|time\s*plan|milestones?|gantt|work\s*plan|project\s*plan)\b/i,
+      name: "Schedule",
+      patterns: /\b(schedule|timeline|time\s*plan|milestones?|gantt|work\s*plan|project\s*plan|zeitplan)\b/i,
     },
+  ];
+
+  const thesisOnlySections: { name: string; patterns: RegExp }[] = [
+    {
+      name: "Conclusion",
+      patterns: /\b(conclusion|fazit|summary\s+and\s+conclusion|concluding\s+remarks)\b/i,
+    },
+  ];
+
+  const missingSections = [
+    ...commonSections,
+    ...(mode === "thesis" ? thesisOnlySections : proposalOnlySections),
   ];
 
   const missing = missingSections.filter((s) => !s.patterns.test(fullText));
@@ -123,14 +146,22 @@ export function runPreflightChecks(fullText: string, pageCount: number): Preflig
     });
   }
 
-  // 6. Extremely long document warning (possible thesis instead of proposal)
-  if (pageCount > 15 && estimatedPages > 12) {
+  // 6. Unusual document length
+  if (mode === "proposal" && pageCount > 15 && estimatedPages > 12) {
     warnings.push({
       id: "long-document",
       severity: "info",
       message: `Document is ${pageCount} pages long, which exceeds the typical proposal length`,
       suggestion:
         "If this is a full thesis rather than a proposal, consider selecting the 'Thesis' review mode instead.",
+    });
+  } else if (mode === "thesis" && pageCount < 15 && estimatedPages < 12) {
+    warnings.push({
+      id: "short-thesis",
+      severity: "info",
+      message: `Document is ${pageCount} pages long, which is short for a thesis`,
+      suggestion:
+        "If this is a proposal rather than a full thesis, consider selecting the 'Proposal' review mode instead.",
     });
   }
 

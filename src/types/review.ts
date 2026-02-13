@@ -148,7 +148,9 @@ const PROPOSAL_GROUP_IDS: CheckGroupId[] = [
 ];
 
 const THESIS_GROUP_IDS: CheckGroupId[] = [
-  ...PROPOSAL_GROUP_IDS, "related-work", "methodology", "evaluation",
+  "structure", "problem-motivation-objectives", "bibliography", "figures",
+  "writing-style", "writing-structure", "writing-formatting", "ai-transparency",
+  "related-work", "methodology", "evaluation",
 ];
 
 /** Get check groups for a given review mode. */

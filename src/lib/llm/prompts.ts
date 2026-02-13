@@ -118,6 +118,8 @@ Review the proposal against these specific rules only:
 
 4. **Forbidden Sentence Starters**: Sentences must NOT start with "As…", "Since…", "To…", "In order to…", or "Because…". Flag each occurrence.
 
+5. **No Excessive Abbreviations**: Do not excessively use abbreviations. Readers might not be familiar with them. Flag if abbreviations are used without first defining them.
+
 Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
   "writing-structure": `${SHARED_ROLE_PROMPT}
@@ -129,6 +131,12 @@ Review the proposal against these specific rules only:
 1. **Paragraph Length**: Paragraphs should be 5-8 lines long. Flag paragraphs that are too short (1-2 lines) or too long (>10 lines). Use the rendered page images to visually assess actual paragraph line counts, as line count depends on formatting, margins, and font size which the extracted text alone cannot convey.
 
 2. **One Idea Per Paragraph**: Each paragraph should develop one single coherent idea. Flag paragraphs that jump between multiple unrelated topics.
+
+3. **Prose Over Bullet Points**: The text should be written mainly in regular paragraphs, NOT in bullet points. Keep bullet points and lists to a maximum of 1-2 lines each. Flag sections that rely heavily on bullet points instead of prose.
+
+4. **Subsection Depth**: Use at most three-digit section numbering (e.g. 3.1.4 is ok, but 3.1.4.1 is too deep). Flag overly deep nesting.
+
+5. **Text Before Subsections**: Every chapter/section must include introductory text before its first subsection (e.g. Section 1 must have text before Section 1.1). Flag sections that jump directly into subsections without introduction.
 
 Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
@@ -218,7 +226,7 @@ const THESIS_PROMPT_OVERRIDES: Partial<Record<CheckGroupId, string>> = {
 
 Review the thesis against these specific rules only:
 
-1. **Required Sections**: The thesis must contain ALL of these sections: Abstract, Introduction, Related Work (or Background), Methodology (or Approach), Implementation, Evaluation, Discussion, Conclusion, Bibliography. Flag any missing section as CRITICAL.
+1. **Required Sections**: The thesis must contain at minimum: Abstract, Introduction, Problem, Motivation, Conclusion, and Bibliography. Between Motivation and Conclusion, there should be content chapters (e.g. Related Work, Methodology, Implementation, Evaluation, Discussion — the exact names and number are flexible). Flag missing Introduction, Problem, Motivation, Conclusion, or Bibliography as CRITICAL. Flag if there are no content chapters between Motivation and Conclusion.
 
 2. **Abstract Quality**: The abstract should summarize the problem, approach, and key results. It should be approximately half a page. Too short or too long is an issue.
 
@@ -267,6 +275,22 @@ Review the thesis against these specific rules only:
 5. **Appropriate Diagrams**: The methodology section should include relevant diagrams (architecture, class, activity, or sequence diagrams). Flag if no visual representation of the approach is provided.
 
 6. **Separation of Concerns**: The methodology should focus on the "what" and "why" (design), while implementation details (the "how") belong in a separate Implementation chapter. Flag mixing of design and implementation.
+
+Evaluate the thesis and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
+
+  "problem-motivation-objectives": `${SHARED_THESIS_ROLE_PROMPT}
+
+## Your Task: Check PROBLEM & MOTIVATION Quality
+
+Review the thesis against these specific rules only:
+
+1. **Problem Section — Clear Definition**: The thesis must clearly define the problem being addressed. The problem should identify stakeholders/actors and describe how the problem negatively influences them.
+
+2. **Problem Section — No Premature Solutions**: The Problem section should focus on describing the problem and its consequences, not jump into solutions.
+
+3. **Motivation Section — Scientific Importance**: The Motivation section should outline why it is scientifically important to solve the problem. It should focus on the positive aspects of having a solution.
+
+4. **Motivation Section — No Repetition**: The Motivation must NOT simply repeat the Problem. It should focus on the positive vision and impact, not re-describe the problem.
 
 Evaluate the thesis and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 

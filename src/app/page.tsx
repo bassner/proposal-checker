@@ -370,6 +370,7 @@ function UploadPage() {
       try {
         const formData = new FormData();
         formData.append("file", file!);
+        formData.append("mode", mode);
         const res = await fetch("/api/preflight", { method: "POST", body: formData });
         if (!res.ok || cancelled) return;
         const data = await res.json();
@@ -385,7 +386,7 @@ function UploadPage() {
     }
     analyze();
     return () => { cancelled = true; };
-  }, [file]);
+  }, [file, mode]);
 
   const handleMultiFileSelect = useCallback((files: File[]) => {
     // Switch to batch mode — clear any single file selection

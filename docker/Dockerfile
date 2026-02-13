@@ -21,6 +21,9 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# Create upload directory owned by nextjs user so PDF saves work with Docker volumes
+RUN mkdir -p /data/uploads && chown nextjs:nodejs /data/uploads
+
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

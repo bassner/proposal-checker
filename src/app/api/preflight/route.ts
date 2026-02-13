@@ -19,6 +19,8 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const fileEntry = formData.get("file");
   const file = fileEntry instanceof File ? fileEntry : null;
+  const modeRaw = formData.get("mode") as string | null;
+  const mode = modeRaw === "thesis" ? "thesis" as const : "proposal" as const;
 
   if (!file) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -44,7 +46,7 @@ export async function POST(request: NextRequest) {
     // Slice to avoid detached buffer issues from unpdf
     const { fullText, pageCount } = await extractPDFText(buffer.slice(0));
 
-    const warnings = runPreflightChecks(fullText, pageCount);
+    const warnings = runPreflightChecks(fullText, pageCount, mode);
 
     return NextResponse.json({ warnings, pageCount });
   } catch (err) {
