@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
-import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplates, listWebhooks, getSeverityWeights, listPromptSnippets, getCheckGroupOrder, listFindingPatterns } from "@/lib/db";
+import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplates, listWebhooks, getSeverityWeights, listPromptSnippets, getCheckGroupOrder, listFindingPatterns, listSchedules } from "@/lib/db";
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
-import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Download, Puzzle, ListOrdered, Repeat, CalendarDays, Users2 } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Download, Puzzle, ListOrdered, Repeat, CalendarDays, Users2, Clock } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
@@ -21,6 +21,7 @@ import { FindingPatternsDashboard } from "@/components/admin/finding-patterns-da
 import { DeadlineCalendar } from "@/components/admin/deadline-calendar";
 import { DeadlineRiskSummary } from "@/components/admin/deadline-risk-summary";
 import { PeerPairingDashboard } from "@/components/admin/peer-pairing-dashboard";
+import { ScheduleManager } from "@/components/admin/schedule-manager";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -32,7 +33,7 @@ export default async function AdminPage() {
   }
 
   // Load config + analytics + failed reviews + check metrics + templates + webhooks + severity weights + snippets + check group order + finding patterns from DB in parallel
-  const [configResults, analyticsData, failedReviewsData, checkMetricsData, templatesData, webhooksData, severityWeightsData, snippetsData, checkGroupOrderData, findingPatternsData] = await Promise.all([
+  const [configResults, analyticsData, failedReviewsData, checkMetricsData, templatesData, webhooksData, severityWeightsData, snippetsData, checkGroupOrderData, findingPatternsData, schedulesData] = await Promise.all([
     Promise.all(
       APP_ROLES.map(async (role) => ({
         role,
@@ -73,6 +74,10 @@ export default async function AdminPage() {
     }),
     listFindingPatterns().catch((err) => {
       console.error("[admin] Failed to load finding patterns:", err);
+      return [];
+    }),
+    listSchedules().catch((err) => {
+      console.error("[admin] Failed to load schedules:", err);
       return [];
     }),
   ]);
@@ -231,6 +236,15 @@ export default async function AdminPage() {
             <h2 className="text-sm font-medium text-white/60">Webhooks</h2>
           </div>
           <WebhooksManager initialWebhooks={webhooksData} />
+        </div>
+
+        {/* Review Schedules */}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-blue-400" />
+            <h2 className="text-sm font-medium text-white/60">Review Schedules</h2>
+          </div>
+          <ScheduleManager initialSchedules={schedulesData} />
         </div>
 
         {/* Peer Review Pairings */}
