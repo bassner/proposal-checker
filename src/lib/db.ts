@@ -252,6 +252,44 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_prompt_snippets_category_name
         ON prompt_snippets(category, name);
+
+      -- Check group display order (admin-configurable)
+      CREATE TABLE IF NOT EXISTS check_group_order (
+        check_group TEXT PRIMARY KEY,
+        display_order INT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Seed with default order matching CHECK_GROUP_IDS array index
+      INSERT INTO check_group_order (check_group, display_order) VALUES
+        ('structure', 0),
+        ('problem-motivation-objectives', 1),
+        ('bibliography', 2),
+        ('figures', 3),
+        ('writing-style', 4),
+        ('writing-structure', 5),
+        ('writing-formatting', 6),
+        ('ai-transparency', 7),
+        ('schedule', 8),
+        ('related-work', 9),
+        ('methodology', 10),
+        ('evaluation', 11)
+      ON CONFLICT (check_group) DO NOTHING;
+
+      -- Review tags (user-applied labels for organizing reviews)
+      CREATE TABLE IF NOT EXISTS review_tags (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        tag TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(review_id, tag)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_review_tags_review
+        ON review_tags(review_id);
+      CREATE INDEX IF NOT EXISTS idx_review_tags_tag
+        ON review_tags(tag);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -2385,4 +2423,169 @@ export async function getPromptSnippetsByIds(ids: string[]): Promise<PromptSnipp
     [ids]
   );
   return result.rows.map(rowToPromptSnippet);
+}
+
+// ---------------------------------------------------------------------------
+// Check group display order
+// ---------------------------------------------------------------------------
+
+export interface CheckGroupOrderRow {
+  checkGroup: string;
+  displayOrder: number;
+  updatedAt: string;
+}
+
+/**
+ * Get the display order for all check groups, sorted by display_order ASC.
+ */
+export async function getCheckGroupOrder(): Promise<CheckGroupOrderRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT check_group, display_order, updated_at FROM check_group_order ORDER BY display_order ASC"
+  );
+  return result.rows.map((row) => ({
+    checkGroup: row.check_group as string,
+    displayOrder: Number(row.display_order),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  }));
+}
+
+/**
+ * Bulk update check group display order.
+ * Uses a single transaction to update all rows atomically.
+ */
+export async function updateCheckGroupOrder(
+  order: { checkGroup: string; displayOrder: number }[]
+): Promise<CheckGroupOrderRow[]> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const item of order) {
+      await client.query(
+        "UPDATE check_group_order SET display_order = $1, updated_at = NOW() WHERE check_group = $2",
+        [item.displayOrder, item.checkGroup]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  // Return the updated order
+  return getCheckGroupOrder();
+}
+
+// ---------------------------------------------------------------------------
+// Review tags (user-applied labels for organizing reviews)
+// ---------------------------------------------------------------------------
+
+export interface ReviewTagRow {
+  id: string;
+  reviewId: string;
+  tag: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+function rowToTag(row: Record<string, unknown>): ReviewTagRow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    tag: row.tag as string,
+    createdBy: row.created_by as string,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Add a tag to a review. Idempotent — if the tag already exists, does nothing.
+ * Returns the tag row (existing or newly created).
+ */
+export async function addTag(
+  reviewId: string,
+  tag: string,
+  userId: string
+): Promise<ReviewTagRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO review_tags (review_id, tag, created_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (review_id, tag) DO UPDATE SET review_id = review_tags.review_id
+     RETURNING *`,
+    [reviewId, tag, userId]
+  );
+  return rowToTag(result.rows[0]);
+}
+
+/** Remove a tag from a review. Returns true if the tag was removed. */
+export async function removeTag(reviewId: string, tag: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM review_tags WHERE review_id = $1 AND tag = $2",
+    [reviewId, tag]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Get all tags for a single review, ordered by tag name. */
+export async function getTagsForReview(reviewId: string): Promise<ReviewTagRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM review_tags WHERE review_id = $1 ORDER BY tag",
+    [reviewId]
+  );
+  return result.rows.map(rowToTag);
+}
+
+/**
+ * Batch get tags for multiple reviews.
+ * Returns a map of reviewId -> tags.
+ */
+export async function getTagsForReviews(
+  reviewIds: string[]
+): Promise<Map<string, ReviewTagRow[]>> {
+  const map = new Map<string, ReviewTagRow[]>();
+  if (!pool || reviewIds.length === 0) return map;
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM review_tags WHERE review_id = ANY($1) ORDER BY tag",
+    [reviewIds]
+  );
+  for (const row of result.rows) {
+    const tag = rowToTag(row);
+    if (!map.has(tag.reviewId)) map.set(tag.reviewId, []);
+    map.get(tag.reviewId)!.push(tag);
+  }
+  return map;
+}
+
+/**
+ * Get the most frequently used tags across all reviews.
+ * Used for autocomplete suggestions.
+ */
+export async function getPopularTags(limit = 20): Promise<{ tag: string; count: number }[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT tag, COUNT(*) AS cnt
+     FROM review_tags
+     GROUP BY tag
+     ORDER BY cnt DESC, tag ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows.map((row) => ({
+    tag: row.tag as string,
+    count: Number(row.cnt),
+  }));
 }

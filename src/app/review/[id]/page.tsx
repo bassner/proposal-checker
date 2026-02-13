@@ -28,6 +28,7 @@ import { QualityScore } from "@/components/quality-score";
 import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
 import { ReviewNotes } from "@/components/review-notes";
+import { ReviewTags } from "@/components/review-tags";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -240,6 +241,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
               </div>
               {fileName && <p className="text-xs text-slate-400 dark:text-white/40">{fileName}</p>}
             </div>
+            <ReviewTags reviewId={reviewId} editable={isOwner !== false || role === "admin" || role === "phd"} />
             <nav aria-label="Review actions">
               <ReviewAnotherButton size="sm" />
               <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
