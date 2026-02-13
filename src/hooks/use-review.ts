@@ -52,7 +52,7 @@ export function useReview() {
   const [isUploading, setIsUploading] = useState(false);
 
   const startReview = useCallback(
-    async (file: File, provider: ProviderType, mode: ReviewMode = "proposal", selectedGroups?: CheckGroupId[]): Promise<string | null> => {
+    async (file: File, provider: ProviderType, mode: ReviewMode = "proposal", selectedGroups?: CheckGroupId[], opts?: { supervisorId?: string; studentId?: string }): Promise<string | null> => {
       setError(null);
       setIsUploading(true);
 
@@ -63,6 +63,8 @@ export function useReview() {
       if (selectedGroups && selectedGroups.length > 0) {
         formData.append("selectedGroups", JSON.stringify(selectedGroups));
       }
+      if (opts?.supervisorId) formData.append("supervisorId", opts.supervisorId);
+      if (opts?.studentId) formData.append("studentId", opts.studentId);
 
       try {
         const response = await fetch("/api/review", {
@@ -196,6 +198,10 @@ export interface CompletedReview {
   isStale?: boolean; // Computed when fetched for running reviews
   /** @deprecated Workflow status is no longer used in the UI. */
   workflowStatus?: string;
+  supervisorId?: string | null;
+  studentId?: string | null;
+  supervisorName?: string | null;
+  studentName?: string | null;
 }
 
 /**

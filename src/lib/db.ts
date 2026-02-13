@@ -52,6 +52,19 @@ async function ensureSchema(): Promise<void> {
   if (globalDb.__schemaInitialized || !pool) return;
   try {
     await pool.query(`
+      -- Users directory (normalized user data, populated from auth)
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT 'student' CHECK (role IN ('admin', 'phd', 'student')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+      CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
       CREATE TABLE IF NOT EXISTS reviews (
         id UUID PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -191,6 +204,9 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_audit_log_review_created
         ON review_audit_log(review_id, created_at DESC);
+
+      -- Audit log: add user_name column for human-readable display
+      ALTER TABLE review_audit_log ADD COLUMN IF NOT EXISTS user_name TEXT;
 
       -- Annotation history (for conflict detection)
       CREATE TABLE IF NOT EXISTS annotation_history (
@@ -520,6 +536,20 @@ async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
         ON comment_reactions(comment_id);
 
+      -- Supervisor / student assignment columns
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS supervisor_id TEXT;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS student_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_reviews_supervisor ON reviews(supervisor_id, created_at DESC) WHERE supervisor_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_reviews_student ON reviews(student_id, created_at DESC) WHERE student_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_reviews_unassigned ON reviews(created_at DESC) WHERE supervisor_id IS NULL AND student_id IS NULL AND deleted_at IS NULL;
+
+      -- Ensure supervisor_id and student_id are always set together (both null or both non-null)
+      DO $$ BEGIN
+        ALTER TABLE reviews ADD CONSTRAINT chk_supervisor_student_pair
+          CHECK ((supervisor_id IS NULL AND student_id IS NULL) OR (supervisor_id IS NOT NULL AND student_id IS NOT NULL));
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$;
+
       -- Review schedules (recurring review reminders)
       CREATE TABLE IF NOT EXISTS review_schedules (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -538,6 +568,30 @@ async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_review_schedules_active
         ON review_schedules(is_active, next_run_at);
     `);
+
+    // ── Seed users table from existing data (migration for existing DBs) ──
+    // Uses reviews table as the primary source (has user_id, user_email, user_name).
+    // DISTINCT ON picks the most-recently-updated row per user to get the freshest name/email.
+    // ON CONFLICT DO NOTHING preserves existing records (idempotent).
+    await pool.query(`
+      INSERT INTO users (id, email, name)
+      SELECT DISTINCT ON (user_id) user_id, user_email, COALESCE(user_name, '')
+      FROM reviews
+      WHERE user_id IS NOT NULL AND user_id != ''
+      ORDER BY user_id, updated_at DESC
+      ON CONFLICT (id) DO UPDATE SET
+        email = CASE WHEN users.email = '' AND EXCLUDED.email != '' THEN EXCLUDED.email ELSE users.email END,
+        name  = CASE WHEN users.name  = '' AND EXCLUDED.name  != '' THEN EXCLUDED.name  ELSE users.name  END;
+
+      -- Also seed from audit log (may contain users not in reviews table)
+      INSERT INTO users (id, email, name)
+      SELECT DISTINCT ON (user_id) user_id, COALESCE(user_email, ''), COALESCE(user_name, '')
+      FROM review_audit_log
+      WHERE user_id IS NOT NULL AND user_id != ''
+      ORDER BY user_id, created_at DESC
+      ON CONFLICT (id) DO NOTHING;
+    `);
+
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
   } catch (err) {
@@ -561,6 +615,136 @@ export async function isAvailable(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+export interface UserRow {
+  id: string;
+  email: string;
+  name: string;
+  role: AppRole;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** In-memory set of user IDs already upserted this server instance (avoids repeated DB calls). */
+const upsertedUsers = new Set<string>();
+
+/**
+ * Upsert a user into the users table. Called from requireAuth() on every API request,
+ * but the in-memory set prevents redundant DB calls after the first one.
+ */
+export async function upsertUser(
+  id: string,
+  email: string,
+  name: string,
+  role: AppRole,
+): Promise<void> {
+  if (!pool || !id) return;
+  // Skip if already upserted in this server instance
+  const cacheKey = `${id}:${role}`;
+  if (upsertedUsers.has(cacheKey)) return;
+  await ensureSchema();
+  await pool.query(
+    `INSERT INTO users (id, email, name, role, updated_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (id) DO UPDATE SET
+       email = EXCLUDED.email,
+       name = EXCLUDED.name,
+       role = EXCLUDED.role,
+       updated_at = NOW()`,
+    [id, email, name, role]
+  );
+  upsertedUsers.add(cacheKey);
+}
+
+/** Get a user by ID. */
+export async function getUserById(id: string): Promise<UserRow | null> {
+  if (!pool || !id) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = $1`,
+    [id]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    createdAt: row.created_at?.toISOString?.() ?? row.created_at,
+    updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
+  };
+}
+
+/** Get all users with a specific role. */
+export async function getUsersByRole(role: AppRole): Promise<UserRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT id, email, name, role, created_at, updated_at FROM users WHERE role = $1 ORDER BY name, email`,
+    [role]
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    createdAt: row.created_at?.toISOString?.() ?? row.created_at,
+    updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
+  }));
+}
+
+/** Search users by name or email (for searchable dropdowns). Optionally filter by role(s). */
+export async function searchUsers(query: string, role?: AppRole, roles?: AppRole[]): Promise<UserRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const pattern = `%${query}%`;
+  const params: unknown[] = [pattern];
+  let roleFilter = "";
+  if (roles && roles.length > 0) {
+    roleFilter = `AND role = ANY($2::text[])`;
+    params.push(roles);
+  } else if (role) {
+    roleFilter = `AND role = $2`;
+    params.push(role);
+  }
+  const result = await pool.query(
+    `SELECT id, email, name, role, created_at, updated_at FROM users
+     WHERE (name ILIKE $1 OR email ILIKE $1) ${roleFilter}
+     ORDER BY name, email
+     LIMIT 20`,
+    params
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    createdAt: row.created_at?.toISOString?.() ?? row.created_at,
+    updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
+  }));
+}
+
+/** Get all users (for admin views). */
+export async function getAllUsers(): Promise<UserRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT id, email, name, role, created_at, updated_at FROM users ORDER BY role, name, email`
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role,
+    createdAt: row.created_at?.toISOString?.() ?? row.created_at,
+    updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -590,6 +774,10 @@ export interface ReviewRow {
   retryCount: number;
   deletedAt: string | null;
   workflowStatus: WorkflowStatus;
+  supervisorId: string | null;
+  studentId: string | null;
+  supervisorName: string | null;
+  studentName: string | null;
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
@@ -617,6 +805,10 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     retryCount: Number(row.retry_count ?? 0),
     deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
     workflowStatus: (row.workflow_status as WorkflowStatus) ?? "draft",
+    supervisorId: (row.supervisor_id as string) ?? null,
+    studentId: (row.student_id as string) ?? null,
+    supervisorName: (row.supervisor_name as string) ?? null,
+    studentName: (row.student_name as string) ?? null,
   };
 }
 
@@ -634,21 +826,23 @@ export async function insertReview(review: {
   fileName: string | null;
   pdfPath?: string | null;
   selectedGroups?: CheckGroupId[];
+  supervisorId?: string;
+  studentId?: string;
 }): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (id) DO NOTHING`,
-    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName, review.pdfPath ?? null, review.selectedGroups ? JSON.stringify(review.selectedGroups) : null]
+    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName, review.pdfPath ?? null, review.selectedGroups ? JSON.stringify(review.selectedGroups) : null, review.supervisorId ?? null, review.studentId ?? null]
   );
 }
 
 export async function completeReview(
   id: string,
   feedback: unknown,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string },
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string; supervisorId?: string; studentId?: string },
   expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
@@ -658,8 +852,8 @@ export async function completeReview(
   // (prevents stale pipeline callbacks from overwriting a newer retry's state)
   const retryGuard = expectedRetryCount != null ? ` AND reviews.retry_count = ${Number(expectedRetryCount)}` : "";
   const result = await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, feedback, file_name, completed_at, updated_at)
-     VALUES ($1, $3, $4, $5, $6, $8, 'done', $2, $7, NOW(), NOW())
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, feedback, file_name, completed_at, updated_at, supervisor_id, student_id)
+     VALUES ($1, $3, $4, $5, $6, $8, 'done', $2, $7, NOW(), NOW(), $9, $10)
      ON CONFLICT (id) DO UPDATE SET
        status = 'done',
        feedback = $2,
@@ -676,6 +870,8 @@ export async function completeReview(
       meta?.provider ?? "azure",
       meta?.fileName ?? null,
       meta?.reviewMode ?? "proposal",
+      meta?.supervisorId ?? null,
+      meta?.studentId ?? null,
     ]
   );
   if (expectedRetryCount != null && result.rowCount === 0) {
@@ -683,18 +879,44 @@ export async function completeReview(
   }
 }
 
+/**
+ * Append a manually-created finding to a completed review's feedback JSONB.
+ * Returns the new finding index or null if the review was not found / not complete.
+ */
+export async function addManualFinding(
+  reviewId: string,
+  finding: Finding,
+): Promise<number | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE reviews
+     SET feedback = jsonb_set(
+       feedback,
+       '{findings}',
+       COALESCE(feedback->'findings', '[]'::jsonb) || $2::jsonb
+     ),
+     updated_at = NOW()
+     WHERE id = $1 AND status = 'done' AND feedback IS NOT NULL
+     RETURNING jsonb_array_length(feedback->'findings') AS new_length`,
+    [reviewId, JSON.stringify(finding)]
+  );
+  if (result.rowCount === 0) return null;
+  return (result.rows[0].new_length as number) - 1;
+}
+
 export async function failReview(
   id: string,
   errorMessage: string,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string },
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string; supervisorId?: string; studentId?: string },
   expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   const retryGuard = expectedRetryCount != null ? ` AND reviews.retry_count = ${Number(expectedRetryCount)}` : "";
   const result = await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, error_message, file_name, completed_at, updated_at)
-     VALUES ($1, $3, $4, $5, $6, $8, 'error', $2, $7, NOW(), NOW())
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, error_message, file_name, completed_at, updated_at, supervisor_id, student_id)
+     VALUES ($1, $3, $4, $5, $6, $8, 'error', $2, $7, NOW(), NOW(), $9, $10)
      ON CONFLICT (id) DO UPDATE SET
        status = 'error',
        error_message = $2,
@@ -711,6 +933,8 @@ export async function failReview(
       meta?.provider ?? "azure",
       meta?.fileName ?? null,
       meta?.reviewMode ?? "proposal",
+      meta?.supervisorId ?? null,
+      meta?.studentId ?? null,
     ]
   );
   if (expectedRetryCount != null && result.rowCount === 0) {
@@ -743,7 +967,14 @@ export async function softDeleteReview(id: string): Promise<boolean> {
 export async function getReviewById(id: string): Promise<ReviewRow | null> {
   if (!pool) return null;
   await ensureSchema();
-  const result = await pool.query("SELECT * FROM reviews WHERE id = $1 AND deleted_at IS NULL", [id]);
+  const result = await pool.query(
+    `SELECT r.*, su.name AS supervisor_name, st.name AS student_name
+     FROM reviews r
+     LEFT JOIN users su ON su.id = r.supervisor_id
+     LEFT JOIN users st ON st.id = r.student_id
+     WHERE r.id = $1 AND r.deleted_at IS NULL`,
+    [id]
+  );
   if (result.rows.length === 0) return null;
   return rowToReview(result.rows[0]);
 }
@@ -776,7 +1007,8 @@ export async function queryReviews(opts: ReviewQueryOptions): Promise<ReviewRow[
   let paramIdx = 1;
 
   if (opts.userId) {
-    conditions.push(`user_id = $${paramIdx++}`);
+    conditions.push(`(user_id = $${paramIdx} OR student_id = $${paramIdx})`);
+    paramIdx++;
     params.push(opts.userId);
   }
 
@@ -833,7 +1065,8 @@ export async function queryReviewsGrouped(opts: {
   let paramIdx = 1;
 
   if (opts.userId) {
-    conditions.push(`user_id = $${paramIdx++}`);
+    conditions.push(`(user_id = $${paramIdx} OR student_id = $${paramIdx})`);
+    paramIdx++;
     params.push(opts.userId);
   }
 
@@ -886,7 +1119,8 @@ export async function getReviewCount(userId?: string, search?: string): Promise<
   let paramIdx = 1;
 
   if (userId) {
-    conditions.push(`user_id = $${paramIdx++}`);
+    conditions.push(`(user_id = $${paramIdx} OR student_id = $${paramIdx})`);
+    paramIdx++;
     params.push(userId);
   }
 
@@ -1146,7 +1380,8 @@ export async function deleteComment(
     const entry = current[findingIndex];
     if (!entry?.comments) return current;
 
-    const comments = entry.comments.filter((c) => c.id !== commentId);
+    // Remove the comment and any replies to it (cascade delete)
+    const comments = entry.comments.filter((c) => c.id !== commentId && c.parentId !== commentId);
     // If entry has no status and no remaining comments, remove it entirely
     if (!entry.status && comments.length === 0) {
       const result = { ...current };
@@ -1265,15 +1500,34 @@ export function sanitizeAnnotations(annotations: Annotations): Annotations {
   const sanitized: Annotations = {};
   for (const [key, entry] of Object.entries(annotations)) {
     if (entry.comments?.length) {
-      sanitized[key] = {
-        ...entry,
-        comments: entry.comments.map((c) => {
-          const sanitized = { ...c };
-          delete (sanitized as Record<string, unknown>).authorId;
-          delete (sanitized as Record<string, unknown>).resolvedBy;
-          return sanitized;
-        }),
-      };
+      // Strip internal fields from all comments
+      const cleaned = entry.comments.map((c) => {
+        const s = { ...c };
+        delete (s as Record<string, unknown>).authorId;
+        delete (s as Record<string, unknown>).resolvedBy;
+        return s;
+      });
+
+      // Nest replies under their parent (threaded structure)
+      const replyMap = new Map<string, Comment[]>();
+      for (const c of cleaned) {
+        if (c.parentId) {
+          if (!replyMap.has(c.parentId)) replyMap.set(c.parentId, []);
+          replyMap.get(c.parentId)!.push(c);
+        }
+      }
+      // Sort replies by creation time
+      for (const replies of replyMap.values()) {
+        replies.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      }
+
+      // Build threaded comments: only top-level, with replies nested
+      const threaded = cleaned
+        .filter((c) => !c.parentId)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        .map((c) => ({ ...c, replies: replyMap.get(c.id) ?? [] }));
+
+      sanitized[key] = { ...entry, comments: threaded };
     } else {
       sanitized[key] = entry;
     }
@@ -2095,6 +2349,7 @@ export interface AuditLogRow {
   reviewId: string;
   userId: string | null;
   userEmail: string | null;
+  userName: string | null;
   action: string;
   details: Record<string, unknown> | null;
   createdAt: string;
@@ -2106,6 +2361,7 @@ function rowToAuditLog(row: Record<string, unknown>): AuditLogRow {
     reviewId: row.review_id as string,
     userId: (row.user_id as string) ?? null,
     userEmail: (row.user_email as string) ?? null,
+    userName: (row.user_name as string) ?? null,
     action: row.action as string,
     details: (row.details as Record<string, unknown>) ?? null,
     createdAt: (row.created_at as Date).toISOString(),
@@ -2121,15 +2377,16 @@ export async function logAuditEvent(
   userId: string | null,
   userEmail: string | null,
   action: string,
-  details?: Record<string, unknown>
+  details?: Record<string, unknown>,
+  userName?: string | null
 ): Promise<void> {
   if (!pool) return;
   try {
     await ensureSchema();
     await pool.query(
-      `INSERT INTO review_audit_log (review_id, user_id, user_email, action, details)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [reviewId, userId, userEmail, action, details ? JSON.stringify(details) : null]
+      `INSERT INTO review_audit_log (review_id, user_id, user_email, user_name, action, details)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [reviewId, userId, userEmail, userName ?? null, action, details ? JSON.stringify(details) : null]
     );
   } catch (err) {
     console.error("[audit] Failed to log event:", err);
@@ -2246,10 +2503,16 @@ export interface SupervisorOverview {
  * Aggregate stats for the supervisor dashboard.
  * Returns total reviews, avg findings, severity distribution,
  * most common severity, and count of reviews with unresolved critical findings.
+ *
+ * When supervisorId is provided, only reviews assigned to that supervisor are included.
+ * When omitted, all reviews are included (admin global view).
  */
-export async function getSupervisorOverview(): Promise<SupervisorOverview | null> {
+export async function getSupervisorOverview(supervisorId?: string): Promise<SupervisorOverview | null> {
   if (!pool) return null;
   await ensureSchema();
+
+  const supervisorFilter = supervisorId ? `AND supervisor_id = $1` : "";
+  const params = supervisorId ? [supervisorId] : [];
 
   const result = await pool.query(`
     WITH completed AS (
@@ -2258,6 +2521,7 @@ export async function getSupervisorOverview(): Promise<SupervisorOverview | null
       WHERE status = 'done' AND deleted_at IS NULL
         AND feedback IS NOT NULL
         AND jsonb_typeof(feedback->'findings') = 'array'
+        ${supervisorFilter}
     ),
     finding_rows AS (
       SELECT c.id AS review_id, f.value AS finding
@@ -2292,7 +2556,7 @@ export async function getSupervisorOverview(): Promise<SupervisorOverview | null
         )
     )
     SELECT json_build_object(
-      'totalReviews', (SELECT COUNT(*) FROM reviews WHERE deleted_at IS NULL),
+      'totalReviews', (SELECT COUNT(*) FROM reviews WHERE deleted_at IS NULL ${supervisorFilter}),
       'avgFindings', (SELECT COALESCE(ROUND(AVG(finding_count), 1), 0) FROM review_finding_counts),
       'reviewsNeedingAttention', (SELECT COUNT(*) FROM reviews_with_critical),
       'severityDistribution', COALESCE(
@@ -2301,7 +2565,7 @@ export async function getSupervisorOverview(): Promise<SupervisorOverview | null
         '[]'::json
       )
     ) AS data
-  `);
+  `, params);
 
   const raw = result.rows[0].data;
   const severityDist = (raw.severityDistribution as { severity: string; count: string }[]).map(
@@ -2341,17 +2605,28 @@ export interface StudentGroup {
 /**
  * Returns reviews grouped by user for the supervisor dashboard.
  * Each group includes per-student stats and their individual reviews.
+ *
+ * When supervisorId is provided, only reviews assigned to that supervisor are included,
+ * and groups are keyed by student_id (the document author).
+ * When omitted, all reviews are shown grouped by user_id (admin global view).
  */
-export async function getReviewsByUser(): Promise<StudentGroup[]> {
+export async function getReviewsByUser(supervisorId?: string): Promise<StudentGroup[]> {
   if (!pool) return [];
   await ensureSchema();
+
+  const supervisorFilter = supervisorId ? `AND r.supervisor_id = $1` : "";
+  const params = supervisorId ? [supervisorId] : [];
+
+  // When filtering by supervisor, group by student_id (document author).
+  // Fall back to user_id for unassigned reviews.
+  const groupByCol = supervisorId ? "COALESCE(r.student_id, r.user_id)" : "r.user_id";
 
   const result = await pool.query(`
     SELECT
       r.id,
-      r.user_id,
-      r.user_email,
-      r.user_name,
+      ${groupByCol} AS group_user_id,
+      COALESCE(st.email, r.user_email) AS group_user_email,
+      COALESCE(st.name, r.user_name) AS group_user_name,
       r.file_name,
       r.status,
       r.provider,
@@ -2364,19 +2639,21 @@ export async function getReviewsByUser(): Promise<StudentGroup[]> {
       END AS finding_count,
       r.feedback->>'overallAssessment' AS overall_assessment
     FROM reviews r
+    LEFT JOIN users st ON st.id = r.student_id
     WHERE r.deleted_at IS NULL
-    ORDER BY r.user_email, r.created_at DESC
-  `);
+      ${supervisorFilter}
+    ORDER BY group_user_email, r.created_at DESC
+  `, params);
 
   const groupMap = new Map<string, StudentGroup>();
 
   for (const row of result.rows) {
-    const userId = row.user_id as string;
+    const userId = row.group_user_id as string;
     if (!groupMap.has(userId)) {
       groupMap.set(userId, {
         userId,
-        userEmail: row.user_email as string,
-        userName: row.user_name as string,
+        userEmail: row.group_user_email as string,
+        userName: row.group_user_name as string,
         reviewCount: 0,
         lastReviewDate: (row.created_at as Date).toISOString(),
         avgFindings: 0,
@@ -2957,7 +3234,8 @@ export async function updateWorkflowStatus(
   reviewId: string,
   status: WorkflowStatus,
   userId: string,
-  userEmail: string | null
+  userEmail: string | null,
+  userName?: string | null
 ): Promise<ReviewRow | null> {
   if (!pool) return null;
   await ensureSchema();
@@ -2973,7 +3251,7 @@ export async function updateWorkflowStatus(
   // Audit log (fire-and-forget)
   logAuditEvent(reviewId, userId, userEmail, "workflow.transition", {
     newStatus: status,
-  });
+  }, userName);
 
   return rowToReview(result.rows[0]);
 }

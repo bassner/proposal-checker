@@ -5,7 +5,7 @@ import { LogOut, Shield, ClipboardList, Users, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { NotificationBell } from "./notification-bell";
-import { ThemeToggle } from "@/components/theme-toggle";
+
 
 interface UserMenuProps {
   /** When provided, shows a "Replay Tour" button that triggers the onboarding walkthrough */
@@ -38,7 +38,7 @@ export function UserMenu({ onReplayTour }: UserMenuProps = {}) {
   return (
     <div className="flex items-center gap-2 md:gap-3">
       <Link
-        href="/reviews"
+        href="/reviews?mine=true"
         aria-label="My Reviews"
         className="flex items-center justify-center size-10 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
       >
@@ -76,7 +76,6 @@ export function UserMenu({ onReplayTour }: UserMenuProps = {}) {
           <span className="hidden md:inline">Tour</span>
         </button>
       )}
-      <ThemeToggle />
       <NotificationBell />
       <div className="flex items-center gap-2">
         <div className="hidden text-right md:block">

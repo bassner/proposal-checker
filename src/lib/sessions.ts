@@ -36,6 +36,10 @@ export interface ReviewSession {
   fileName?: string;
   /** Retry counter — incremented on each retry, used to guard event writes. */
   retryCount: number;
+  /** Assigned supervisor (phd/admin who oversees). */
+  supervisorId?: string;
+  /** Student who authored the document. */
+  studentId?: string;
 }
 
 export interface CreateSessionOptions {
@@ -47,6 +51,8 @@ export interface CreateSessionOptions {
   selectedGroups: CheckGroupId[];
   fileName?: string;
   retryCount?: number;
+  supervisorId?: string;
+  studentId?: string;
 }
 
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -112,6 +118,8 @@ function buildSession(id: string, opts: CreateSessionOptions): ReviewSession {
     selectedGroups: opts.selectedGroups,
     fileName: opts.fileName,
     retryCount: opts.retryCount ?? 0,
+    supervisorId: opts.supervisorId,
+    studentId: opts.studentId,
   };
 }
 

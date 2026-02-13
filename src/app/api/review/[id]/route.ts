@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { requireAuth } from "@/lib/auth/helpers";
+import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
 import { isAvailable, getReviewById, softDeleteReview, sanitizeAnnotations, logAuditEvent } from "@/lib/db";
 import type { ReviewRow } from "@/lib/db";
 import { cacheGet, cacheSet, cacheInvalidate } from "@/lib/cache";
@@ -61,11 +61,11 @@ export async function GET(
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
-  const isOwner = review.userId === session.user.id;
-  const isSupervisor = session.user.role === "admin" || session.user.role === "phd";
-  if (!isOwner && !isSupervisor) {
+  if (!canAccessReview(session, review)) {
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
+
+  const isOwner = review.userId === session.user.id;
 
   const body = {
     id: review.id,
@@ -86,6 +86,10 @@ export async function GET(
     canRetry: !!review.pdfPath,
     isOwner,
     workflowStatus: review.workflowStatus,
+    supervisorId: review.supervisorId,
+    studentId: review.studentId,
+    supervisorName: review.supervisorName,
+    studentName: review.studentName,
   };
 
   // ETag based on response content hash (includes isOwner so it's user-specific)
@@ -147,6 +151,7 @@ export async function DELETE(
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
+  // DELETE: only the uploader (user_id) or admin can delete
   const isOwner = review.userId === session.user.id;
   const isAdmin = session.user.role === "admin";
   if (!isOwner && !isAdmin) {
@@ -161,7 +166,7 @@ export async function DELETE(
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, "review.deleted", {
     fileName: review.fileName,
-  });
+  }, session.user.name);
 
   return Response.json({ ok: true });
 }

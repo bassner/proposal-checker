@@ -54,7 +54,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} supervisorName={review.supervisorName} studentName={review.studentName} />;
     }
 
     if (review?.status === "error") {
@@ -126,12 +126,15 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean }) {
+function ResultsView({ feedback: initialFeedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner, supervisorName, studentName }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean; supervisorName?: string | null; studentName?: string | null }) {
   const { data: session } = useSession();
   const role = session?.user?.role;
   const isSupervisor = role === "admin" || role === "phd";
   const canAnnotate = isOwner !== false; // Owner can annotate (toggle status)
   const canComment = isSupervisor; // Admin/PhD can comment on any review
+
+  // Local feedback state — allows adding manual findings without full page reload
+  const [feedback, setFeedback] = useState<MergedFeedback>(initialFeedback);
 
   const { annotations, toggleAnnotation } = useAnnotations(reviewId, initialAnnotations);
   const { annotations: commentAnnotations, addComment, replyComment, resolveThread, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
@@ -189,6 +192,26 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
       }
     : undefined;
 
+  const handleAddFinding = isSupervisor
+    ? async (finding: { severity: import("@/types/review").Severity; category: string; title: string; description: string; locations: { page: number | null; section: string | null; quote: string }[] }) => {
+        const res = await fetch(`/api/review/${reviewId}/findings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(finding),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Failed to add finding");
+        }
+        const data = await res.json();
+        // Update local feedback state with the new finding
+        setFeedback((prev) => ({
+          ...prev,
+          findings: [...prev.findings, data.finding],
+        }));
+      }
+    : undefined;
+
   return (
     <div className="print-root relative min-h-screen bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <BackgroundOrbs />
@@ -213,6 +236,12 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
                   )}
                 </div>
                 {fileName && <p className="text-xs text-slate-400 dark:text-white/40">{fileName}</p>}
+                {(supervisorName || studentName) && (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400 dark:text-white/35">
+                    {supervisorName && <span>Supervisor: <span className="font-medium text-slate-500 dark:text-white/50">{supervisorName}</span></span>}
+                    {studentName && <span>Student: <span className="font-medium text-slate-500 dark:text-white/50">{studentName}</span></span>}
+                  </div>
+                )}
               </div>
             </div>
             <nav aria-label="User navigation" className="ml-auto">
@@ -256,6 +285,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             reviewId={reviewId}
             currentUserId={session?.user?.id ?? undefined}
             pageFilter={pageFilter}
+            onAddFinding={handleAddFinding}
           />
         </main>
         {role === "admin" && (

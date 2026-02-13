@@ -130,7 +130,7 @@ export async function POST(
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, "annotation.updated", {
     count: entries.length,
-  });
+  }, session.user.name);
 
   // Log each annotation change to the history table (fire-and-forget)
   for (const [key, entry] of Object.entries(validated)) {

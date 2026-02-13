@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/auth/helpers";
+import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
 import { isAvailable, getReviewById, addComment, deleteComment, resolveThread, sanitizeAnnotations, insertNotification, logAuditEvent } from "@/lib/db";
 import type { MergedFeedback, Comment, ThreadStatus } from "@/types/review";
 
@@ -42,6 +42,11 @@ export async function POST(
   const review = await getReviewById(id);
   if (!review || review.status !== "done" || !review.feedback) {
     return Response.json({ error: "Review not found or not complete" }, { status: 404 });
+  }
+
+  // Supervisor access check: must be able to access this review
+  if (!canAccessReview(session, review)) {
+    return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
   let body: { findingIndex?: unknown; text?: unknown; parentId?: unknown };
@@ -100,7 +105,7 @@ export async function POST(
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, "comment.added", {
     findingIndex: idx, commentId: comment.id, ...(parentId ? { parentId } : {}),
-  });
+  }, session.user.name);
 
   // Notify the review owner (skip if the commenter IS the owner)
   if (review.userId !== session.user.id) {
@@ -201,7 +206,7 @@ export async function PATCH(
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, `thread.${threadStatus}`, {
     findingIndex: parseInt(findingIndex, 10), commentId,
-  });
+  }, session.user.name);
 
   return Response.json({
     ok: true,
@@ -277,7 +282,7 @@ export async function DELETE(
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, "comment.deleted", {
     findingIndex: parseInt(findingIndex, 10), commentId,
-  });
+  }, session.user.name);
 
   return Response.json({
     ok: true,

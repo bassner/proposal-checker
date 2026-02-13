@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { UserMenu } from "@/components/auth/user-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -348,6 +348,14 @@ function GroupedView({
 // ---------------------------------------------------------------------------
 
 export default function ReviewsPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950"><p className="text-sm text-white/30">Loading...</p></div>}>
+      <ReviewsPageInner />
+    </Suspense>
+  );
+}
+
+function ReviewsPageInner() {
   const { data: session } = useSession();
   const router = useRouter();
   const [data, setData] = useState<ReviewsResponse | null>(null);
@@ -376,7 +384,8 @@ export default function ReviewsPage() {
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set());
 
   const isAdmin = session?.user?.role === "admin";
-  const [mineOnly, setMineOnly] = useState(false);
+  const searchParams = useSearchParams();
+  const [mineOnly, setMineOnly] = useState(() => searchParams.get("mine") === "true");
   const [refreshKey, setRefreshKey] = useState(0);
   const handleDeleted = useCallback(() => setRefreshKey((k) => k + 1), []);
   const handlePinToggle = useCallback(() => setRefreshKey((k) => k + 1), []);

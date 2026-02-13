@@ -76,7 +76,7 @@ function CommentRow({
   return (
     <div
       className={cn(
-        "group flex gap-2 rounded-md px-2.5 py-2",
+        "group flex gap-2 rounded-md px-2.5 py-2.5",
         isReply
           ? "bg-slate-100/60 dark:bg-white/[0.02]"
           : "bg-slate-50 dark:bg-white/[0.03]"
@@ -290,7 +290,7 @@ export function CommentThread({
 
       {/* Replies */}
       {replyCount > 0 && (
-        <div className="ml-4 space-y-2 border-l border-slate-200 pl-2 dark:border-white/10">
+        <div className="ml-4 space-y-2.5 border-l border-slate-200 pl-2 pt-1 dark:border-white/10">
           {replies.map((reply) => (
             <CommentRow
               key={reply.id}

@@ -157,7 +157,7 @@ export async function POST(
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, "review.retried", {
     retryCount, provider, mode,
-  });
+  }, session.user.name);
 
   // Step 7: Throttle setup + fire pipeline (same pattern as initial submit)
   const lastSend: Record<string, number> = {};

@@ -66,30 +66,35 @@ function renderQuoteWithBold(quote: string): ReactNode {
   );
 }
 
-/** Organize flat comments into threads: top-level comments with their replies. */
+/** Organize comments into threads. API now sends pre-threaded comments (top-level
+ *  with nested `replies`), but this also handles the legacy flat format for safety. */
 function organizeThreads(comments: Comment[]): { comment: Comment; replies: Comment[] }[] {
+  // If comments are already threaded (have replies[] and no parentId), use directly
+  const hasNested = comments.some((c) => c.replies && c.replies.length > 0);
+  const hasFlat = comments.some((c) => c.parentId);
+
+  if (hasNested || !hasFlat) {
+    // Pre-threaded format: comments are top-level only, replies nested
+    return comments
+      .filter((c) => !c.parentId)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map((comment) => ({ comment, replies: comment.replies ?? [] }));
+  }
+
+  // Legacy flat format: build threads from parentId references
   const topLevel = comments.filter((c) => !c.parentId);
   const replyMap = new Map<string, Comment[]>();
-
   for (const c of comments) {
     if (c.parentId) {
       if (!replyMap.has(c.parentId)) replyMap.set(c.parentId, []);
       replyMap.get(c.parentId)!.push(c);
     }
   }
-
-  // Sort replies by creation time
   for (const replies of replyMap.values()) {
     replies.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }
-
-  // Sort threads by creation time (oldest first)
   topLevel.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-  return topLevel.map((comment) => ({
-    comment,
-    replies: replyMap.get(comment.id) ?? [],
-  }));
+  return topLevel.map((comment) => ({ comment, replies: replyMap.get(comment.id) ?? [] }));
 }
 
 function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Promise<void>; submitting?: boolean }) {
@@ -253,6 +258,14 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
           )}>
             {finding.title}
           </p>
+          {finding.manual && (
+            <span
+              className="shrink-0 rounded-full bg-teal-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-teal-700 dark:bg-teal-500/15 dark:text-teal-300/80"
+              title={finding.addedBy ? `Added by ${finding.addedBy}` : "Manually added by supervisor"}
+            >
+              Manual
+            </span>
+          )}
           {totalCommentCount > 0 && (
             <span className="no-print flex shrink-0 items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-medium text-purple-600 dark:bg-purple-500/15 dark:text-purple-300/80">
               <MessageSquare className="h-2.5 w-2.5" />
@@ -266,6 +279,11 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
         )}>
           {finding.description}
         </p>
+        {finding.manual && finding.addedBy && (
+          <p className="text-[10px] text-teal-600/60 dark:text-teal-400/40">
+            Added by {finding.addedBy}
+          </p>
+        )}
         {sortedLocations.length > 0 && (
           <div className="space-y-1 pt-1">
             {visibleLocations.map((loc, i) => (
@@ -342,7 +360,7 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
 
         {/* Threaded comments */}
         {threadCount > 0 && (
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-white/5">
+          <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-white/5">
             <ThreadSummary
               comments={comments}
               threadCount={threadCount}

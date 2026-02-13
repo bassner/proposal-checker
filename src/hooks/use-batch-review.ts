@@ -40,7 +40,8 @@ export function useBatchReview() {
     async (
       provider: ProviderType,
       mode: ReviewMode,
-      selectedGroups?: CheckGroupId[]
+      selectedGroups?: CheckGroupId[],
+      opts?: { supervisorId?: string; studentId?: string }
     ): Promise<{ successCount: number; totalCount: number }> => {
       setIsSubmitting(true);
       let successCount = 0;
@@ -61,6 +62,8 @@ export function useBatchReview() {
         if (selectedGroups && selectedGroups.length > 0) {
           formData.append("selectedGroups", JSON.stringify(selectedGroups));
         }
+        if (opts?.supervisorId) formData.append("supervisorId", opts.supervisorId);
+        if (opts?.studentId) formData.append("studentId", opts.studentId);
 
         try {
           const response = await fetch("/api/review", {

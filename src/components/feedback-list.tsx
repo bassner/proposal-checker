@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus, FindingCategory, AnnotationConflict } from "@/types/review";
 import { FINDING_CATEGORIES, FINDING_CATEGORY_VALUES, normalizeFindingCategory } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb, Search, XIcon, Filter } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb, Search, XIcon, Filter, Plus } from "lucide-react";
 import { ScoreRing, useQualityScore } from "./quality-score";
 import type { LucideIcon } from "lucide-react";
 import { useGridNavigation } from "@/hooks/use-keyboard-navigation";
+import { AddFindingModal } from "./add-finding-modal";
 
 /** Check group display order entry (from admin config). */
 export interface CheckGroupOrderEntry {
@@ -38,6 +39,14 @@ interface FeedbackListProps {
   currentUserId?: string;
   /** When set, only show findings that reference this page number. */
   pageFilter?: number | null;
+  /** Callback to add a manual finding (phd/admin only). When provided, the "Add Finding" button and "n" shortcut are enabled. */
+  onAddFinding?: (finding: {
+    severity: import("@/types/review").Severity;
+    category: string;
+    title: string;
+    description: string;
+    locations: { page: number | null; section: string | null; quote: string }[];
+  }) => Promise<void>;
 }
 
 const assessmentConfig = {
@@ -174,6 +183,7 @@ function FilterBar({
   presentSeverities,
   visibleCount,
   totalCount,
+  onAddFinding,
 }: {
   severityFilter: Set<Severity>;
   onToggleSeverity: (s: Severity) => void;
@@ -187,6 +197,7 @@ function FilterBar({
   presentSeverities: Severity[];
   visibleCount: number;
   totalCount: number;
+  onAddFinding?: () => void;
 }) {
   const isFiltering =
     severityFilter.size < 4 ||
@@ -196,7 +207,7 @@ function FilterBar({
 
   return (
     <div className="no-print space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
-      {/* Severity toggles */}
+      {/* Severity + Category toggles — same row, wrap on small screens */}
       <div className="flex flex-wrap items-center gap-1.5">
         <Filter className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-white/30" />
         {SEVERITY_ORDER.map((s) => {
@@ -222,34 +233,33 @@ function FilterBar({
             </button>
           );
         })}
+        {presentCategories.length > 0 && (
+          <>
+            <span className="mx-0.5 text-slate-200 dark:text-white/10" aria-hidden>|</span>
+            <span className="mr-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-white/25">Cat</span>
+            {presentCategories.map((cat) => {
+              const meta = FINDING_CATEGORIES[cat];
+              const active = categoryFilter.has(cat);
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => onToggleCategory(cat)}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-white/40",
+                    active
+                      ? cn(meta.bgClass, meta.textClass)
+                      : "text-slate-400 hover:text-slate-600 dark:text-white/20 dark:hover:text-white/40",
+                  )}
+                >
+                  {meta.label}
+                </button>
+              );
+            })}
+          </>
+        )}
       </div>
-
-      {/* Category toggles */}
-      {presentCategories.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1">
-          <span className="mr-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-white/25">Cat</span>
-          {presentCategories.map((cat) => {
-            const meta = FINDING_CATEGORIES[cat];
-            const active = categoryFilter.has(cat);
-            return (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => onToggleCategory(cat)}
-                className={cn(
-                  "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-white/40",
-                  active
-                    ? cn(meta.bgClass, meta.textClass)
-                    : "text-slate-400 hover:text-slate-600 dark:text-white/20 dark:hover:text-white/40",
-                )}
-              >
-                {meta.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {/* Annotation status filter + Search */}
       <div className="flex flex-wrap items-center gap-1.5">
@@ -291,6 +301,17 @@ function FilterBar({
             </button>
           )}
         </div>
+        {onAddFinding && (
+          <button
+            type="button"
+            onClick={onAddFinding}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-500/20 bg-blue-500/10 px-2.5 py-1.5 text-[11px] font-medium text-blue-400 transition-colors hover:bg-blue-500/20"
+            title="Add manual finding (n)"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Add Finding</span>
+          </button>
+        )}
       </div>
 
       {/* Filter status */}
@@ -311,10 +332,11 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ShortcutBar({ hasSelection, canAnnotate, canComment }: {
+function ShortcutBar({ hasSelection, canAnnotate, canComment, canAddFinding }: {
   hasSelection: boolean;
   canAnnotate: boolean;
   canComment: boolean;
+  canAddFinding: boolean;
 }) {
   return (
     <div className="no-print flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-[11px] dark:border-white/10 dark:bg-white/[0.03]">
@@ -341,6 +363,11 @@ function ShortcutBar({ hasSelection, canAnnotate, canComment }: {
           <Kbd>c</Kbd> comment
         </div>
       )}
+      {canAddFinding && (
+        <div className="flex items-center gap-1 text-slate-400 dark:text-white/30">
+          <Kbd>n</Kbd> new finding
+        </div>
+      )}
       <div className="flex items-center gap-1 text-slate-400 dark:text-white/30">
         <Kbd>Esc</Kbd> deselect
       </div>
@@ -349,7 +376,7 @@ function ShortcutBar({ hasSelection, canAnnotate, canComment }: {
   );
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflicts, checkGroupOrder, reviewId, currentUserId, pageFilter }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflicts, checkGroupOrder, reviewId, currentUserId, pageFilter, onAddFinding }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
 
@@ -490,9 +517,24 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, 
     enabled: feedback.findings.length > 0,
     onAction: handleNavAction,
   });
-  const addressedCount = annotations
-    ? Object.values(annotations).filter((e) => e.status).length
-    : 0;
+
+  // ── Add Finding modal ──────────────────────────────────────────────────
+  const [addFindingOpen, setAddFindingOpen] = useState(false);
+
+  // "n" keyboard shortcut to open the Add Finding modal
+  useEffect(() => {
+    if (!onAddFinding) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "n" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (e.target as HTMLElement).isContentEditable) return;
+        e.preventDefault();
+        setAddFindingOpen(true);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onAddFinding]);
 
   return (
     <div className="space-y-6">
@@ -519,21 +561,11 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, 
             </span>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <div className="flex items-center gap-2">
-                <Icon className={cn("h-5 w-5 shrink-0", config.iconColor)} />
-                <p className={cn("text-sm font-semibold", config.textColor)}>
-                  {config.label}
-                </p>
-              </div>
-              <span className={cn("text-sm font-bold tabular-nums", scoreColor)}>
-                {score}<span className="text-xs font-normal text-slate-400 dark:text-white/30">/{maxScore}</span>
-              </span>
-              {totalFindings > 0 && addressedCount > 0 && (
-                <span className="text-xs text-slate-400 dark:text-white/30">
-                  {addressedCount}/{totalFindings} addressed
-                </span>
-              )}
+            <div className="flex items-center gap-2">
+              <Icon className={cn("h-5 w-5 shrink-0", config.iconColor)} />
+              <p className={cn("text-sm font-semibold", config.textColor)}>
+                {config.label}
+              </p>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-white/60">
               {feedback.summary}
@@ -575,6 +607,16 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, 
           <p className="text-sm text-emerald-300/80">
             No issues found. The proposal meets all checked criteria.
           </p>
+          {onAddFinding && (
+            <button
+              type="button"
+              onClick={() => setAddFindingOpen(true)}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-1.5 text-xs font-medium text-blue-400 transition-colors hover:bg-blue-500/20"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Manual Finding
+            </button>
+          )}
         </div>
       )}
 
@@ -593,6 +635,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, 
           presentSeverities={allPresentSeverities}
           visibleCount={filteredIndexed.length}
           totalCount={totalFindings}
+          onAddFinding={onAddFinding ? () => setAddFindingOpen(true) : undefined}
         />
       )}
 
@@ -602,6 +645,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, 
           hasSelection={focusedGlobalIndex != null}
           canAnnotate={!!onAnnotate}
           canComment={!!onAddComment}
+          canAddFinding={!!onAddFinding}
         />
       )}
 
@@ -682,6 +726,15 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, 
         <div role="status" aria-live="polite" className="sr-only">
           Finding {filteredIndexed.findIndex((item) => item.globalIndex === focusedGlobalIndex) + 1} of {filteredIndexed.length}
         </div>
+      )}
+
+      {/* Add Finding modal */}
+      {onAddFinding && (
+        <AddFindingModal
+          open={addFindingOpen}
+          onClose={() => setAddFindingOpen(false)}
+          onSubmit={onAddFinding}
+        />
       )}
     </div>
   );

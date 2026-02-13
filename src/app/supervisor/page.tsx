@@ -16,12 +16,16 @@ export default async function SupervisorPage() {
     redirect("/");
   }
 
+  // PhD users see only their students' reviews; admins see global view
+  const isAdmin = session.user.role === "admin";
+  const supervisorId = isAdmin ? undefined : session.user.id;
+
   const [overview, studentGroups] = await Promise.all([
-    getSupervisorOverview().catch((err) => {
+    getSupervisorOverview(supervisorId).catch((err) => {
       console.error("[supervisor] Failed to load overview:", err);
       return null;
     }),
-    getReviewsByUser().catch((err) => {
+    getReviewsByUser(supervisorId).catch((err) => {
       console.error("[supervisor] Failed to load student groups:", err);
       return [];
     }),
@@ -46,7 +50,7 @@ export default async function SupervisorPage() {
                 Supervisor Dashboard
               </h1>
               <p className="text-xs text-slate-500 dark:text-white/40">
-                Aggregated review overview across all students
+                {isAdmin ? "Aggregated review overview across all students" : "Reviews for your assigned students"}
               </p>
             </div>
           </div>

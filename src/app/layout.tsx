@@ -20,8 +20,8 @@ export const metadata: Metadata = {
   description: "AI-powered thesis proposal review tool",
 };
 
-/** Inline script to apply theme class before first paint to prevent flash. */
-const themeScript = `(function(){try{var t=localStorage.getItem("theme");if(t==="light")return;if(t==="dark"||!t||t==="system"){if(t==="dark"||!window.matchMedia("(prefers-color-scheme: light)").matches){document.documentElement.classList.add("dark")}}}catch(e){}})()`;
+/** Inline script to apply dark class before first paint (dark-only mode). */
+const themeScript = `document.documentElement.classList.add("dark")`;
 
 export default function RootLayout({
   children,

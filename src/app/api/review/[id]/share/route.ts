@@ -93,7 +93,7 @@ export async function POST(
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, "share.created", {
     expiration: expiration ?? "never", hasPassword: passwordHash !== null,
-  });
+  }, session.user.name);
 
   return Response.json({
     shareToken: result.token,
@@ -144,7 +144,7 @@ export async function DELETE(
   await unshareReview(id);
 
   // Audit log (fire-and-forget)
-  logAuditEvent(id, session.user.id, session.user.email ?? null, "share.revoked");
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "share.revoked", undefined, session.user.name);
 
   return new Response(null, { status: 204 });
 }

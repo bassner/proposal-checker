@@ -39,6 +39,7 @@ import {
 import { PreflightWarnings } from "@/components/preflight-warnings";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { useOnboarding } from "@/hooks/use-onboarding";
+import { UserSearchSelect } from "@/components/user-search-select";
 import type { PreflightWarning } from "@/lib/pdf/preflight";
 
 /**
@@ -172,6 +173,8 @@ const STORAGE_KEY_GROUPS = "proposal-checker:selectedGroups";
 
 function UploadPage() {
   const router = useRouter();
+  const { data: sessionData } = useSession();
+  const userRole = sessionData?.user?.role;
   const tour = useOnboarding();
   const [file, setFile] = useState<File | null>(null);
   const [mode, setModeRaw] = useState<ReviewMode>("proposal");
@@ -187,6 +190,8 @@ function UploadPage() {
   const [preflightPageCount, setPreflightPageCount] = useState<number>(0);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightDismissed, setPreflightDismissed] = useState(false);
+  // Supervisor/student assignment
+  const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const setMode = useCallback((v: ReviewMode) => {
     setModeRaw(v);
     localStorage.setItem("proposal-checker:mode", v);
@@ -356,20 +361,27 @@ function UploadPage() {
     batch.addFiles(files);
   }, [batch]);
 
+  // Build assignment opts based on role
+  const assignmentOpts = assignmentId
+    ? userRole === "student"
+      ? { supervisorId: assignmentId }
+      : { studentId: assignmentId }
+    : undefined;
+
   const handleStart = async () => {
     if (isBatchMode) {
       // Batch mode: submit all queued files sequentially
       if (batch.files.length === 0 || noneSelected) return;
       const groupsToSend = allSelected ? undefined : [...selectedGroups];
-      const { successCount } = await batch.submitAll(provider, mode, groupsToSend);
+      const { successCount } = await batch.submitAll(provider, mode, groupsToSend, assignmentOpts);
       if (successCount > 0) {
         router.push("/reviews");
       }
     } else {
-      // Single-file mode (unchanged)
+      // Single-file mode
       if (!file || noneSelected) return;
       const groupsToSend = allSelected ? undefined : [...selectedGroups];
-      const id = await startReview(file, provider, mode, groupsToSend);
+      const id = await startReview(file, provider, mode, groupsToSend, assignmentOpts);
       if (id) {
         router.push(`/review/${id}`);
       }
@@ -488,6 +500,27 @@ function UploadPage() {
             />
           )}
           </div>
+
+          {/* Supervisor / Student assignment picker */}
+          {userRole === "student" ? (
+            <UserSearchSelect
+              roles="phd,admin"
+              value={assignmentId}
+              onChange={setAssignmentId}
+              label="Supervisor"
+              placeholder="Select your supervisor..."
+              disabled={isAnySubmitting}
+            />
+          ) : (userRole === "phd" || userRole === "admin") ? (
+            <UserSearchSelect
+              roles="student"
+              value={assignmentId}
+              onChange={setAssignmentId}
+              label="Student (document author)"
+              placeholder="Select the student..."
+              disabled={isAnySubmitting}
+            />
+          ) : null}
 
           {/* Template selector */}
           {templates.length > 0 && (

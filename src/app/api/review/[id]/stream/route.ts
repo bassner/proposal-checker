@@ -47,9 +47,12 @@ export async function GET(
     });
   }
 
-  const isOwner = session.userId === authSession.user.id;
+  const uid = authSession.user.id;
+  const isOwner = session.userId === uid;
+  const isStudent = session.studentId === uid;
+  const isSupervisor = session.supervisorId === uid;
   const isAdmin = authSession.user.role === "admin";
-  if (!isOwner && !isAdmin) {
+  if (!isOwner && !isStudent && !isSupervisor && !isAdmin) {
     return new Response(JSON.stringify({ error: "Review not found" }), {
       status: 404, headers: { "Content-Type": "application/json" },
     });

@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import type { Finding, Severity } from "@/types/review";
 import { getPageDensity, type PageDensityMap } from "@/lib/findings-analysis";
 import { cn } from "@/lib/utils";
-import { MapPin, ChevronDown } from "lucide-react";
+import { MapPin } from "lucide-react";
 
 interface FindingsHeatmapProps {
   findings: Finding[];
@@ -95,7 +95,6 @@ function SeverityDots({ bySeverity }: { bySeverity: Record<Severity, number> }) 
 }
 
 export function FindingsHeatmap({ findings, onPageClick, activePage, className }: FindingsHeatmapProps) {
-  const [expanded, setExpanded] = useState(true);
   const [hoveredPage, setHoveredPage] = useState<number | null>(null);
 
   const density = useMemo(() => getPageDensity(findings), [findings]);
@@ -127,13 +126,7 @@ export function FindingsHeatmap({ findings, onPageClick, activePage, className }
   return (
     <div className={cn("rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm", className)}>
       {/* Header */}
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
-        aria-expanded={expanded}
-        aria-controls="findings-heatmap-content"
-      >
+      <div className="flex items-center gap-2.5 px-4 py-3">
         <MapPin className="h-4 w-4 shrink-0 text-white/40" />
         <span className="flex-1 text-sm font-medium text-white/70">Page Heatmap</span>
         <span className="text-xs text-white/30">
@@ -141,17 +134,10 @@ export function FindingsHeatmap({ findings, onPageClick, activePage, className }
             ? `${hotspotCount} hotspot${hotspotCount !== 1 ? "s" : ""}`
             : `${pages.length} page${pages.length !== 1 ? "s" : ""}`}
         </span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-white/30 transition-transform duration-200",
-            expanded && "rotate-180",
-          )}
-        />
-      </button>
+      </div>
 
       {/* Content */}
-      {expanded && (
-        <div id="findings-heatmap-content" className="border-t border-white/5 px-4 pb-4 pt-3">
+      <div className="border-t border-white/5 px-4 pb-4 pt-3">
           {/* Legend */}
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-[10px] text-white/25">Density:</span>
@@ -294,7 +280,6 @@ export function FindingsHeatmap({ findings, onPageClick, activePage, className }
             )}
           </div>
         </div>
-      )}
-    </div>
+      </div>
   );
 }

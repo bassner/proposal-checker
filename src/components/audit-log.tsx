@@ -19,6 +19,7 @@ interface AuditEvent {
   reviewId: string;
   userId: string | null;
   userEmail: string | null;
+  userName: string | null;
   action: string;
   details: Record<string, unknown> | null;
   createdAt: string;
@@ -55,6 +56,16 @@ const ACTION_META: Record<string, { label: string; icon: typeof Clock; color: st
     icon: MessageSquare,
     color: "text-orange-500 dark:text-orange-400",
   },
+  "thread.open": {
+    label: "Thread reopened",
+    icon: MessageSquare,
+    color: "text-amber-500 dark:text-amber-400",
+  },
+  "thread.resolved": {
+    label: "Thread resolved",
+    icon: MessageSquare,
+    color: "text-emerald-500 dark:text-emerald-400",
+  },
   "share.created": {
     label: "Share link created",
     icon: Share2,
@@ -64,6 +75,21 @@ const ACTION_META: Record<string, { label: string; icon: typeof Clock; color: st
     label: "Share link revoked",
     icon: Share2,
     color: "text-slate-500 dark:text-slate-400",
+  },
+  "workflow.transition": {
+    label: "Status changed",
+    icon: Activity,
+    color: "text-indigo-500 dark:text-indigo-400",
+  },
+  "review.bulk_deleted": {
+    label: "Bulk deleted",
+    icon: Trash2,
+    color: "text-red-500 dark:text-red-400",
+  },
+  "finding.added": {
+    label: "Finding added",
+    icon: PenLine,
+    color: "text-teal-500 dark:text-teal-400",
   },
 };
 
@@ -105,6 +131,19 @@ function formatDetails(action: string, details: Record<string, unknown> | null):
       if (details.expiration) parts.push(`Expires: ${details.expiration}`);
       if (details.hasPassword) parts.push("Password-protected");
       return parts.length > 0 ? parts.join(" | ") : null;
+    }
+    case "thread.open":
+    case "thread.resolved":
+      return details.findingIndex != null ? `Finding #${Number(details.findingIndex) + 1}` : null;
+    case "workflow.transition":
+      return details.newStatus ? `New status: ${details.newStatus}` : null;
+    case "review.bulk_deleted":
+      return details.bulkCount ? `${details.bulkCount} review(s)` : null;
+    case "finding.added": {
+      const parts: string[] = [];
+      if (details.severity) parts.push(String(details.severity));
+      if (details.title) parts.push(`"${String(details.title).slice(0, 60)}"`);
+      return parts.length > 0 ? parts.join(" — ") : null;
     }
     default:
       return null;
@@ -246,9 +285,9 @@ export function AuditLog({ reviewId }: { reviewId: string }) {
                           </span>
                         </div>
 
-                        {event.userEmail && (
+                        {(event.userName || event.userEmail) && (
                           <p className="text-xs text-slate-400 dark:text-white/40">
-                            by {event.userEmail}
+                            by {event.userName ?? event.userEmail}
                           </p>
                         )}
 

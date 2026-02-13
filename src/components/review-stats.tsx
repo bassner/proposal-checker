@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import type { MergedFeedback, Severity, Annotations, Finding, CheckGroupState } from "@/types/review";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
-  ChevronDown,
   AlertOctagon,
   AlertTriangle,
   AlertCircle,
@@ -103,8 +102,6 @@ function ProgressRing({
 }
 
 export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsProps) {
-  const [expanded, setExpanded] = useState(true);
-
   const findings = feedback.findings;
   const totalFindings = findings.length;
 
@@ -157,28 +154,15 @@ export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsP
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm">
-      {/* Header (always visible) */}
-      <button
-        type="button"
-        onClick={() => setExpanded((e) => !e)}
-        className="flex w-full items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
-        aria-expanded={expanded}
-        aria-controls="review-stats-content"
-      >
+      {/* Header */}
+      <div className="flex items-center gap-2.5 px-4 py-3">
         <BarChart3 className="h-4 w-4 shrink-0 text-white/40" />
         <span className="flex-1 text-sm font-medium text-white/70">Review Statistics</span>
         <span className="text-xs text-white/30">{totalFindings} finding{totalFindings !== 1 ? "s" : ""}</span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-white/30 transition-transform duration-200",
-            expanded && "rotate-180"
-          )}
-        />
-      </button>
+      </div>
 
-      {/* Collapsible content */}
-      {expanded && (
-        <div id="review-stats-content" className="border-t border-white/5 px-4 pb-4 pt-3">
+      {/* Content */}
+      <div className="border-t border-white/5 px-4 pb-4 pt-3">
           <div className={cn("grid gap-4 sm:grid-cols-2", gridCols)}>
             {/* 1. Severity breakdown bar chart */}
             <div className="space-y-2">
@@ -333,7 +317,6 @@ export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsP
             </div>
           </div>
         </div>
-      )}
-    </div>
+      </div>
   );
 }

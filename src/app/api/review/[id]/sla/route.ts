@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/auth/helpers";
+import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
 import {
   isAvailable,
   getReviewById,
@@ -38,9 +38,8 @@ export async function GET(
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
-  // Access check: owner, admin, or phd can view SLAs
-  const role = session.user.role;
-  if (review.userId !== session.user.id && role !== "admin" && role !== "phd") {
+  // Access check: must be able to access the review
+  if (!canAccessReview(session, review)) {
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 

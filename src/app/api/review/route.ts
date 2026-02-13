@@ -4,7 +4,7 @@ import { REVIEW_MODES, getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
-import { insertReview, completeReview, failReview, logAuditEvent } from "@/lib/db";
+import { insertReview, completeReview, failReview, logAuditEvent, getUserById } from "@/lib/db";
 import { savePdf } from "@/lib/uploads";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
@@ -126,6 +126,40 @@ export async function POST(request: NextRequest) {
   // Resolved groups: selectedGroups if provided, otherwise all mode groups
   const resolvedGroups = selectedGroups ?? getCheckGroups(mode).map((g) => g.id);
 
+  // ── Supervisor / student assignment ──────────────────────────────────
+  const supervisorIdRaw = formData.get("supervisorId") as string | null;
+  const studentIdRaw = formData.get("studentId") as string | null;
+  let supervisorId: string | undefined;
+  let studentId: string | undefined;
+
+  if (session.user.role === "student") {
+    // Students must choose a supervisor; student_id = self
+    if (supervisorIdRaw) {
+      const supervisor = await getUserById(supervisorIdRaw);
+      if (!supervisor || (supervisor.role !== "phd" && supervisor.role !== "admin")) {
+        return new Response(JSON.stringify({ error: "Invalid supervisor selection" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        });
+      }
+      supervisorId = supervisorIdRaw;
+      studentId = session.user.id;
+    }
+    // If no supervisor selected, leave both null (unassigned) — backward compatible
+  } else {
+    // PhD/Admin: must specify which student wrote the document; supervisor = self
+    if (studentIdRaw) {
+      const student = await getUserById(studentIdRaw);
+      if (!student || student.role !== "student") {
+        return new Response(JSON.stringify({ error: "Invalid student selection" }), {
+          status: 400, headers: { "Content-Type": "application/json" },
+        });
+      }
+      studentId = studentIdRaw;
+      supervisorId = session.user.id;
+    }
+    // If no student selected, leave both null (uploading for self / unassigned)
+  }
+
   const { allowed, status } = await canUseProvider(session.user.role, provider);
   if (status === "unavailable") {
     return new Response(
@@ -164,6 +198,8 @@ export async function POST(request: NextRequest) {
     reviewMode: mode,
     selectedGroups: resolvedGroups,
     fileName: file.name,
+    supervisorId,
+    studentId,
   };
 
   const sessionId = createSession(dbMeta);
@@ -180,13 +216,13 @@ export async function POST(request: NextRequest) {
   }
 
   // Persist to DB (fire-and-forget — don't block the response)
-  insertReview({ id: sessionId, ...dbMeta, pdfPath, selectedGroups: resolvedGroups })
+  insertReview({ id: sessionId, ...dbMeta, pdfPath, selectedGroups: resolvedGroups, supervisorId, studentId })
     .catch((err) => console.error("[api] DB insert failed:", err));
 
   // Audit log (fire-and-forget)
   logAuditEvent(sessionId, session.user.id, session.user.email ?? null, "review.created", {
     provider, mode, fileName: file.name, groups: resolvedGroups.length,
-  });
+  }, session.user.name);
 
   // Throttle high-frequency events (token counts, thinking text) to avoid
   // flooding the SSE stream. Each source key gets its own last-send timestamp.
@@ -235,7 +271,7 @@ export async function POST(request: NextRequest) {
       send("done", {});
       setSessionStatus(sessionId, "done");
       completeReview(sessionId, feedback, dbMeta)
-        .then(() => {
+        .then(async () => {
           sendReviewCompleteEmail({
             to: dbMeta.userEmail,
             userName: dbMeta.userName,
@@ -243,6 +279,19 @@ export async function POST(request: NextRequest) {
             reviewId: sessionId,
             feedback,
           }).catch((err) => console.error("[api] Email failed:", err));
+          // For on-behalf uploads, also notify the student
+          if (studentId && studentId !== session.user.id) {
+            const studentUser = await getUserById(studentId).catch(() => null);
+            if (studentUser?.email) {
+              sendReviewCompleteEmail({
+                to: studentUser.email,
+                userName: studentUser.name,
+                fileName: dbMeta.fileName,
+                reviewId: sessionId,
+                feedback,
+              }).catch((err) => console.error("[api] Student email failed:", err));
+            }
+          }
           dispatchWebhookEvent("review.completed", {
             reviewId: sessionId,
             provider: dbMeta.provider,
@@ -261,7 +310,7 @@ export async function POST(request: NextRequest) {
       send("error", { error: sanitizedError });
       setSessionStatus(sessionId, "error");
       failReview(sessionId, sanitizedError, dbMeta)
-        .then(() => {
+        .then(async () => {
           sendReviewErrorEmail({
             to: dbMeta.userEmail,
             userName: dbMeta.userName,
@@ -269,6 +318,19 @@ export async function POST(request: NextRequest) {
             reviewId: sessionId,
             error: sanitizedError,
           }).catch((err) => console.error("[api] Email failed:", err));
+          // For on-behalf uploads, also notify the student
+          if (studentId && studentId !== session.user.id) {
+            const studentUser = await getUserById(studentId).catch(() => null);
+            if (studentUser?.email) {
+              sendReviewErrorEmail({
+                to: studentUser.email,
+                userName: studentUser.name,
+                fileName: dbMeta.fileName,
+                reviewId: sessionId,
+                error: sanitizedError,
+              }).catch((err) => console.error("[api] Student email failed:", err));
+            }
+          }
           dispatchWebhookEvent("review.failed", {
             reviewId: sessionId,
             provider: dbMeta.provider,

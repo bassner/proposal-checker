@@ -172,6 +172,10 @@ export interface Finding {
   title: string;
   description: string;
   locations: SourceLocation[];
+  /** When true, this finding was manually added by a supervisor (not AI-generated). */
+  manual?: boolean;
+  /** Display name of the supervisor who added this finding. */
+  addedBy?: string;
 }
 
 export interface CheckGroupResult {
@@ -286,6 +290,8 @@ export interface Comment {
   resolvedByName?: string;
   /** Timestamp when the thread was resolved. */
   resolvedAt?: string;
+  /** Nested replies — populated in API responses, not stored flat in DB. */
+  replies?: Comment[];
 }
 
 export interface AnnotationEntry {

@@ -120,7 +120,7 @@ export async function POST(request: Request) {
         for (const id of reviewIds) {
           logAuditEvent(id, session.user.id, session.user.email ?? null, "review.bulk_deleted", {
             bulkCount: reviewIds.length,
-          });
+          }, session.user.name);
         }
         return Response.json({ ok: true, deleted: count });
       }
