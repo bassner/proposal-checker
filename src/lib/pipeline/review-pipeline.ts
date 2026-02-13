@@ -35,7 +35,7 @@ export interface PipelineCallbacks {
 }
 
 /**
- * End-to-end review pipeline: extract text -> render pages -> run 7 parallel
+ * End-to-end review pipeline: extract text -> render pages -> run parallel
  * LLM checks -> merge/deduplicate findings -> deliver results.
  *
  * Designed to run fire-and-forget from the route handler. All progress is
@@ -86,13 +86,13 @@ export async function runReviewPipeline(
 
     callbacks.onStep("extract", "done");
 
-    // Step 3: Run 7 parallel checks
+    // Step 3: Run parallel checks
     callbacks.onStep("check", "active");
     const model = createModel(provider);
     const maxConcurrency = provider === "ollama" ? 2 : undefined; // undefined = all at once
     console.log(`[pipeline] Using provider: ${provider}, concurrency: ${maxConcurrency ?? "unlimited"}`);
 
-    // Count input tokens for all 7 checks using tiktoken (exact same tokenizer as the model)
+    // Count input tokens for all checks using tiktoken (exact same tokenizer as the model)
     let cumulativeInputTokens = 0;
     const userMessage = `Here is the proposal text to review:\n\n${extraction.fullText}`;
     const checkInputTokens = CHECK_GROUPS.reduce((sum, g) => {

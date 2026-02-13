@@ -6,7 +6,7 @@ import { mergedFeedbackSchema } from "./schemas";
 import { safeStructuredInvoke } from "./structured-invoke";
 import type { TokenUsage } from "./structured-invoke";
 
-const MERGER_SYSTEM_PROMPT = `You are an expert thesis proposal reviewer performing a final consolidation step. You have received findings from 7 independent check groups that reviewed the same thesis proposal. Your job is to:
+const MERGER_SYSTEM_PROMPT = `You are an expert thesis proposal reviewer performing a final consolidation step. You have received findings from multiple independent check groups that reviewed the same thesis proposal. Your job is to:
 
 1. DEDUPLICATE: Remove findings that say the same thing in different words (keep the best-worded version)
 2. CONSOLIDATE: Merge closely related findings into single, comprehensive feedback items
@@ -27,15 +27,15 @@ Rules:
 - Write a 2-3 sentence summary capturing the key strengths and weaknesses`;
 
 /**
- * The 8th (and final) LLM call in the pipeline. Takes raw findings from all 7
- * parallel check groups and produces a deduplicated, consolidated, and ranked
- * set of 0-25 actionable feedback items plus an overall quality assessment.
+ * Final LLM call in the pipeline. Takes raw findings from all parallel check
+ * groups and produces a deduplicated, consolidated, and ranked set of 0-25
+ * actionable feedback items plus an overall quality assessment.
  *
  * Handles failed check groups by informing the LLM so it can adjust confidence
  * in its overall assessment accordingly.
  *
  * @param model   - The LangChain chat model instance (Azure or Ollama).
- * @param results - Output from all 7 check groups (including any that errored).
+ * @param results - Output from all check groups (including any that errored).
  * @param options - Optional abort signal and streaming callbacks.
  * @returns Merged feedback with structured findings and token usage stats.
  */
@@ -67,7 +67,7 @@ export async function mergeFindings(
     ["system", MERGER_SYSTEM_PROMPT],
     [
       "user",
-      `Here are all the raw findings from 7 check groups (${allFindings.length} total findings):
+      `Here are all the raw findings from ${results.length} check groups (${allFindings.length} total findings):
 
 ${JSON.stringify(allFindings, null, 2)}
 ${failedInfo}

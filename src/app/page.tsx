@@ -68,7 +68,7 @@ function SignInLanding() {
 
         <div className="mt-8 w-full space-y-3">
           <FeatureRow icon={<FileText className="h-4 w-4" />} text="Upload your thesis proposal as PDF" />
-          <FeatureRow icon={<Sparkles className="h-4 w-4" />} text="7 parallel AI checks against academic guidelines" />
+          <FeatureRow icon={<Sparkles className="h-4 w-4" />} text="Parallel AI checks against academic guidelines" />
           <FeatureRow icon={<CheckCircle className="h-4 w-4" />} text="Actionable feedback streamed in real-time" />
         </div>
 
