@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import type { ProviderType, ModelConfig } from "@/types/review";
+import Link from "next/link";
 import {
   GraduationCap,
   Play,
@@ -18,6 +19,7 @@ import {
   Sparkles,
   CheckCircle,
   ShieldX,
+  BookOpen,
 } from "lucide-react";
 
 /**
@@ -79,6 +81,14 @@ function SignInLanding() {
           <LogIn className="h-4 w-4" />
           Sign in with TUM ID
         </button>
+
+        <Link
+          href="/guidelines"
+          className="mt-4 flex items-center justify-center gap-2 text-sm text-white/40 transition-colors hover:text-white/60"
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          View proposal guidelines
+        </Link>
 
         <footer className="mt-12 text-center text-xs text-white/20">
           Created with ❤️ by{" "}
@@ -240,6 +250,14 @@ function UploadPage() {
 
           {error && <p className="text-sm text-red-400">{error}</p>}
         </div>
+
+        <Link
+          href="/guidelines"
+          className="mt-4 flex items-center justify-center gap-2 text-sm text-white/40 transition-colors hover:text-white/60"
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+          View proposal guidelines
+        </Link>
 
         <footer className="mt-12 pb-4 text-center text-xs text-white/20">
           Created with ❤️ by{" "}

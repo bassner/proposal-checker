@@ -102,16 +102,16 @@ export default function SharedReviewPage() {
   return (
     <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
-      <div className="relative mx-auto w-full px-6 py-8">
+      <div className="relative mx-auto w-full px-3 py-4 sm:px-6 sm:py-8">
         <div className="print-header">
           <h1 className="text-base font-semibold">Shared Review</h1>
           {review.fileName && <p className="text-sm text-gray-600">{review.fileName}</p>}
           <p className="text-xs text-gray-400">by {review.userName}</p>
           <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
         </div>
-        <div className="no-print mb-6 flex items-center justify-between">
+        <div className="no-print mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <GraduationCap className="h-5 w-5 text-blue-400" />
             </div>
             <div>
@@ -147,9 +147,9 @@ function PageShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
-      <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-6 py-8">
+      <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
             <GraduationCap className="h-5 w-5 text-blue-400" />
           </div>
           <h1 className="text-lg font-semibold text-white">Shared Review</h1>
