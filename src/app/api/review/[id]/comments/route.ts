@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, addComment, deleteComment, sanitizeAnnotations } from "@/lib/db";
+import { isAvailable, getReviewById, addComment, deleteComment, sanitizeAnnotations, insertNotification } from "@/lib/db";
 import type { MergedFeedback, Comment } from "@/types/review";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -78,6 +78,17 @@ export async function POST(
   };
 
   const updated = await addComment(id, findingIndex, comment);
+
+  // Notify the review owner (skip if the commenter IS the owner)
+  if (review.userId !== session.user.id) {
+    const authorName = session.user.name ?? "A supervisor";
+    insertNotification({
+      userId: review.userId,
+      reviewId: id,
+      type: "comment",
+      message: `${authorName} commented on a finding in "${review.fileName ?? "your review"}"`,
+    }).catch((err) => console.error("[notifications] Failed to insert:", err));
+  }
 
   return Response.json({
     ok: true,

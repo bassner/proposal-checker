@@ -106,6 +106,20 @@ async function ensureSchema(): Promise<void> {
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS pdf_path TEXT;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS selected_groups JSONB;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
+
+      -- Notifications
+      CREATE TABLE IF NOT EXISTS notifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL,
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        type TEXT NOT NULL DEFAULT 'comment' CHECK (type IN ('comment')),
+        message TEXT NOT NULL,
+        read BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+        ON notifications(user_id, read, created_at DESC);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -871,4 +885,87 @@ export async function getAnalytics(): Promise<AnalyticsData | null> {
       count: Number(r.count),
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Notification operations
+// ---------------------------------------------------------------------------
+
+export interface NotificationRow {
+  id: string;
+  userId: string;
+  reviewId: string;
+  type: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+}
+
+function rowToNotification(row: Record<string, unknown>): NotificationRow {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    reviewId: row.review_id as string,
+    type: row.type as string,
+    message: row.message as string,
+    read: row.read as boolean,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/** Insert a notification for a user. */
+export async function insertNotification(notification: {
+  userId: string;
+  reviewId: string;
+  type: string;
+  message: string;
+}): Promise<void> {
+  if (!pool) return;
+  await ensureSchema();
+  await pool.query(
+    `INSERT INTO notifications (user_id, review_id, type, message)
+     VALUES ($1, $2, $3, $4)`,
+    [notification.userId, notification.reviewId, notification.type, notification.message]
+  );
+}
+
+/** Get unread notifications for a user, most recent first. */
+export async function getUnreadNotifications(
+  userId: string,
+  limit = 20
+): Promise<NotificationRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT * FROM notifications
+     WHERE user_id = $1 AND read = FALSE
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return result.rows.map(rowToNotification);
+}
+
+/** Mark a single notification as read. Returns true if updated. */
+export async function markNotificationRead(
+  id: string,
+  userId: string
+): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE notifications SET read = TRUE WHERE id = $1 AND user_id = $2`,
+    [id, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Mark all notifications as read for a user. */
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  if (!pool) return;
+  await ensureSchema();
+  await pool.query(
+    `UPDATE notifications SET read = TRUE WHERE user_id = $1 AND read = FALSE`,
+    [userId]
+  );
 }

@@ -4,6 +4,7 @@ import { useSession, signIn } from "next-auth/react";
 import { LogOut, Shield, ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
+import { NotificationBell } from "./notification-bell";
 
 export function UserMenu() {
   const { data: session } = useSession();
@@ -47,6 +48,7 @@ export function UserMenu() {
           <span className="hidden md:inline">Admin</span>
         </Link>
       )}
+      <NotificationBell />
       <div className="flex items-center gap-2">
         <div className="hidden text-right md:block">
           <p className="text-xs font-medium text-white/70">{name || email}</p>
