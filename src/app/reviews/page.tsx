@@ -24,6 +24,7 @@ import {
   Minus,
 } from "lucide-react";
 import Link from "next/link";
+import { DeleteReviewButton } from "@/components/delete-review-button";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -159,7 +160,7 @@ function TrendIcon({ trend }: { trend: "improving" | "worsening" | "stable" }) {
     case "worsening":
       return <TrendingUp className="inline h-3.5 w-3.5 text-red-400" />;
     default:
-      return <Minus className="inline h-3.5 w-3.5 text-white/30" />;
+      return <Minus className="inline h-3.5 w-3.5 text-slate-300 dark:text-white/30" />;
   }
 }
 
@@ -193,7 +194,7 @@ function GroupedView({
   return (
     <div className="space-y-2">
       {truncated && (
-        <p className="mb-3 text-xs text-yellow-400/70">
+        <p className="mb-3 text-xs text-yellow-600 dark:text-yellow-400/70">
           Showing 500 of {total} reviews. Use search to narrow results.
         </p>
       )}
@@ -207,35 +208,35 @@ function GroupedView({
         return (
           <div
             key={group.key}
-            className="rounded-lg border border-white/10 bg-white/[0.03]"
+            className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.03]"
           >
             {/* Group header */}
             <button
-              className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/5"
+              className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
               onClick={() => toggleGroup(group.key)}
             >
               {isOpen ? (
-                <ChevronUp className="h-4 w-4 shrink-0 text-white/40" />
+                <ChevronUp className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/40" />
               ) : (
-                <ChevronDown className="h-4 w-4 shrink-0 text-white/40" />
+                <ChevronDown className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/40" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-white/80">
+                  <span className="truncate text-sm font-medium text-slate-700 dark:text-white/80">
                     {group.displayName}
                   </span>
                   {isAdmin && group.userName && (
-                    <span className="shrink-0 text-xs text-white/30">
+                    <span className="shrink-0 text-xs text-slate-400 dark:text-white/30">
                       by {group.userName}
                     </span>
                   )}
                 </div>
                 {/* Mini timeline */}
-                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-white/40">
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-slate-400 dark:text-white/40">
                   {sortedByDate.map((r, i) => (
                     <span key={r.id} className="flex items-center gap-1">
-                      {i > 0 && <span className="text-white/20">{"\u2192"}</span>}
-                      <span className={r.status === "done" ? "text-white/50" : "text-white/25"}>
+                      {i > 0 && <span className="text-slate-300 dark:text-white/20">{"\u2192"}</span>}
+                      <span className={r.status === "done" ? "text-slate-500 dark:text-white/50" : "text-slate-300 dark:text-white/25"}>
                         {r.status === "done" ? `${r.findingCount} findings` : r.status}
                       </span>
                     </span>
@@ -244,7 +245,7 @@ function GroupedView({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 <TrendIcon trend={group.trend} />
-                <span className="text-xs text-white/40">
+                <span className="text-xs text-slate-400 dark:text-white/40">
                   {group.reviews.length} revision{group.reviews.length !== 1 ? "s" : ""}
                   {doneReviews.length > 0 && doneReviews.length !== group.reviews.length && (
                     <>, {doneReviews.length} done</>
@@ -255,33 +256,33 @@ function GroupedView({
 
             {/* Expanded detail rows */}
             {isOpen && (
-              <div className="border-t border-white/5 px-4 pb-2">
+              <div className="border-t border-slate-100 px-4 pb-2 dark:border-white/5">
                 <table className="w-full text-left text-sm">
                   <tbody>
                     {sortedByDate.map((r) => (
                       <tr
                         key={r.id}
-                        className="cursor-pointer border-b border-white/5 transition-colors last:border-0 hover:bg-white/5"
+                        className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/5"
                         onClick={() => router.push(`/review/${r.id}`)}
                       >
-                        <td className="py-2 pr-4 text-xs text-white/50">
+                        <td className="py-2 pr-4 text-xs text-slate-500 dark:text-white/50">
                           {new Date(r.createdAt).toLocaleString()}
                         </td>
                         <td className="py-2 pr-4">
                           {statusBadge(r.status, r.createdAt)}
                         </td>
-                        <td className="py-2 pr-4 text-xs text-white/50">
+                        <td className="py-2 pr-4 text-xs text-slate-500 dark:text-white/50">
                           {r.status === "done" ? (
                             <span>
                               {r.findingCount} finding{r.findingCount !== 1 ? "s" : ""}
                             </span>
                           ) : (
-                            <span className="text-white/25">{"\u2014"}</span>
+                            <span className="text-slate-300 dark:text-white/25">{"\u2014"}</span>
                           )}
                         </td>
                         <td className="py-2 text-right">
                           {r.status === "done" && (
-                            <span className="text-xs text-blue-400 hover:text-blue-300">
+                            <span className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300">
                               View &rarr;
                             </span>
                           )}
@@ -296,7 +297,7 @@ function GroupedView({
         );
       })}
       {groups.length === 0 && (
-        <p className="py-8 text-center text-sm text-white/30">No reviews to group</p>
+        <p className="py-8 text-center text-sm text-slate-400 dark:text-white/30">No reviews to group</p>
       )}
     </div>
   );
@@ -328,6 +329,8 @@ export default function ReviewsPage() {
   const [groupedLoading, setGroupedLoading] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
+  const [refreshKey, setRefreshKey] = useState(0);
+  const handleDeleted = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   // Debounce search input
   useEffect(() => {
@@ -389,7 +392,7 @@ export default function ReviewsPage() {
     } else {
       fetchReviews(page, sort, dir, debouncedSearch);
     }
-  }, [page, sort, dir, debouncedSearch, groupByFile, fetchReviews, fetchGrouped]);
+  }, [page, sort, dir, debouncedSearch, groupByFile, fetchReviews, fetchGrouped, refreshKey]);
 
   // Clear selection when table data changes
   useEffect(() => {
@@ -480,8 +483,8 @@ export default function ReviewsPage() {
     router.push(`/review/${r.id}`);
   }
 
-  const thClass = "pb-2 pr-4 text-xs font-medium text-white/40";
-  const sortableThClass = `${thClass} cursor-pointer select-none hover:text-white/70 transition-colors`;
+  const thClass = "pb-2 pr-4 text-xs font-medium text-slate-400 dark:text-white/40";
+  const sortableThClass = `${thClass} cursor-pointer select-none hover:text-slate-700 dark:hover:text-white/70 transition-colors`;
 
   const isLoading = groupByFile ? groupedLoading : loading;
   const hasData = groupByFile ? !!groupedData : !!data;
@@ -490,8 +493,8 @@ export default function ReviewsPage() {
     : data?.reviews.length === 0;
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="page-bg relative min-h-screen">
+      <div className="background-orbs pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
         <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
       </div>
@@ -501,10 +504,10 @@ export default function ReviewsPage() {
         <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
-              <ClipboardList className="h-5 w-5 text-blue-400" />
+              <ClipboardList className="h-5 w-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-white">
+              <h1 className="page-title">
                 {isAdmin ? "All Reviews" : "My Reviews"}
               </h1>
               <p className="text-xs text-white/40" aria-live="polite">
@@ -520,7 +523,7 @@ export default function ReviewsPage() {
               className={
                 groupByFile
                   ? "border-blue-500/50 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 hover:text-blue-200"
-                  : "border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+                  : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
               }
               onClick={() => {
                 setGroupByFile((g) => !g);
@@ -539,7 +542,7 @@ export default function ReviewsPage() {
                 className={
                   compareMode
                     ? "border-purple-500/50 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200"
-                    : "border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
                 }
                 onClick={() => {
                   setCompareMode((m) => !m);
@@ -551,7 +554,7 @@ export default function ReviewsPage() {
               </Button>
             )}
             <Link href="/" aria-label="Back to Home">
-              <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
+              <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">
                 <ArrowLeft className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Back to Home</span>
               </Button>
@@ -564,19 +567,19 @@ export default function ReviewsPage() {
         <main id="main-content" className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           {/* Search bar */}
           <div className="relative mb-4">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-white/30" />
             <input
               type="text"
               placeholder="Search by file name, user name, or email..."
               aria-label="Search reviews"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-9 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-blue-500/50 focus:bg-white/[0.07]"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 outline-none transition-colors focus:border-blue-500/50 focus:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-white/30 dark:focus:bg-white/[0.07]"
             />
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-white/30 dark:hover:text-white/60"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -584,7 +587,7 @@ export default function ReviewsPage() {
           </div>
 
           {isLoading && !hasData && (
-            <p className="py-8 text-center text-sm text-white/30">Loading reviews...</p>
+            <p className="py-8 text-center text-sm text-slate-400 dark:text-white/30">Loading reviews...</p>
           )}
 
           {error && (
@@ -592,7 +595,7 @@ export default function ReviewsPage() {
           )}
 
           {hasData && isEmpty && (
-            <p className="py-8 text-center text-sm text-white/30">
+            <p className="py-8 text-center text-sm text-slate-400 dark:text-white/30">
               {debouncedSearch ? "No reviews match your search" : "No reviews yet"}
             </p>
           )}
@@ -613,7 +616,7 @@ export default function ReviewsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-white/10">
+                    <tr className="border-b border-slate-200 dark:border-white/10">
                       {compareMode && <th className={thClass} style={{ width: 32 }}></th>}
                       <th className={sortableThClass} onClick={() => handleSort("created_at")}>
                         Date <SortIcon column="created_at" activeSort={sort} activeDir={dir} />
@@ -635,7 +638,7 @@ export default function ReviewsPage() {
                           User <SortIcon column="user_name" activeSort={sort} activeDir={dir} />
                         </th>
                       )}
-                      <th className="pb-2 text-xs font-medium text-white/40"></th>
+                      <th className="pb-2 text-xs font-medium text-slate-400 dark:text-white/40"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -646,7 +649,7 @@ export default function ReviewsPage() {
                       return (
                       <tr
                         key={r.id}
-                        className={`cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5 ${isSelected ? "bg-purple-500/10" : ""}`}
+                        className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/5 ${isSelected ? "bg-purple-500/10" : ""}`}
                         onClick={() => handleRowClick(r)}
                       >
                         {compareMode && (
@@ -664,34 +667,44 @@ export default function ReviewsPage() {
                             )}
                           </td>
                         )}
-                        <td className="py-2.5 pr-4 text-xs text-white/50">
+                        <td className="py-2.5 pr-4 text-xs text-slate-500 dark:text-white/50">
                           {new Date(r.createdAt).toLocaleString()}
                         </td>
-                        <td className="py-2.5 pr-4 text-white/70">
+                        <td className="py-2.5 pr-4 text-slate-700 dark:text-white/70">
                           {r.fileName ?? "\u2014"}
                         </td>
                         <td className="hidden py-2.5 pr-4 md:table-cell">
                           {r.reviewMode === "thesis" ? (
                             <span className="inline-block rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-400">thesis</span>
                           ) : (
-                            <span className="text-white/50">proposal</span>
+                            <span className="text-slate-500 dark:text-white/50">proposal</span>
                           )}
                         </td>
-                        <td className="hidden py-2.5 pr-4 text-white/50 md:table-cell">{r.provider}</td>
+                        <td className="hidden py-2.5 pr-4 text-slate-500 dark:text-white/50 md:table-cell">{r.provider}</td>
                         <td className="py-2.5 pr-4">
                           {statusBadge(r.status, r.createdAt)}
                         </td>
                         {isAdmin && (
-                          <td className="hidden py-2.5 pr-4 text-white/50 lg:table-cell">
+                          <td className="hidden py-2.5 pr-4 text-slate-500 dark:text-white/50 lg:table-cell">
                             {r.userName || r.userEmail || r.userId}
                           </td>
                         )}
-                        <td className="py-2.5 text-right">
-                          {r.status === "done" && (
-                            <span className="text-xs text-blue-400 hover:text-blue-300">
-                              View &rarr;
-                            </span>
-                          )}
+                        <td className="py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2">
+                            {r.status === "done" && (
+                              <span className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300" onClick={() => router.push(`/review/${r.id}`)}>
+                                View &rarr;
+                              </span>
+                            )}
+                            {(isAdmin || r.userId === session?.user?.id) && (
+                              <DeleteReviewButton
+                                reviewId={r.id}
+                                fileName={r.fileName}
+                                variant="icon"
+                                onDeleted={handleDeleted}
+                              />
+                            )}
+                          </div>
                         </td>
                       </tr>
                       );
@@ -702,8 +715,8 @@ export default function ReviewsPage() {
 
               {/* Compare mode bar */}
               {compareMode && (
-                <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4">
-                  <p className="text-xs text-white/40">
+                <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 dark:border-white/10">
+                  <p className="text-xs text-slate-400 dark:text-white/40">
                     {selectedIds.length === 0
                       ? "Select 2 completed reviews to compare"
                       : selectedIds.length === 1
@@ -723,15 +736,15 @@ export default function ReviewsPage() {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4">
-                  <p className="text-xs text-white/30">
+                <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 dark:border-white/10">
+                  <p className="text-xs text-slate-400 dark:text-white/30">
                     Page {page} of {totalPages}
                   </p>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-white/10 text-white/50 hover:bg-white/10 hover:text-white"
+                      className="border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
                       disabled={page <= 1}
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
                     >
@@ -740,7 +753,7 @@ export default function ReviewsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-white/10 text-white/50 hover:bg-white/10 hover:text-white"
+                      className="border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
                       disabled={page >= totalPages}
                       onClick={() => setPage((p) => p + 1)}
                     >
