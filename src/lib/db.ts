@@ -370,6 +370,24 @@ async function ensureSchema(): Promise<void> {
         ON review_versions(group_id);
       CREATE INDEX IF NOT EXISTS idx_review_versions_review
         ON review_versions(review_id);
+
+      -- Finding SLA deadlines (supervisor-set deadlines for finding resolutions)
+      CREATE TABLE IF NOT EXISTS finding_sla (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        finding_index INT NOT NULL,
+        deadline TIMESTAMPTZ NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'medium',
+        set_by TEXT NOT NULL,
+        set_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(review_id, finding_index)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_finding_sla_review
+        ON finding_sla(review_id);
+      CREATE INDEX IF NOT EXISTS idx_finding_sla_deadline
+        ON finding_sla(deadline);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -3764,4 +3782,209 @@ export async function getAllStudentSummaries(): Promise<StudentSummary[]> {
   );
 
   return summaries;
+}
+
+// ---------------------------------------------------------------------------
+// Finding SLA (Service Level Agreement deadlines for finding resolutions)
+// ---------------------------------------------------------------------------
+
+export interface FindingSLARow {
+  id: string;
+  reviewId: string;
+  findingIndex: number;
+  deadline: string;
+  severity: string;
+  setBy: string;
+  setByName: string | null;
+  createdAt: string;
+}
+
+function rowToSLA(row: Record<string, unknown>): FindingSLARow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    findingIndex: row.finding_index as number,
+    deadline: (row.deadline as Date).toISOString(),
+    severity: row.severity as string,
+    setBy: row.set_by as string,
+    setByName: (row.set_by_name as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Set or update an SLA deadline for a specific finding.
+ * Uses upsert on the (review_id, finding_index) unique constraint.
+ */
+export async function setFindingSLA(
+  reviewId: string,
+  findingIndex: number,
+  deadline: string,
+  severity: string,
+  userId: string,
+  userName: string | null
+): Promise<FindingSLARow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO finding_sla (review_id, finding_index, deadline, severity, set_by, set_by_name)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (review_id, finding_index) DO UPDATE SET
+       deadline = $3,
+       severity = $4,
+       set_by = $5,
+       set_by_name = $6,
+       created_at = NOW()
+     RETURNING *`,
+    [reviewId, findingIndex, deadline, severity, userId, userName]
+  );
+  return rowToSLA(result.rows[0]);
+}
+
+/**
+ * Get all SLA entries for a given review, keyed by finding index.
+ */
+export async function getFindingSLAsForReview(
+  reviewId: string
+): Promise<FindingSLARow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM finding_sla WHERE review_id = $1 ORDER BY finding_index ASC",
+    [reviewId]
+  );
+  return result.rows.map(rowToSLA);
+}
+
+/**
+ * Get all findings that are past their SLA deadline and are NOT resolved/dismissed.
+ * Cross-references finding_resolutions to exclude findings that have been resolved.
+ */
+export async function getOverdueSLAs(): Promise<
+  (FindingSLARow & { reviewFileName: string | null; reviewUserName: string; currentResolution: string })[]
+> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const result = await pool.query(`
+    WITH latest_resolutions AS (
+      SELECT DISTINCT ON (review_id, finding_index)
+        review_id,
+        finding_index,
+        status
+      FROM finding_resolutions
+      ORDER BY review_id, finding_index, created_at DESC
+    )
+    SELECT
+      s.*,
+      r.file_name AS review_file_name,
+      r.user_name AS review_user_name,
+      COALESCE(lr.status, 'open') AS current_resolution
+    FROM finding_sla s
+    JOIN reviews r ON r.id = s.review_id AND r.deleted_at IS NULL
+    LEFT JOIN latest_resolutions lr ON lr.review_id = s.review_id AND lr.finding_index = s.finding_index
+    WHERE s.deadline < NOW()
+      AND COALESCE(lr.status, 'open') NOT IN ('resolved', 'dismissed')
+    ORDER BY s.deadline ASC
+  `);
+
+  return result.rows.map((row) => ({
+    ...rowToSLA(row),
+    reviewFileName: (row.review_file_name as string) ?? null,
+    reviewUserName: row.review_user_name as string,
+    currentResolution: row.current_resolution as string,
+  }));
+}
+
+export interface SLAAnalytics {
+  totalSLAs: number;
+  overdueCount: number;
+  avgResolutionMs: number | null;
+  bySeverity: { severity: string; total: number; overdue: number }[];
+  complianceRate: number;
+}
+
+/**
+ * Get aggregate SLA analytics: total SLAs, overdue count, avg resolution time,
+ * breakdown by severity, and compliance rate.
+ */
+export async function getSLAAnalytics(): Promise<SLAAnalytics | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(`
+    WITH latest_resolutions AS (
+      SELECT DISTINCT ON (review_id, finding_index)
+        review_id,
+        finding_index,
+        status,
+        created_at AS resolved_at
+      FROM finding_resolutions
+      ORDER BY review_id, finding_index, created_at DESC
+    ),
+    sla_with_status AS (
+      SELECT
+        s.*,
+        COALESCE(lr.status, 'open') AS current_resolution,
+        lr.resolved_at
+      FROM finding_sla s
+      JOIN reviews r ON r.id = s.review_id AND r.deleted_at IS NULL
+      LEFT JOIN latest_resolutions lr ON lr.review_id = s.review_id AND lr.finding_index = s.finding_index
+    ),
+    totals AS (
+      SELECT
+        COUNT(*)::int AS total_slas,
+        COUNT(*) FILTER (
+          WHERE deadline < NOW() AND current_resolution NOT IN ('resolved', 'dismissed')
+        )::int AS overdue_count,
+        AVG(
+          CASE WHEN current_resolution IN ('resolved', 'dismissed')
+            THEN EXTRACT(EPOCH FROM (resolved_at - created_at)) * 1000
+            ELSE NULL
+          END
+        ) AS avg_resolution_ms
+      FROM sla_with_status
+    ),
+    severity_breakdown AS (
+      SELECT
+        severity,
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (
+          WHERE deadline < NOW() AND current_resolution NOT IN ('resolved', 'dismissed')
+        )::int AS overdue
+      FROM sla_with_status
+      GROUP BY severity
+      ORDER BY severity
+    )
+    SELECT json_build_object(
+      'totalSLAs', (SELECT total_slas FROM totals),
+      'overdueCount', (SELECT overdue_count FROM totals),
+      'avgResolutionMs', (SELECT avg_resolution_ms FROM totals),
+      'bySeverity', COALESCE(
+        (SELECT json_agg(json_build_object(
+          'severity', severity,
+          'total', total,
+          'overdue', overdue
+        )) FROM severity_breakdown),
+        '[]'::json
+      )
+    ) AS data
+  `);
+
+  const raw = result.rows[0].data;
+  const totalSLAs = Number(raw.totalSLAs ?? 0);
+  const overdueCount = Number(raw.overdueCount ?? 0);
+  const resolvedCount = totalSLAs - overdueCount;
+
+  return {
+    totalSLAs,
+    overdueCount,
+    avgResolutionMs: raw.avgResolutionMs != null ? Number(raw.avgResolutionMs) : null,
+    bySeverity: (raw.bySeverity as { severity: string; total: number; overdue: number }[]).map((b) => ({
+      severity: String(b.severity),
+      total: Number(b.total),
+      overdue: Number(b.overdue),
+    })),
+    complianceRate: totalSLAs > 0 ? Math.round((resolvedCount / totalSLAs) * 100) : 100,
+  };
 }
