@@ -1,12 +1,14 @@
 "use client";
 
-import type { MergedFeedback, Severity, Finding } from "@/types/review";
+import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 
 interface FeedbackListProps {
   feedback: MergedFeedback;
+  annotations?: Annotations;
+  onAnnotate?: (findingIndex: number, status: AnnotationStatus) => void;
 }
 
 const assessmentConfig = {
@@ -77,36 +79,43 @@ const severityColumnConfig: Record<
   },
 };
 
+/** Finding with its original index in the feedback.findings array. */
+interface IndexedFinding {
+  finding: Finding;
+  globalIndex: number;
+}
+
 /** Earliest page number referenced by a finding's locations, or Infinity if none. Used as sort key. */
 function minPage(f: Finding): number {
   const pages = f.locations.map((l) => l.page).filter((p): p is number => p != null);
   return pages.length > 0 ? Math.min(...pages) : Infinity;
 }
 
-/** Group findings by severity and sort each group by page number for reading order. */
-function groupBySeverity(findings: Finding[]): Partial<Record<Severity, Finding[]>> {
-  const groups: Partial<Record<Severity, Finding[]>> = {};
-  for (const f of findings) {
+/** Group findings by severity, preserving their global index for annotation keys. */
+function groupBySeverity(findings: Finding[]): Partial<Record<Severity, IndexedFinding[]>> {
+  const groups: Partial<Record<Severity, IndexedFinding[]>> = {};
+  for (let i = 0; i < findings.length; i++) {
+    const f = findings[i];
     if (!groups[f.severity]) groups[f.severity] = [];
-    groups[f.severity]!.push(f);
+    groups[f.severity]!.push({ finding: f, globalIndex: i });
   }
   for (const arr of Object.values(groups)) {
-    arr?.sort((a, b) => minPage(a) - minPage(b));
+    arr?.sort((a, b) => minPage(a.finding) - minPage(b.finding));
   }
   return groups;
 }
 
-/**
- * Renders the final review results as a multi-column layout grouped by severity.
- * Shows an overall assessment banner (good/acceptable/needs-work) at the top,
- * followed by severity columns that dynamically resize based on which severities
- * are present. Findings within each column are sorted by page number.
- */
-export function FeedbackList({ feedback }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
   const grouped = groupBySeverity(feedback.findings);
   const presentSeverities = SEVERITY_ORDER.filter((s) => grouped[s] && grouped[s]!.length > 0);
+
+  // Annotation summary counts
+  const totalFindings = feedback.findings.length;
+  const addressedCount = annotations
+    ? Object.keys(annotations).length
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -137,6 +146,11 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
                   );
                 })}
               </div>
+              {totalFindings > 0 && addressedCount > 0 && (
+                <span className="text-xs text-white/30">
+                  {addressedCount}/{totalFindings} findings addressed
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm leading-relaxed text-white/60">
               {feedback.summary}
@@ -158,7 +172,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
         className={cn("print-single-col grid gap-4", GRID_COLS[presentSeverities.length] ?? "grid-cols-1")}
       >
         {presentSeverities.map((severity) => {
-          const findings = grouped[severity]!;
+          const items = grouped[severity]!;
           const col = severityColumnConfig[severity];
           return (
             <div key={severity} className="min-w-0">
@@ -173,13 +187,18 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
                   {col.label}
                 </span>
                 <span className={cn("text-xs font-bold", col.countColor)}>
-                  {findings.length}
+                  {items.length}
                 </span>
               </div>
               {/* Cards */}
               <div className="space-y-2">
-                {findings.map((finding, index) => (
-                  <FeedbackCard key={`${finding.severity}-${index}`} finding={finding} />
+                {items.map(({ finding, globalIndex }) => (
+                  <FeedbackCard
+                    key={`${finding.severity}-${globalIndex}`}
+                    finding={finding}
+                    annotation={annotations?.[String(globalIndex)]}
+                    onAnnotate={onAnnotate ? (status) => onAnnotate(globalIndex, status) : undefined}
+                  />
                 ))}
               </div>
             </div>

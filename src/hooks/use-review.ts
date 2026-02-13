@@ -10,6 +10,7 @@ import type {
   MergedFeedback,
   LLMPhase,
   StepStatus,
+  Annotations,
 } from "@/types/review";
 import { CHECK_GROUPS, ALL_CHECK_GROUP_META, getCheckGroups } from "@/types/review";
 
@@ -185,6 +186,7 @@ export interface CompletedReview {
   feedback: MergedFeedback | null;
   errorMessage: string | null;
   shareToken: string | null;
+  annotations: Annotations;
   isStale?: boolean; // Computed when fetched for running reviews
 }
 

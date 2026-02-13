@@ -151,3 +151,14 @@ export interface ModelConfig {
   label: string;
   model: string;
 }
+
+// Finding annotations (user feedback on individual findings)
+export type AnnotationStatus = "accepted" | "dismissed" | "fixed";
+
+export interface AnnotationEntry {
+  status: AnnotationStatus;
+  updatedAt: string;
+}
+
+/** Keys are stringified finding indices from the feedback.findings array. */
+export type Annotations = Record<string, AnnotationEntry>;

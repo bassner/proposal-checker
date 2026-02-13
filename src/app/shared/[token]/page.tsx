@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
 import { GraduationCap, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import type { MergedFeedback } from "@/types/review";
+import type { MergedFeedback, Annotations } from "@/types/review";
 
 interface SharedReview {
   id: string;
@@ -18,6 +18,7 @@ interface SharedReview {
   createdAt: string;
   feedback: MergedFeedback | null;
   userName: string;
+  annotations?: Annotations;
 }
 
 export default function SharedReviewPage() {
@@ -131,7 +132,7 @@ export default function SharedReviewPage() {
             </Link>
           </div>
         </div>
-        <FeedbackList feedback={review.feedback} />
+        <FeedbackList feedback={review.feedback} annotations={review.annotations} />
         <footer className="mt-12 pb-4 text-center text-xs text-white/20">
           Created with &#10084;&#65039; by{" "}
           <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">

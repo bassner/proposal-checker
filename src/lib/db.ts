@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode } from "@/types/review";
+import type { ProviderType, ReviewMode, Annotations } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -94,6 +94,9 @@ async function ensureSchema(): Promise<void> {
 
       -- Review mode: proposal (default) or thesis
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS review_mode TEXT DEFAULT 'proposal';
+
+      -- Finding annotations (user actions on individual findings)
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS annotations JSONB;
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -139,6 +142,7 @@ export interface ReviewRow {
   feedback: unknown | null;
   errorMessage: string | null;
   shareToken: string | null;
+  annotations: Annotations;
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
@@ -158,6 +162,7 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     feedback: row.feedback ?? null,
     errorMessage: (row.error_message as string) ?? null,
     shareToken: (row.share_token as string) ?? null,
+    annotations: (row.annotations as Annotations) ?? {},
   };
 }
 
@@ -387,6 +392,29 @@ export async function getReviewByShareToken(token: string): Promise<ReviewRow | 
   );
   if (result.rows.length === 0) return null;
   return rowToReview(result.rows[0]);
+}
+
+// ---------------------------------------------------------------------------
+// Annotation operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Save the full annotations map for a review (replaces existing).
+ * The client maintains the canonical state and sends the full map on each save.
+ */
+export async function saveAnnotations(
+  reviewId: string,
+  annotations: Annotations
+): Promise<void> {
+  if (!pool) return;
+  await ensureSchema();
+  await pool.query(
+    `UPDATE reviews
+     SET annotations = $2::jsonb,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [reviewId, JSON.stringify(annotations)]
+  );
 }
 
 // ---------------------------------------------------------------------------
