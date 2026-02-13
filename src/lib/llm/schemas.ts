@@ -1,6 +1,13 @@
 import { z } from "zod";
+import { FINDING_CATEGORY_VALUES } from "@/types/review";
 
 export const severitySchema = z.enum(["critical", "major", "minor", "suggestion"]);
+
+export const findingCategorySchema = z.enum(
+  FINDING_CATEGORY_VALUES as unknown as [string, ...string[]]
+).describe(
+  "Category of the finding: formatting, structure, citation, methodology, writing, figures, logic, completeness, or other"
+);
 
 export const sourceLocationSchema = z.object({
   page: z.number().nullable().describe("Page number from === PAGE N === markers, or null if unknown"),
@@ -10,7 +17,7 @@ export const sourceLocationSchema = z.object({
 
 export const findingSchema = z.object({
   severity: severitySchema,
-  category: z.string().describe("Short category label, e.g. 'Structure', 'Writing Style'"),
+  category: findingCategorySchema,
   title: z.string().describe("One-line summary of the issue"),
   description: z
     .string()

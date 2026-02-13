@@ -20,6 +20,7 @@ Rules:
 - Preserve specific section references and actionable details
 - If multiple groups flagged the same issue with different severities, use the HIGHER severity
 - When deduplicating or consolidating findings, UNION all locations from the source findings. Preserve every page, section, and quote detail — do not discard locations during merging.
+- Assign each finding a "category" from this exact set: "formatting", "structure", "citation", "methodology", "writing", "figures", "logic", "completeness", "other". Choose the single best-fitting category based on the finding's content. Use "other" only as a last resort.
 - The overall assessment should be:
   - "good" = proposal is ready to submit with only minor tweaks (mostly suggestions/minor issues, or no issues at all)
   - "acceptable" = proposal needs some work but is on the right track (mix of minor and major issues)

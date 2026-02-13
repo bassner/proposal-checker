@@ -1,5 +1,61 @@
 export type Severity = "critical" | "major" | "minor" | "suggestion";
 
+// ── Finding categories ───────────────────────────────────────────────────
+export const FINDING_CATEGORY_VALUES = [
+  "formatting",
+  "structure",
+  "citation",
+  "methodology",
+  "writing",
+  "figures",
+  "logic",
+  "completeness",
+  "other",
+] as const;
+
+export type FindingCategory = (typeof FINDING_CATEGORY_VALUES)[number];
+
+export interface FindingCategoryMeta {
+  label: string;
+  /** Tailwind bg + text classes for the badge pill. */
+  bgClass: string;
+  textClass: string;
+}
+
+/** Display metadata for each finding category. */
+export const FINDING_CATEGORIES: Record<FindingCategory, FindingCategoryMeta> = {
+  formatting:   { label: "Formatting",   bgClass: "bg-violet-500/15",  textClass: "text-violet-400" },
+  structure:    { label: "Structure",    bgClass: "bg-sky-500/15",     textClass: "text-sky-400" },
+  citation:     { label: "Citation",     bgClass: "bg-amber-500/15",   textClass: "text-amber-400" },
+  methodology:  { label: "Methodology",  bgClass: "bg-teal-500/15",    textClass: "text-teal-400" },
+  writing:      { label: "Writing",      bgClass: "bg-pink-500/15",    textClass: "text-pink-400" },
+  figures:      { label: "Figures",      bgClass: "bg-emerald-500/15", textClass: "text-emerald-400" },
+  logic:        { label: "Logic",        bgClass: "bg-indigo-500/15",  textClass: "text-indigo-400" },
+  completeness: { label: "Completeness", bgClass: "bg-cyan-500/15",    textClass: "text-cyan-400" },
+  other:        { label: "Other",        bgClass: "bg-slate-500/15",   textClass: "text-slate-400" },
+};
+
+/**
+ * Normalize a free-form category string (from older reviews or the LLM) into
+ * a known FindingCategory. Falls back to "other" if no match is found.
+ */
+export function normalizeFindingCategory(raw: string | undefined): FindingCategory {
+  if (!raw) return "other";
+  const lower = raw.toLowerCase().trim();
+  // Direct match
+  if (FINDING_CATEGORY_VALUES.includes(lower as FindingCategory)) return lower as FindingCategory;
+  // Keyword-based heuristic for free-form strings from older reviews
+  if (/format|terminol|title\s*case|heading/i.test(lower)) return "formatting";
+  if (/structur|section|length|missing/i.test(lower)) return "structure";
+  if (/citat|bibliograph|reference|footnote/i.test(lower)) return "citation";
+  if (/method|approach|design/i.test(lower)) return "methodology";
+  if (/writ|style|voice|grammar|paragraph|contraction|filler|sentence/i.test(lower)) return "writing";
+  if (/figur|diagram|image|caption|uml/i.test(lower)) return "figures";
+  if (/logic|argument|reasoning|coherence/i.test(lower)) return "logic";
+  if (/complet|missing|absent|lack|schedul|transparen/i.test(lower)) return "completeness";
+  return "other";
+}
+
 export const REVIEW_MODES = ["proposal", "thesis"] as const;
 export type ReviewMode = (typeof REVIEW_MODES)[number];
 
