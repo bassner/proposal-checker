@@ -180,10 +180,10 @@ function UploadPage() {
         <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
+      <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <GraduationCap className="h-5 w-5 text-blue-400" />
             </div>
             <div>
@@ -194,7 +194,7 @@ function UploadPage() {
           <UserMenu />
         </div>
 
-        <div className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+        <div className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           <FileDropzone
             onFileSelect={setFile}
             selectedFile={file}
