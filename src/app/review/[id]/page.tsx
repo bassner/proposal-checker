@@ -21,6 +21,7 @@ import { useMemo } from "react";
 import { useComments } from "@/hooks/use-comments";
 import { TimeEstimate } from "@/components/time-estimate";
 import { DeleteReviewButton } from "@/components/delete-review-button";
+import { ReviewStats } from "@/components/review-stats";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -227,6 +228,9 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             <UserMenu />
           </nav>
         </header>
+        <div className="mb-4">
+          <ReviewStats feedback={feedback} annotations={mergedAnnotations} />
+        </div>
         <main id="main-content">
         <FeedbackList
           feedback={feedback}
