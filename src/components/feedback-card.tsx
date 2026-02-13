@@ -17,6 +17,8 @@ interface FeedbackCardProps {
   onAddComment?: (text: string) => Promise<void>;
   onDeleteComment?: (commentId: string) => Promise<void>;
   commentSubmitting?: boolean;
+  /** Called when a page reference in the finding is clicked (for PDF viewer navigation). */
+  onPageClick?: (page: number) => void;
 }
 
 const severityConfig: Record<
@@ -175,7 +177,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
   );
 }
 
-export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, commentSubmitting }: FeedbackCardProps) {
+export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, commentSubmitting, onPageClick }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
   const SevIcon = config.icon;
   const [locationsExpanded, setLocationsExpanded] = useState(false);
@@ -244,9 +246,21 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
             {visibleLocations.map((loc, i) => (
               <div key={i} className="text-[11px] leading-snug text-white/35">
                 <span className="font-medium text-white/45">
-                  {[loc.page != null && `p.\u00A0${loc.page}`, loc.section]
-                    .filter(Boolean)
-                    .join(" \u00B7 ") || "\u2014"}
+                  {loc.page != null && onPageClick ? (
+                    <button
+                      type="button"
+                      onClick={() => onPageClick(loc.page!)}
+                      className="text-blue-400/70 hover:text-blue-300 underline decoration-blue-400/30 hover:decoration-blue-300/50 transition-colors"
+                      aria-label={`Go to page ${loc.page}`}
+                    >
+                      p.&nbsp;{loc.page}
+                    </button>
+                  ) : loc.page != null ? (
+                    `p.\u00A0${loc.page}`
+                  ) : null}
+                  {loc.page != null && loc.section && " \u00B7 "}
+                  {loc.section}
+                  {loc.page == null && !loc.section && "\u2014"}
                 </span>
                 {" "}
                 <span className="italic">
