@@ -124,5 +124,45 @@ export function useAnnotations(reviewId: string, initial: Annotations = {}) {
     [scheduleSave]
   );
 
-  return { annotations, toggleAnnotation, saving };
+  /** Bulk-set annotation status for multiple findings at once. */
+  const bulkAnnotate = useCallback(
+    (indices: number[], status: AnnotationStatus) => {
+      setAnnotations((prev) => {
+        const now = new Date().toISOString();
+        const next = { ...prev };
+        for (const idx of indices) {
+          const key = String(idx);
+          const existing = next[key];
+          next[key] = {
+            status,
+            updatedAt: now,
+            ...(existing?.comments?.length ? { comments: existing.comments } : {}),
+          };
+        }
+        latestRef.current = next;
+        scheduleSave();
+        return next;
+      });
+    },
+    [scheduleSave]
+  );
+
+  /** Remove annotation status from all findings, preserving comments. */
+  const clearAllAnnotations = useCallback(() => {
+    setAnnotations((prev) => {
+      const now = new Date().toISOString();
+      const next: Annotations = {};
+      for (const [key, entry] of Object.entries(prev)) {
+        if (entry.comments?.length) {
+          next[key] = { updatedAt: now, comments: entry.comments };
+        }
+        // Entries without comments are dropped entirely
+      }
+      latestRef.current = next;
+      scheduleSave();
+      return next;
+    });
+  }, [scheduleSave]);
+
+  return { annotations, toggleAnnotation, bulkAnnotate, clearAllAnnotations, saving };
 }
