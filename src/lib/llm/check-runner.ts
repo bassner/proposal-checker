@@ -18,6 +18,8 @@ interface RunCheckGroupOptions {
   model: BaseChatModel;
   proposalText: string;
   pageImages?: RenderedPage[];
+  /** Pre-built system prompt (with guidelines). Falls back to static prompt if not provided. */
+  systemPrompt?: string;
   signal?: AbortSignal;
   onToken?: (count: number, phase: LLMPhase) => void;
   onThinking?: (text: string) => void;
@@ -31,11 +33,12 @@ export async function runCheckGroup({
   model,
   proposalText,
   pageImages,
+  systemPrompt: systemPromptOverride,
   signal,
   onToken,
   onThinking,
 }: RunCheckGroupOptions): Promise<CheckGroupRunResult> {
-  const systemPrompt = CHECK_GROUP_PROMPTS[groupId];
+  const systemPrompt = systemPromptOverride ?? CHECK_GROUP_PROMPTS[groupId];
   const messages: BaseMessageLike[] = [["system", systemPrompt]];
 
   // For check groups that need visual inspection, include page images if available

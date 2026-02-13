@@ -6,7 +6,7 @@ import { extractPDFText } from "@/lib/pdf/extract";
 import { renderPDFPages } from "@/lib/pdf/render";
 import { runAllChecks } from "@/lib/llm/parallel-runner";
 import { mergeFindings } from "@/lib/llm/merger";
-import { CHECK_GROUP_PROMPTS } from "@/lib/llm/prompts";
+import { getCheckGroupPrompts } from "@/lib/llm/prompts";
 import { CHECK_GROUPS } from "@/types/review";
 import { countTokens } from "@/lib/llm/tokens";
 
@@ -92,13 +92,16 @@ export async function runReviewPipeline(
     const maxConcurrency = provider === "ollama" ? 2 : undefined; // undefined = all at once
     console.log(`[pipeline] Using provider: ${provider}, concurrency: ${maxConcurrency ?? "unlimited"}`);
 
+    // Build prompts with guideline reference material (loaded once, cached)
+    const prompts = await getCheckGroupPrompts();
+
     // Count input tokens for all checks using tiktoken (text only).
     // NOTE: Image tokens (for groups receiving page images) are not included in this
     // estimate. The actual API token count will be higher for image-enabled groups.
     let cumulativeInputTokens = 0;
     const userMessage = `Here is the proposal text to review:\n\n${extraction.fullText}`;
     const checkInputTokens = CHECK_GROUPS.reduce((sum, g) => {
-      return sum + countTokens(CHECK_GROUP_PROMPTS[g.id]) + countTokens(userMessage);
+      return sum + countTokens(prompts[g.id]) + countTokens(userMessage);
     }, 0);
     cumulativeInputTokens += checkInputTokens;
     callbacks.onInputEstimate(cumulativeInputTokens);
@@ -107,6 +110,7 @@ export async function runReviewPipeline(
       model,
       proposalText: extraction.fullText,
       pageImages,
+      prompts,
       maxConcurrency,
       signal: pipelineAbort.signal,
       onCheckStart: callbacks.onCheckStart,

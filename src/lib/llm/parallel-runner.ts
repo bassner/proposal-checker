@@ -15,6 +15,8 @@ interface ParallelRunnerOptions {
   model: BaseChatModel;
   proposalText: string;
   pageImages?: RenderedPage[];
+  /** Pre-built prompts with guidelines appended. If not provided, check-runner uses static prompts. */
+  prompts?: Record<CheckGroupId, string>;
   maxConcurrency?: number;
   signal?: AbortSignal;
   onCheckStart?: (groupId: CheckGroupId) => void;
@@ -49,6 +51,7 @@ export async function runAllChecks(
     model,
     proposalText,
     pageImages,
+    prompts,
     maxConcurrency,
     onCheckStart,
     onCheckComplete,
@@ -89,6 +92,7 @@ export async function runAllChecks(
             model,
             proposalText,
             pageImages,
+            systemPrompt: prompts?.[group.id],
             signal: controller.signal,
             onToken: onCheckTokens
               ? (count, phase) => onCheckTokens(group.id, count, phase)

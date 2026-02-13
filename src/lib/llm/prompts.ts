@@ -1,4 +1,6 @@
+import "server-only";
 import type { CheckGroupId } from "@/types/review";
+import { loadAllGuidelines } from "@/lib/guidelines/loader";
 
 export const SHARED_ROLE_PROMPT = `You are an expert thesis proposal reviewer for a computer science research group at a top European university. You review student proposals against specific guidelines with surgical precision. You are strict but fair — only flag genuine issues, not stylistic preferences. Each finding must be actionable: the student should know exactly what to fix.
 
@@ -181,3 +183,51 @@ Review the proposal against these specific rules only:
 
 Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 };
+
+/**
+ * Mapping from each check group to the guideline files it should receive as
+ * reference material. Each entry is an array of keys from the guidelines object.
+ */
+const GUIDELINE_MAPPING: Record<CheckGroupId, ("proposal" | "scientificWriting" | "aiTransparency")[]> = {
+  structure: ["proposal"],
+  "problem-motivation-objectives": ["proposal"],
+  bibliography: ["proposal", "scientificWriting"],
+  figures: ["proposal", "scientificWriting"],
+  "writing-style": ["scientificWriting"],
+  "writing-structure": ["scientificWriting"],
+  "writing-formatting": ["scientificWriting"],
+  "ai-transparency": ["aiTransparency"],
+  schedule: ["proposal"],
+};
+
+const GUIDELINE_LABELS: Record<string, string> = {
+  proposal: "Proposal Guidelines",
+  scientificWriting: "Scientific Writing Guidelines",
+  aiTransparency: "AI Transparency Guidelines",
+};
+
+/**
+ * Build check group prompts with guideline reference material appended.
+ * Guidelines are loaded once (cached by the loader) and included as additional
+ * context below the focused rules. Falls back to static prompts on load failure.
+ */
+export async function getCheckGroupPrompts(): Promise<Record<CheckGroupId, string>> {
+  try {
+    const guidelines = await loadAllGuidelines();
+
+    const result = {} as Record<CheckGroupId, string>;
+    for (const [groupId, keys] of Object.entries(GUIDELINE_MAPPING) as [CheckGroupId, typeof GUIDELINE_MAPPING[CheckGroupId]][]) {
+      const basePrompt = CHECK_GROUP_PROMPTS[groupId];
+      const sections = keys
+        .map((key) => `### ${GUIDELINE_LABELS[key]}\n\n${guidelines[key]}`)
+        .join("\n\n");
+
+      result[groupId] = `${basePrompt}\n\n---\n\n## Reference Guidelines\n\nThe following are the official guidelines from the research group. Use them as additional context to inform your review, but keep your evaluation focused on the specific rules listed above.\n\n${sections}`;
+    }
+
+    return result;
+  } catch (error) {
+    console.warn("[prompts] Failed to load guidelines, using static prompts:", error instanceof Error ? error.message : error);
+    return { ...CHECK_GROUP_PROMPTS };
+  }
+}
