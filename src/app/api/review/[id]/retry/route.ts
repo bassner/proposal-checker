@@ -3,7 +3,7 @@ import { getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSessionWithId, emitEvent, setSessionStatus } from "@/lib/sessions";
-import { getReviewById, claimReviewForRetry, completeReview, failReview } from "@/lib/db";
+import { getReviewById, claimReviewForRetry, completeReview, failReview, logAuditEvent } from "@/lib/db";
 import { readPdf } from "@/lib/uploads";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
@@ -149,6 +149,11 @@ export async function POST(
   };
 
   console.log(`[api] Retry review ${id} (attempt ${retryCount}): provider=${provider}, mode=${mode}, groups=${selectedGroups.length}`);
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "review.retried", {
+    retryCount, provider, mode,
+  });
 
   // Step 7: Throttle setup + fire pipeline (same pattern as initial submit)
   const lastSend: Record<string, number> = {};

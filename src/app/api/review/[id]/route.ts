@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, softDeleteReview, sanitizeAnnotations } from "@/lib/db";
+import { isAvailable, getReviewById, softDeleteReview, sanitizeAnnotations, logAuditEvent } from "@/lib/db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -105,6 +105,11 @@ export async function DELETE(
   }
 
   await softDeleteReview(id);
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "review.deleted", {
+    fileName: review.fileName,
+  });
 
   return Response.json({ ok: true });
 }

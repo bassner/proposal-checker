@@ -146,6 +146,20 @@ async function ensureSchema(): Promise<void> {
         created_by TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      -- Audit log
+      CREATE TABLE IF NOT EXISTS review_audit_log (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL,
+        user_id TEXT,
+        user_email TEXT,
+        action TEXT NOT NULL,
+        details JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audit_log_review_created
+        ON review_audit_log(review_id, created_at DESC);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -1398,4 +1412,67 @@ export async function getActiveWebhooksForEvent(
     [JSON.stringify([event])]
   );
   return result.rows.map(rowToWebhook);
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+export interface AuditLogRow {
+  id: string;
+  reviewId: string;
+  userId: string | null;
+  userEmail: string | null;
+  action: string;
+  details: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+function rowToAuditLog(row: Record<string, unknown>): AuditLogRow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    userId: (row.user_id as string) ?? null,
+    userEmail: (row.user_email as string) ?? null,
+    action: row.action as string,
+    details: (row.details as Record<string, unknown>) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Log an audit event. Designed to be called fire-and-forget — errors are
+ * caught and logged but never thrown to avoid impacting main operations.
+ */
+export async function logAuditEvent(
+  reviewId: string,
+  userId: string | null,
+  userEmail: string | null,
+  action: string,
+  details?: Record<string, unknown>
+): Promise<void> {
+  if (!pool) return;
+  try {
+    await ensureSchema();
+    await pool.query(
+      `INSERT INTO review_audit_log (review_id, user_id, user_email, action, details)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [reviewId, userId, userEmail, action, details ? JSON.stringify(details) : null]
+    );
+  } catch (err) {
+    console.error("[audit] Failed to log event:", err);
+  }
+}
+
+/**
+ * Get the audit log for a specific review, ordered newest-first.
+ */
+export async function getAuditLog(reviewId: string): Promise<AuditLogRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT * FROM review_audit_log WHERE review_id = $1 ORDER BY created_at DESC`,
+    [reviewId]
+  );
+  return result.rows.map(rowToAuditLog);
 }

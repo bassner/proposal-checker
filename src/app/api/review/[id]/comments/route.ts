@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, addComment, deleteComment, sanitizeAnnotations, insertNotification } from "@/lib/db";
+import { isAvailable, getReviewById, addComment, deleteComment, sanitizeAnnotations, insertNotification, logAuditEvent } from "@/lib/db";
 import type { MergedFeedback, Comment } from "@/types/review";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -78,6 +78,11 @@ export async function POST(
   };
 
   const updated = await addComment(id, findingIndex, comment);
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "comment.added", {
+    findingIndex: idx, commentId: comment.id,
+  });
 
   // Notify the review owner (skip if the commenter IS the owner)
   if (review.userId !== session.user.id) {
@@ -160,6 +165,11 @@ export async function DELETE(
   }
 
   const updated = await deleteComment(id, findingIndex, commentId);
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "comment.deleted", {
+    findingIndex: parseInt(findingIndex, 10), commentId,
+  });
 
   return Response.json({
     ok: true,
