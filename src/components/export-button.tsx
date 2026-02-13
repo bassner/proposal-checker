@@ -11,7 +11,7 @@ export function PrintButton() {
     <Button
       variant="outline"
       size="sm"
-      className="no-print border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+      className="no-print border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
       onClick={() => window.print()}
     >
       <Printer className="mr-1.5 h-3.5 w-3.5" />
@@ -38,7 +38,7 @@ export function CopyMarkdownButton({ feedback, fileName }: { feedback: MergedFee
     <Button
       variant="outline"
       size="sm"
-      className="no-print border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+      className="no-print border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
       onClick={copyMarkdown}
     >
       {copied ? (
@@ -148,7 +148,7 @@ export function DownloadCsvButton({ feedback, annotations, fileName, reviewMode 
     <Button
       variant="outline"
       size="sm"
-      className="no-print border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+      className="no-print border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
       onClick={handleDownload}
     >
       <Download className="mr-1.5 h-3.5 w-3.5" />
@@ -209,7 +209,7 @@ export function DownloadJsonButton({ feedback, annotations, fileName, reviewMode
     <Button
       variant="outline"
       size="sm"
-      className="no-print border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+      className="no-print border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
       onClick={handleDownload}
     >
       <Download className="mr-1.5 h-3.5 w-3.5" />

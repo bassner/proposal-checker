@@ -5,6 +5,7 @@ import { LogOut, Shield, ClipboardList } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { NotificationBell } from "./notification-bell";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function UserMenu() {
   const { data: session } = useSession();
@@ -33,7 +34,7 @@ export function UserMenu() {
       <Link
         href="/reviews"
         aria-label="My Reviews"
-        className="flex items-center justify-center size-10 rounded-lg border border-white/10 bg-white/5 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
+        className="flex items-center justify-center size-10 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
       >
         <ClipboardList className="h-3.5 w-3.5" />
         <span className="hidden md:inline">My Reviews</span>
@@ -42,23 +43,24 @@ export function UserMenu() {
         <Link
           href="/admin"
           aria-label="Admin"
-          className="flex items-center justify-center size-10 rounded-lg border border-white/10 bg-white/5 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
+          className="flex items-center justify-center size-10 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
         >
           <Shield className="h-3.5 w-3.5" />
           <span className="hidden md:inline">Admin</span>
         </Link>
       )}
+      <ThemeToggle />
       <NotificationBell />
       <div className="flex items-center gap-2">
         <div className="hidden text-right md:block">
-          <p className="text-xs font-medium text-white/70">{name || email}</p>
-          <p className="text-[10px] text-white/30">{role}</p>
+          <p className="text-xs font-medium text-slate-700 dark:text-white/70">{name || email}</p>
+          <p className="text-[10px] text-slate-400 dark:text-white/30">{role}</p>
         </div>
         {/* Full-page navigation to API route — not a client-side route, so Link is inappropriate */}
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a
           href="/api/auth/federated-signout"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/40 transition-colors hover:bg-white/10 hover:text-white md:h-8 md:w-8"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white md:h-8 md:w-8"
           title="Sign out"
           aria-label="Sign out"
         >

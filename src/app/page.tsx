@@ -37,8 +37,8 @@ export default function Home() {
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-        <Loader2 className="h-6 w-6 animate-spin text-white/30" />
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-300 dark:text-white/30" />
       </div>
     );
   }
@@ -58,19 +58,19 @@ export default function Home() {
 
 function SignInLanding() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="relative flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-purple-500/10 blur-3xl" />
+        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-blue-500/5 blur-3xl dark:bg-blue-500/10" />
+        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-purple-500/5 blur-3xl dark:bg-purple-500/10" />
         <div className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full bg-blue-400/5 blur-3xl" />
       </div>
 
       <main id="main-content" className="relative flex w-full max-w-md flex-col items-center px-6 py-12">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/20 backdrop-blur-sm">
-          <GraduationCap className="h-8 w-8 text-blue-400" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/10 backdrop-blur-sm dark:bg-blue-500/20">
+          <GraduationCap className="h-8 w-8 text-blue-500 dark:text-blue-400" />
         </div>
-        <h1 className="mt-5 text-2xl font-bold text-white">Proposal Checker</h1>
-        <p className="mt-2 text-center text-sm text-white/40">
+        <h1 className="mt-5 text-2xl font-bold text-slate-900 dark:text-white">Proposal Checker</h1>
+        <p className="mt-2 text-center text-sm text-slate-500 dark:text-white/40">
           Research Group for Applied Education Technologies
         </p>
 
@@ -90,15 +90,15 @@ function SignInLanding() {
 
         <Link
           href="/guidelines"
-          className="mt-4 flex items-center justify-center gap-2 text-sm text-white/40 transition-colors hover:text-white/60"
+          className="mt-4 flex items-center justify-center gap-2 text-sm text-slate-400 transition-colors hover:text-slate-600 dark:text-white/40 dark:hover:text-white/60"
         >
           <BookOpen className="h-3.5 w-3.5" />
           View proposal guidelines
         </Link>
 
-        <footer className="mt-12 text-center text-xs text-white/20" role="contentinfo">
+        <footer className="mt-12 text-center text-xs text-slate-300 dark:text-white/20" role="contentinfo">
           Created with ❤️ by{" "}
-          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
+          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition-colors hover:text-slate-600 dark:text-white/30 dark:hover:text-white/50">
             @bassner
           </a>
         </footer>
@@ -109,9 +109,9 @@ function SignInLanding() {
 
 function FeatureRow({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/[0.03] px-4 py-3">
-      <span className="text-blue-400/70">{icon}</span>
-      <span className="text-sm text-white/50">{text}</span>
+    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 dark:border-white/5 dark:bg-white/[0.03]">
+      <span className="text-blue-500/70 dark:text-blue-400/70">{icon}</span>
+      <span className="text-sm text-slate-600 dark:text-white/50">{text}</span>
     </div>
   );
 }
@@ -120,20 +120,20 @@ function FeatureRow({ icon, text }: { icon: React.ReactNode; text: string }) {
 
 function Unauthorized() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="relative flex min-h-screen items-center justify-center bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-red-500/10 blur-3xl" />
+        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-red-500/5 blur-3xl dark:bg-red-500/10" />
         <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-red-500/5 blur-3xl" />
       </div>
 
       <main id="main-content" className="relative w-full max-w-md px-6">
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 backdrop-blur-xl" role="alert">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-8 backdrop-blur-xl dark:border-red-500/20 dark:bg-red-500/5" role="alert">
           <div className="flex flex-col items-center text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/20">
-              <ShieldX className="h-6 w-6 text-red-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-100 dark:bg-red-500/20">
+              <ShieldX className="h-6 w-6 text-red-500 dark:text-red-400" />
             </div>
-            <h1 className="mt-4 text-lg font-semibold text-white">Access Denied</h1>
-            <p className="mt-2 text-sm text-white/40">
+            <h1 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">Access Denied</h1>
+            <p className="mt-2 text-sm text-slate-500 dark:text-white/40">
               You are not authorized to use this application.
             </p>
           </div>
@@ -299,21 +299,21 @@ function UploadPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="relative min-h-screen bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
+        <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-500/5 blur-3xl dark:bg-blue-500/10" />
+        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/5 blur-3xl dark:bg-purple-500/10" />
       </div>
 
       <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
-              <GraduationCap className="h-5 w-5 text-blue-400" />
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 backdrop-blur-sm dark:bg-blue-500/20">
+              <GraduationCap className="h-5 w-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-white">Proposal Checker</h1>
-              <p className="text-xs text-white/40">Research Group for Applied Education Technologies</p>
+              <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Proposal Checker</h1>
+              <p className="text-xs text-slate-500 dark:text-white/40">Research Group for Applied Education Technologies</p>
             </div>
           </div>
           <nav aria-label="User navigation">
@@ -321,7 +321,7 @@ function UploadPage() {
           </nav>
         </header>
 
-        <main id="main-content" className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
+        <main id="main-content" className="space-y-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/5 dark:shadow-none dark:backdrop-blur-xl sm:p-5">
           {isBatchMode ? (
             <>
               <BatchFileList
@@ -352,7 +352,7 @@ function UploadPage() {
 
           {/* Review mode selector */}
           <div>
-            <label className="mb-2 block text-xs font-medium text-white/50">Review Mode</label>
+            <label className="mb-2 block text-xs font-medium text-slate-500 dark:text-white/50">Review Mode</label>
             <div className="flex gap-2">
               {REVIEW_MODES.map((m) => (
                 <button
@@ -361,8 +361,8 @@ function UploadPage() {
                   disabled={isAnySubmitting}
                   className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
                     mode === m
-                      ? "border-blue-500/50 bg-blue-500/10 text-blue-400"
-                      : "border-white/10 bg-white/[0.03] text-white/50 hover:border-white/20 hover:text-white/70"
+                      ? "border-blue-500/50 bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400"
+                      : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/50 dark:hover:border-white/20 dark:hover:text-white/70"
                   } disabled:opacity-40`}
                 >
                   <div>{MODE_LABELS[m]}</div>
@@ -374,11 +374,11 @@ function UploadPage() {
 
           {modelsLoading ? (
             <div className="flex items-center gap-2 py-2">
-              <Loader2 className="h-4 w-4 animate-spin text-white/40" />
-              <span className="text-sm text-white/40">Loading providers...</span>
+              <Loader2 className="h-4 w-4 animate-spin text-slate-400 dark:text-white/40" />
+              <span className="text-sm text-slate-400 dark:text-white/40">Loading providers...</span>
             </div>
           ) : models.length === 0 ? (
-            <p className="text-sm text-amber-400">
+            <p className="text-sm text-amber-600 dark:text-amber-400">
               No models available for your role — contact an admin.
             </p>
           ) : (
@@ -391,18 +391,18 @@ function UploadPage() {
           )}
 
           {/* Advanced Options — check group toggles */}
-          <div className="rounded-xl border border-white/5 bg-white/[0.02]">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 dark:border-white/5 dark:bg-white/[0.02]">
             <button
               type="button"
               onClick={() => setOptionsOpen((prev) => !prev)}
               disabled={isAnySubmitting}
-              className="flex w-full items-center justify-between px-4 py-3 text-sm text-white/50 transition-colors hover:text-white/70 disabled:opacity-40"
+              className="flex w-full items-center justify-between px-4 py-3 text-sm text-slate-500 transition-colors hover:text-slate-700 disabled:opacity-40 dark:text-white/50 dark:hover:text-white/70"
             >
               <span className="flex items-center gap-2">
                 <Settings2 className="h-3.5 w-3.5" />
                 Check Groups
                 {groupsInitialized && !allSelected && (
-                  <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-500/20 dark:text-blue-400">
                     {selectedGroups.size}/{modeGroupIds.length}
                   </span>
                 )}
@@ -410,14 +410,14 @@ function UploadPage() {
               <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${optionsOpen ? "rotate-180" : ""}`} />
             </button>
             {optionsOpen && (
-              <div className="border-t border-white/5 px-4 pb-3 pt-2">
+              <div className="border-t border-slate-200 px-4 pb-3 pt-2 dark:border-white/5">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-wider text-white/30">Toggle checks to run</span>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-white/30">Toggle checks to run</span>
                   <button
                     type="button"
                     onClick={toggleAll}
                     disabled={isAnySubmitting}
-                    className="text-[11px] text-blue-400/70 transition-colors hover:text-blue-400 disabled:opacity-40"
+                    className="text-[11px] text-blue-500/70 transition-colors hover:text-blue-600 disabled:opacity-40 dark:text-blue-400/70 dark:hover:text-blue-400"
                   >
                     {allSelected ? "Deselect all" : "Select all"}
                   </button>
@@ -429,8 +429,8 @@ function UploadPage() {
                       <label
                         key={g.id}
                         className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                          checked ? "bg-white/[0.04] text-white/70" : "text-white/30"
-                        } ${isAnySubmitting ? "pointer-events-none opacity-40" : "hover:bg-white/[0.06]"}`}
+                          checked ? "bg-slate-100 text-slate-700 dark:bg-white/[0.04] dark:text-white/70" : "text-slate-400 dark:text-white/30"
+                        } ${isAnySubmitting ? "pointer-events-none opacity-40" : "hover:bg-slate-100 dark:hover:bg-white/[0.06]"}`}
                       >
                         <div className="relative flex items-center">
                           <input
@@ -441,7 +441,7 @@ function UploadPage() {
                             className="peer sr-only"
                           />
                           <div className={`h-4 w-7 rounded-full transition-colors ${
-                            checked ? "bg-blue-500" : "bg-white/10"
+                            checked ? "bg-blue-500" : "bg-slate-200 dark:bg-white/10"
                           }`} />
                           <div className={`absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
                             checked ? "translate-x-3" : "translate-x-0"
@@ -485,22 +485,22 @@ function UploadPage() {
           </Button>
 
           {noneSelected && (
-            <p className="text-sm text-amber-400" role="alert">Select at least one check group to start a review.</p>
+            <p className="text-sm text-amber-600 dark:text-amber-400" role="alert">Select at least one check group to start a review.</p>
           )}
-          {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
+          {error && <p className="text-sm text-red-500 dark:text-red-400" role="alert">{error}</p>}
         </main>
 
         <Link
           href="/guidelines"
-          className="mt-4 flex items-center justify-center gap-2 text-sm text-white/40 transition-colors hover:text-white/60"
+          className="mt-4 flex items-center justify-center gap-2 text-sm text-slate-400 transition-colors hover:text-slate-600 dark:text-white/40 dark:hover:text-white/60"
         >
           <BookOpen className="h-3.5 w-3.5" />
           View proposal guidelines
         </Link>
 
-        <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">
+        <footer className="mt-12 pb-4 text-center text-xs text-slate-300 dark:text-white/20" role="contentinfo">
           Created with ❤️ by{" "}
-          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
+          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition-colors hover:text-slate-600 dark:text-white/30 dark:hover:text-white/50">
             @bassner
           </a>
         </footer>

@@ -133,7 +133,7 @@ function statusBadge(status: string, createdAt: string) {
   const config: Record<string, { bg: string; text: string; label: string }> = {
     done: { bg: "bg-green-500/20", text: "text-green-400", label: "done" },
     error: { bg: "bg-red-500/20", text: "text-red-400", label: "error" },
-    running: { bg: "bg-blue-500/20", text: "text-blue-400", label: "running" },
+    running: { bg: "bg-blue-500/20", text: "text-blue-500 dark:text-blue-400", label: "running" },
   };
   const c = config[status] ?? config.running;
 
@@ -160,7 +160,7 @@ function TrendIcon({ trend }: { trend: "improving" | "worsening" | "stable" }) {
     case "worsening":
       return <TrendingUp className="inline h-3.5 w-3.5 text-red-400" />;
     default:
-      return <Minus className="inline h-3.5 w-3.5 text-slate-300 dark:text-white/30" />;
+      return <Minus className="inline h-3.5 w-3.5 text-slate-400 dark:text-white/30" />;
   }
 }
 
@@ -222,7 +222,7 @@ function GroupedView({
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-slate-700 dark:text-white/80">
+                  <span className="truncate text-sm font-medium text-slate-800 dark:text-white/80">
                     {group.displayName}
                   </span>
                   {isAdmin && group.userName && (
@@ -245,7 +245,7 @@ function GroupedView({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 <TrendIcon trend={group.trend} />
-                <span className="text-xs text-slate-400 dark:text-white/40">
+                <span className="text-xs text-slate-500 dark:text-white/40">
                   {group.reviews.length} revision{group.reviews.length !== 1 ? "s" : ""}
                   {doneReviews.length > 0 && doneReviews.length !== group.reviews.length && (
                     <>, {doneReviews.length} done</>
@@ -493,24 +493,24 @@ export default function ReviewsPage() {
     : data?.reviews.length === 0;
 
   return (
-    <div className="page-bg relative min-h-screen">
+    <div className="relative min-h-screen bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="background-orbs pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
+        <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-500/5 blur-3xl dark:bg-blue-500/10" />
+        <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/5 blur-3xl dark:bg-purple-500/10" />
       </div>
 
       <div className="relative mx-auto w-full max-w-[1200px] px-3 py-4 sm:px-6 sm:py-8">
         {/* Header */}
         <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 backdrop-blur-sm dark:bg-blue-500/20">
               <ClipboardList className="h-5 w-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
-              <h1 className="page-title">
+              <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
                 {isAdmin ? "All Reviews" : "My Reviews"}
               </h1>
-              <p className="text-xs text-white/40" aria-live="polite">
+              <p className="text-xs text-slate-500 dark:text-white/40" aria-live="polite">
                 {isLoading && !hasData
                   ? "Loading..."
                   : `${displayTotal} review${displayTotal !== 1 ? "s" : ""}${groupByFile ? ` in ${fileGroups.length} group${fileGroups.length !== 1 ? "s" : ""}` : ""}`}
@@ -523,7 +523,7 @@ export default function ReviewsPage() {
               className={
                 groupByFile
                   ? "border-blue-500/50 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 hover:text-blue-200"
-                  : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+                  : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
               }
               onClick={() => {
                 setGroupByFile((g) => !g);
@@ -542,7 +542,7 @@ export default function ReviewsPage() {
                 className={
                   compareMode
                     ? "border-purple-500/50 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
                 }
                 onClick={() => {
                   setCompareMode((m) => !m);
@@ -554,7 +554,7 @@ export default function ReviewsPage() {
               </Button>
             )}
             <Link href="/" aria-label="Back to Home">
-              <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">
+              <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">
                 <ArrowLeft className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Back to Home</span>
               </Button>
@@ -564,7 +564,7 @@ export default function ReviewsPage() {
         </header>
 
         {/* Content */}
-        <main id="main-content" className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
+        <main id="main-content" className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/5 dark:shadow-none dark:backdrop-blur-xl sm:p-5">
           {/* Search bar */}
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-white/30" />
@@ -574,7 +574,7 @@ export default function ReviewsPage() {
               aria-label="Search reviews"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 outline-none transition-colors focus:border-blue-500/50 focus:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-white/30 dark:focus:bg-white/[0.07]"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-9 text-sm text-slate-900 placeholder-slate-400 outline-none transition-colors focus:border-blue-400 focus:bg-white dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder-white/30 dark:focus:border-blue-500/50 dark:focus:bg-white/[0.07]"
             />
             {search && (
               <button
@@ -716,7 +716,7 @@ export default function ReviewsPage() {
               {/* Compare mode bar */}
               {compareMode && (
                 <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4 dark:border-white/10">
-                  <p className="text-xs text-slate-400 dark:text-white/40">
+                  <p className="text-xs text-slate-500 dark:text-white/40">
                     {selectedIds.length === 0
                       ? "Select 2 completed reviews to compare"
                       : selectedIds.length === 1
@@ -744,7 +744,7 @@ export default function ReviewsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
+                      className="border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
                       disabled={page <= 1}
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
                     >
@@ -753,7 +753,7 @@ export default function ReviewsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
+                      className="border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
                       disabled={page >= totalPages}
                       onClick={() => setPage((p) => p + 1)}
                     >
