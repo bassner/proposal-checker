@@ -430,3 +430,139 @@ export async function updateRoleProviders(
     updatedAt: (result.rows[0].updated_at as Date).toISOString(),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+export interface AnalyticsData {
+  totalReviews: number;
+  byStatus: { status: string; count: number }[];
+  byProvider: { provider: string; count: number }[];
+  daily: { day: string; count: number }[];
+  severityAvg: { severity: string; avgCount: number }[];
+  topCategories: { category: string; count: number }[];
+  topUsers: { userId: string; userName: string; userEmail: string; count: number }[];
+}
+
+/**
+ * Aggregate review analytics. Returns null if the pool is absent.
+ * Uses a single CTE-based query for efficiency.
+ * NOTE: JSONB expansion is O(total findings) — acceptable for small-scale usage
+ * (single research group, hundreds of reviews). Revisit if scale grows.
+ */
+export async function getAnalytics(): Promise<AnalyticsData | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(`
+    WITH
+    severities(sev) AS (VALUES ('critical'),('major'),('minor'),('suggestion')),
+
+    status_counts AS (
+      SELECT status, COUNT(*) AS cnt FROM reviews GROUP BY status
+    ),
+    provider_counts AS (
+      SELECT provider, COUNT(*) AS cnt FROM reviews GROUP BY provider
+    ),
+
+    daily_series AS (
+      SELECT gs::date AS day
+      FROM generate_series(
+        (NOW() AT TIME ZONE 'UTC')::date - 29,
+        (NOW() AT TIME ZONE 'UTC')::date,
+        '1 day'::interval
+      ) AS gs
+    ),
+    daily_counts AS (
+      SELECT ds.day, COUNT(r.id) AS cnt
+      FROM daily_series ds
+      LEFT JOIN reviews r
+        ON r.created_at >= (ds.day::timestamp AT TIME ZONE 'UTC')
+        AND r.created_at < ((ds.day + 1)::timestamp AT TIME ZONE 'UTC')
+      GROUP BY ds.day ORDER BY ds.day
+    ),
+
+    completed_reviews AS (
+      SELECT id,
+        CASE
+          WHEN feedback IS NOT NULL AND jsonb_typeof(feedback->'findings') = 'array'
+          THEN feedback->'findings'
+          ELSE '[]'::jsonb
+        END AS findings
+      FROM reviews WHERE status = 'done'
+    ),
+    per_review_severity AS (
+      SELECT c.id, s.sev AS severity,
+        (SELECT COUNT(*) FROM jsonb_array_elements(c.findings) f WHERE f.value->>'severity' = s.sev) AS cnt
+      FROM completed_reviews c CROSS JOIN severities s
+    ),
+    severity_avg AS (
+      SELECT s.sev AS severity, COALESCE(ROUND(AVG(prs.cnt), 1), 0) AS avg_count
+      FROM severities s
+      LEFT JOIN per_review_severity prs ON prs.severity = s.sev
+      GROUP BY s.sev
+    ),
+
+    finding_rows AS (
+      SELECT f.value->>'category' AS category
+      FROM completed_reviews c, jsonb_array_elements(c.findings) AS f(value)
+    ),
+    category_counts AS (
+      SELECT category, COUNT(*) AS cnt
+      FROM finding_rows
+      GROUP BY category ORDER BY cnt DESC LIMIT 10
+    ),
+
+    user_counts AS (
+      SELECT user_id,
+        MAX(user_name) AS user_name,
+        MAX(user_email) AS user_email,
+        COUNT(*) AS cnt
+      FROM reviews GROUP BY user_id ORDER BY cnt DESC LIMIT 5
+    )
+
+    SELECT json_build_object(
+      'total', (SELECT COALESCE(SUM(cnt), 0) FROM status_counts),
+      'byStatus', COALESCE((SELECT json_agg(json_build_object('status', status, 'count', cnt)) FROM status_counts), '[]'::json),
+      'byProvider', COALESCE((SELECT json_agg(json_build_object('provider', provider, 'count', cnt)) FROM provider_counts), '[]'::json),
+      'daily', COALESCE((SELECT json_agg(json_build_object('day', day, 'count', cnt) ORDER BY day) FROM daily_counts), '[]'::json),
+      'severityAvg', COALESCE((SELECT json_agg(json_build_object('severity', severity, 'avgCount', avg_count)) FROM severity_avg), '[]'::json),
+      'topCategories', COALESCE((SELECT json_agg(json_build_object('category', category, 'count', cnt)) FROM category_counts), '[]'::json),
+      'topUsers', COALESCE((SELECT json_agg(json_build_object('userId', user_id, 'userName', user_name, 'userEmail', user_email, 'count', cnt)) FROM user_counts), '[]'::json)
+    ) AS data
+  `);
+
+  const raw = result.rows[0].data;
+
+  // pg returns int8/numeric as strings — parse to numbers
+  return {
+    totalReviews: Number(raw.total),
+    byStatus: (raw.byStatus as { status: string; count: string }[]).map((r) => ({
+      status: r.status,
+      count: Number(r.count),
+    })),
+    byProvider: (raw.byProvider as { provider: string; count: string }[]).map((r) => ({
+      provider: r.provider,
+      count: Number(r.count),
+    })),
+    daily: (raw.daily as { day: string; count: string }[]).map((r) => ({
+      day: r.day,
+      count: Number(r.count),
+    })),
+    severityAvg: (raw.severityAvg as { severity: string; avgCount: string }[]).map((r) => ({
+      severity: r.severity,
+      avgCount: Number(r.avgCount),
+    })),
+    topCategories: (raw.topCategories as { category: string; count: string }[]).map((r) => ({
+      category: r.category,
+      count: Number(r.count),
+    })),
+    topUsers: (raw.topUsers as { userId: string; userName: string; userEmail: string; count: string }[]).map((r) => ({
+      userId: r.userId,
+      userName: r.userName,
+      userEmail: r.userEmail,
+      count: Number(r.count),
+    })),
+  };
+}
