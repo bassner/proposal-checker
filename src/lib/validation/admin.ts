@@ -26,3 +26,19 @@ export const reviewTemplateSchema = z.object({
 });
 
 export type ReviewTemplateInput = z.infer<typeof reviewTemplateSchema>;
+
+export const SNIPPET_CATEGORIES = [
+  "Quality",
+  "Style",
+  "Academic",
+  "Compliance",
+  "Custom",
+] as const;
+
+export const promptSnippetSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100),
+  content: z.string().min(1, "Content is required").max(10000),
+  category: z.enum(SNIPPET_CATEGORIES),
+});
+
+export type PromptSnippetInput = z.infer<typeof promptSnippetSchema>;
