@@ -20,6 +20,7 @@ import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { getNavigationOrder } from "@/lib/finding-nav-order";
 import { useMemo } from "react";
 import { useComments } from "@/hooks/use-comments";
+import { useConflicts } from "@/hooks/use-conflicts";
 import { TimeEstimate } from "@/components/time-estimate";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { ReviewStats } from "@/components/review-stats";
@@ -134,6 +135,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
 
   const { annotations, toggleAnnotation, bulkAnnotate, clearAllAnnotations } = useAnnotations(reviewId, initialAnnotations);
   const { annotations: commentAnnotations, addComment, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
+  const { conflicts } = useConflicts(reviewId, isSupervisor);
 
   // PDF viewer state
   const [pdfOpen, setPdfOpen] = useState(false);
@@ -265,6 +267,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
               onDeleteComment={handleDeleteComment}
               commentSubmitting={commentSubmitting}
               onPageClick={handlePageClick}
+              conflicts={conflicts}
             />
           </main>
           {pdfOpen && (

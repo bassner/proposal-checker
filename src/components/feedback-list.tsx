@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus } from "@/types/review";
+import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus, AnnotationConflict } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb, CheckCheck, Eraser, Search, XIcon, Filter } from "lucide-react";
@@ -22,6 +22,8 @@ interface FeedbackListProps {
   commentSubmitting?: boolean;
   /** Called when a page reference in a finding is clicked (for PDF viewer navigation). */
   onPageClick?: (page: number) => void;
+  /** Annotation conflicts keyed by finding index. */
+  conflicts?: Map<number, AnnotationConflict>;
 }
 
 const assessmentConfig = {
@@ -253,7 +255,7 @@ function FilterBar({
   );
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting, onPageClick }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting, onPageClick, conflicts }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
 
@@ -510,6 +512,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                     onDeleteComment={onDeleteComment ? (commentId) => onDeleteComment(globalIndex, commentId) : undefined}
                     commentSubmitting={commentSubmitting}
                     onPageClick={onPageClick}
+                    conflict={conflicts?.get(globalIndex)}
                   />
                 ))}
               </div>
