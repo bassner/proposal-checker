@@ -54,9 +54,9 @@ export async function GET(request: NextRequest) {
     getReviewCount(userId, search),
   ]);
 
-  // Strip shareToken from list responses to prevent token leakage
+  // Strip shareToken and annotations from list responses (not needed, potentially large)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const sanitized = reviews.map(({ shareToken, ...rest }) => rest);
+  const sanitized = reviews.map(({ shareToken, annotations, ...rest }) => rest);
 
   return Response.json({ reviews: sanitized, total, page, limit });
 }

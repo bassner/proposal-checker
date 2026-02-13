@@ -11,7 +11,8 @@ import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
 import { GraduationCap, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import type { MergedFeedback } from "@/types/review";
+import type { MergedFeedback, Annotations } from "@/types/review";
+import { useAnnotations } from "@/hooks/use-annotations";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -42,7 +43,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} initialAnnotations={review.annotations} />;
     }
 
     if (review?.status === "error") {
@@ -107,7 +108,9 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null }) {
+function ResultsView({ feedback, fileName, reviewId, shareToken, initialAnnotations }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; initialAnnotations?: Annotations }) {
+  const { annotations, toggleAnnotation } = useAnnotations(reviewId, initialAnnotations);
+
   return (
     <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
@@ -131,7 +134,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: M
           </div>
           <UserMenu />
         </div>
-        <FeedbackList feedback={feedback} />
+        <FeedbackList feedback={feedback} annotations={annotations} onAnnotate={toggleAnnotation} />
         <Footer />
       </div>
     </div>

@@ -54,5 +54,6 @@ export async function GET(
     feedback: review.feedback,
     errorMessage: review.errorMessage,
     shareToken: review.shareToken,
+    annotations: review.annotations,
   });
 }

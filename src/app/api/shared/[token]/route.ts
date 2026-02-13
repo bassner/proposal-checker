@@ -43,5 +43,6 @@ export async function GET(
     createdAt: review.createdAt,
     feedback: review.feedback,
     userName: review.userName,
+    annotations: review.annotations,
   });
 }
