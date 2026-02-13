@@ -14,7 +14,7 @@ import { PrintButton, CopyMarkdownButton, DownloadCsvButton, DownloadJsonButton 
 import { GraduationCap, RotateCcw, RefreshCw, FileText } from "lucide-react";
 import { PdfViewer } from "@/components/pdf-viewer";
 import Link from "next/link";
-import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState } from "@/types/review";
+import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState, WorkflowStatus } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
 import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { getNavigationOrder } from "@/lib/finding-nav-order";
@@ -28,6 +28,7 @@ import { QualityScore } from "@/components/quality-score";
 import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
 import { ReviewNotes } from "@/components/review-notes";
+import { WorkflowStatusBadge } from "@/components/workflow-status-badge";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -58,7 +59,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} workflowStatus={review.workflowStatus} />;
     }
 
     if (review?.status === "error") {
@@ -130,7 +131,7 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean }) {
+function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner, workflowStatus }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean; workflowStatus?: WorkflowStatus }) {
   const { data: session } = useSession();
   const role = session?.user?.role;
   const isSupervisor = role === "admin" || role === "phd";
@@ -236,6 +237,14 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
                   <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
                     thesis
                   </span>
+                )}
+                {role && (
+                  <WorkflowStatusBadge
+                    reviewId={reviewId}
+                    status={workflowStatus ?? "draft"}
+                    role={role}
+                    isOwner={isOwner !== false}
+                  />
                 )}
               </div>
               {fileName && <p className="text-xs text-slate-400 dark:text-white/40">{fileName}</p>}

@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -252,6 +252,9 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_prompt_snippets_category_name
         ON prompt_snippets(category, name);
+
+      -- Workflow status for review lifecycle
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS workflow_status TEXT NOT NULL DEFAULT 'draft';
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -304,6 +307,7 @@ export interface ReviewRow {
   selectedGroups: CheckGroupId[] | null;
   retryCount: number;
   deletedAt: string | null;
+  workflowStatus: WorkflowStatus;
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
@@ -330,6 +334,7 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     selectedGroups: (row.selected_groups as CheckGroupId[]) ?? null,
     retryCount: Number(row.retry_count ?? 0),
     deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
+    workflowStatus: (row.workflow_status as WorkflowStatus) ?? "draft",
   };
 }
 
@@ -468,6 +473,7 @@ const ALLOWED_SORT_COLUMNS = new Set([
   "provider",
   "status",
   "user_name",
+  "workflow_status",
 ]);
 
 export interface ReviewQueryOptions {
@@ -2385,4 +2391,64 @@ export async function getPromptSnippetsByIds(ids: string[]): Promise<PromptSnipp
     [ids]
   );
   return result.rows.map(rowToPromptSnippet);
+}
+
+// ---------------------------------------------------------------------------
+// Workflow status operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Update the workflow status of a review and log the transition to the audit log.
+ * Returns the updated review row or null if the review wasn't found / already deleted.
+ */
+export async function updateWorkflowStatus(
+  reviewId: string,
+  status: WorkflowStatus,
+  userId: string,
+  userEmail: string | null
+): Promise<ReviewRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE reviews
+     SET workflow_status = $2, updated_at = NOW()
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING *`,
+    [reviewId, status]
+  );
+  if (result.rows.length === 0) return null;
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(reviewId, userId, userEmail, "workflow.transition", {
+    newStatus: status,
+  });
+
+  return rowToReview(result.rows[0]);
+}
+
+/**
+ * Get reviews filtered by workflow status. Admin sees all; provide userId to
+ * restrict to a single user's reviews.
+ */
+export async function getReviewsByWorkflowStatus(
+  status: WorkflowStatus,
+  userId?: string
+): Promise<ReviewRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const conditions = ["deleted_at IS NULL", "workflow_status = $1"];
+  const params: unknown[] = [status];
+
+  if (userId) {
+    conditions.push(`user_id = $${params.length + 1}`);
+    params.push(userId);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+  const result = await pool.query(
+    `SELECT * FROM reviews ${where} ORDER BY updated_at DESC`,
+    params
+  );
+  return result.rows.map(rowToReview);
 }

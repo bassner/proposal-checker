@@ -85,6 +85,7 @@ export async function GET(
     retryCount: review.retryCount,
     canRetry: !!review.pdfPath,
     isOwner,
+    workflowStatus: review.workflowStatus,
   };
 
   // ETag based on response content hash (includes isOwner so it's user-specific)

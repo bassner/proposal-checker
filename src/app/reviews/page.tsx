@@ -26,6 +26,8 @@ import {
 import Link from "next/link";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { PinButton } from "@/components/pin-button";
+import { WorkflowStatusLabel } from "@/components/workflow-status-badge";
+import type { WorkflowStatus } from "@/types/review";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -40,6 +42,7 @@ interface ReviewListItem {
   fileName: string | null;
   createdAt: string;
   isPinned: boolean;
+  workflowStatus: WorkflowStatus;
 }
 
 interface ReviewsResponse {
@@ -66,7 +69,7 @@ interface GroupedReviewsResponse {
   grouped: true;
 }
 
-type SortColumn = "created_at" | "file_name" | "provider" | "status" | "user_name";
+type SortColumn = "created_at" | "file_name" | "provider" | "status" | "user_name" | "workflow_status";
 
 // ---------------------------------------------------------------------------
 // File name normalization for grouping
@@ -647,6 +650,9 @@ export default function ReviewsPage() {
                       <th className={sortableThClass} onClick={() => handleSort("status")}>
                         Status <SortIcon column="status" activeSort={sort} activeDir={dir} />
                       </th>
+                      <th className={`${thClass} hidden lg:table-cell`}>
+                        Workflow
+                      </th>
                       {isAdmin && (
                         <th className={`${sortableThClass} hidden lg:table-cell`} onClick={() => handleSort("user_name")}>
                           User <SortIcon column="user_name" activeSort={sort} activeDir={dir} />
@@ -704,6 +710,9 @@ export default function ReviewsPage() {
                         <td className="hidden py-2.5 pr-4 text-slate-500 dark:text-white/50 md:table-cell">{r.provider}</td>
                         <td className="py-2.5 pr-4">
                           {statusBadge(r.status, r.createdAt)}
+                        </td>
+                        <td className="hidden py-2.5 pr-4 lg:table-cell">
+                          <WorkflowStatusLabel status={r.workflowStatus ?? "draft"} />
                         </td>
                         {isAdmin && (
                           <td className="hidden py-2.5 pr-4 text-slate-500 dark:text-white/50 lg:table-cell">
