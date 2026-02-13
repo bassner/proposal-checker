@@ -5,7 +5,9 @@ export type CheckGroupId =
   | "problem-motivation-objectives"
   | "bibliography"
   | "figures"
-  | "writing"
+  | "writing-style"
+  | "writing-structure"
+  | "writing-formatting"
   | "ai-transparency"
   | "schedule";
 
@@ -19,7 +21,9 @@ export const CHECK_GROUPS: CheckGroupMeta[] = [
   { id: "problem-motivation-objectives", label: "Problem & Motivation & Objectives" },
   { id: "bibliography", label: "Bibliography & Citations" },
   { id: "figures", label: "Figures & Diagrams" },
-  { id: "writing", label: "Scientific Writing Quality" },
+  { id: "writing-style", label: "Writing Style" },
+  { id: "writing-structure", label: "Paragraph Structure" },
+  { id: "writing-formatting", label: "Formatting & Terminology" },
   { id: "ai-transparency", label: "AI Transparency Statement" },
   { id: "schedule", label: "Schedule Quality" },
 ];

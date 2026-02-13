@@ -101,9 +101,9 @@ Review the proposal against these specific rules only. Pay special attention to 
 
 Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
-  writing: `${SHARED_ROLE_PROMPT}
+  "writing-style": `${SHARED_ROLE_PROMPT}
 
-## Your Task: Check SCIENTIFIC WRITING QUALITY
+## Your Task: Check WRITING STYLE
 
 Review the proposal against these specific rules only:
 
@@ -115,13 +115,29 @@ Review the proposal against these specific rules only:
 
 4. **Forbidden Sentence Starters**: Sentences must NOT start with "As…", "Since…", "To…", "In order to…", or "Because…". Flag each occurrence.
 
-5. **Paragraph Length**: Paragraphs should be 5-8 lines long. Flag paragraphs that are too short (1-2 lines) or too long (>10 lines).
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
-6. **One Idea Per Paragraph**: Each paragraph should develop one single coherent idea. Flag paragraphs that jump between multiple unrelated topics.
+  "writing-structure": `${SHARED_ROLE_PROMPT}
 
-7. **Title Case Headings**: All subsections, headlines, and titles must use title case. Flag any headings in sentence case or all lowercase.
+## Your Task: Check PARAGRAPH STRUCTURE
 
-8. **Consistent Terminology**: Check for inconsistent naming — the same concept should always use the same term. Avoid confusing synonyms.
+Review the proposal against these specific rules only:
+
+1. **Paragraph Length**: Paragraphs should be 5-8 lines long. Flag paragraphs that are too short (1-2 lines) or too long (>10 lines).
+
+2. **One Idea Per Paragraph**: Each paragraph should develop one single coherent idea. Flag paragraphs that jump between multiple unrelated topics.
+
+Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
+
+  "writing-formatting": `${SHARED_ROLE_PROMPT}
+
+## Your Task: Check FORMATTING & TERMINOLOGY
+
+Review the proposal against these specific rules only:
+
+1. **Title Case Headings**: All subsections, headlines, and titles must use title case. Flag any headings in sentence case or all lowercase.
+
+2. **Consistent Terminology**: Check for inconsistent naming — the same concept should always use the same term. Avoid confusing synonyms.
 
 Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 
