@@ -51,7 +51,8 @@ export async function runReviewPipeline(
   provider: ProviderType,
   mode: ReviewMode,
   callbacks: PipelineCallbacks,
-  selectedGroups?: CheckGroupId[]
+  selectedGroups?: CheckGroupId[],
+  reviewId?: string
 ): Promise<void> {
   const maxPages = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
 
@@ -120,6 +121,7 @@ export async function runReviewPipeline(
       checkGroups,
       prompts,
       maxConcurrency,
+      reviewId,
       signal: pipelineAbort.signal,
       onCheckStart: callbacks.onCheckStart,
       onCheckComplete: callbacks.onCheckComplete,

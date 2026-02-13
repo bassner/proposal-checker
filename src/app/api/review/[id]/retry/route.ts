@@ -204,7 +204,7 @@ export async function POST(
       failReview(id, sanitizedError, dbMeta, retryCount)
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, selectedGroups);
+  }, selectedGroups, id);
 
   return Response.json({ id }, { status: 202 });
 }
