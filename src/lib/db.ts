@@ -435,6 +435,17 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_proposal_rel_source ON proposal_relationships(source_review_id);
       CREATE INDEX IF NOT EXISTS idx_proposal_rel_target ON proposal_relationships(target_review_id);
+
+      -- Submission deadlines (calendar & risk analysis)
+      CREATE TABLE IF NOT EXISTS submission_deadlines (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        deadline TIMESTAMPTZ NOT NULL,
+        description TEXT,
+        created_by TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_deadlines_date ON submission_deadlines(deadline);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -4618,5 +4629,221 @@ export async function getRelationshipStats(): Promise<{
       userName: (r.user_name as string) ?? null,
       count: Number(r.count),
     })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Submission Deadlines (calendar & risk analysis)
+// ---------------------------------------------------------------------------
+
+export interface DeadlineRow {
+  id: string;
+  title: string;
+  deadline: string;
+  description: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+function rowToDeadline(row: Record<string, unknown>): DeadlineRow {
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    deadline: (row.deadline as Date).toISOString(),
+    description: (row.description as string) ?? null,
+    createdBy: row.created_by as string,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/** Create a new submission deadline. */
+export async function createDeadline(deadline: {
+  title: string;
+  deadline: string;
+  description?: string;
+  createdBy: string;
+}): Promise<DeadlineRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO submission_deadlines (title, deadline, description, created_by)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [deadline.title, deadline.deadline, deadline.description ?? null, deadline.createdBy]
+  );
+  return rowToDeadline(result.rows[0]);
+}
+
+/** List all deadlines ordered by date. */
+export async function listDeadlines(): Promise<DeadlineRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM submission_deadlines ORDER BY deadline ASC"
+  );
+  return result.rows.map(rowToDeadline);
+}
+
+/** Delete a deadline by ID. Returns true if deleted. */
+export async function deleteDeadline(id: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM submission_deadlines WHERE id = $1",
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Per-day review submission counts for calendar display. */
+export interface DaySubmission {
+  date: string;
+  count: number;
+  avgFindings: number;
+  avgScore: number;
+}
+
+/** Risk breakdown for a single deadline. */
+export interface DeadlineRisk {
+  deadlineId: string;
+  title: string;
+  deadline: string;
+  totalSubmissions: number;
+  onTimeCount: number;
+  onTimePercent: number;
+  last48hCount: number;
+  avgFindings: number;
+  avgFindingsEarly: number;
+  avgFindingsLate: number;
+}
+
+/** Full analytics payload for the calendar + risk views. */
+export interface DeadlineAnalytics {
+  deadlines: DeadlineRow[];
+  dailySubmissions: DaySubmission[];
+  riskBreakdown: DeadlineRisk[];
+  overallEarlyAvgFindings: number;
+  overallLateAvgFindings: number;
+  last48hWarningCount: number;
+}
+
+/**
+ * Compute deadline analytics: daily submission counts, per-deadline risk, and
+ * early-vs-late quality comparison.
+ *
+ * "Late" = submitted within 48 hours before the deadline.
+ * "Early" = submitted more than 48 hours before the deadline.
+ */
+export async function getDeadlineAnalytics(): Promise<DeadlineAnalytics | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // 1) Deadlines
+  const dlResult = await pool.query(
+    "SELECT * FROM submission_deadlines ORDER BY deadline ASC"
+  );
+  const deadlines = dlResult.rows.map(rowToDeadline);
+
+  // 2) Daily submission counts with avg findings and quality score
+  //    Quality score: good=3, acceptable=2, needs-work=1 (from feedback->overallAssessment)
+  const dailyResult = await pool.query(`
+    SELECT
+      DATE(created_at) AS date,
+      COUNT(*)::int AS count,
+      COALESCE(AVG(jsonb_array_length(feedback->'findings')), 0)::float AS avg_findings,
+      COALESCE(AVG(
+        CASE feedback->>'overallAssessment'
+          WHEN 'good' THEN 3
+          WHEN 'acceptable' THEN 2
+          WHEN 'needs-work' THEN 1
+          ELSE 2
+        END
+      ), 2)::float AS avg_score
+    FROM reviews
+    WHERE status = 'done'
+      AND deleted_at IS NULL
+      AND feedback IS NOT NULL
+    GROUP BY DATE(created_at)
+    ORDER BY date ASC
+  `);
+
+  const dailySubmissions: DaySubmission[] = dailyResult.rows.map((r) => ({
+    date: (r.date as Date).toISOString().split("T")[0],
+    count: Number(r.count),
+    avgFindings: Number(Number(r.avg_findings).toFixed(1)),
+    avgScore: Number(Number(r.avg_score).toFixed(2)),
+  }));
+
+  // 3) Per-deadline risk breakdown
+  const riskBreakdown: DeadlineRisk[] = [];
+  let totalLate48h = 0;
+  let earlyFindingsSum = 0;
+  let earlyCount = 0;
+  let lateFindingsSum = 0;
+  let lateCount = 0;
+
+  for (const dl of deadlines) {
+    // All reviews submitted before this deadline (consider reviews within a reasonable window: 60 days before)
+    const riskResult = await pool.query(`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE created_at <= $1::timestamptz) ::int AS on_time,
+        COUNT(*) FILTER (WHERE created_at > ($1::timestamptz - INTERVAL '48 hours') AND created_at <= $1::timestamptz) ::int AS last_48h,
+        COALESCE(AVG(jsonb_array_length(feedback->'findings')), 0)::float AS avg_findings,
+        COALESCE(AVG(jsonb_array_length(feedback->'findings')) FILTER (
+          WHERE created_at <= ($1::timestamptz - INTERVAL '48 hours')
+        ), 0)::float AS avg_findings_early,
+        COALESCE(AVG(jsonb_array_length(feedback->'findings')) FILTER (
+          WHERE created_at > ($1::timestamptz - INTERVAL '48 hours') AND created_at <= $1::timestamptz
+        ), 0)::float AS avg_findings_late
+      FROM reviews
+      WHERE status = 'done'
+        AND deleted_at IS NULL
+        AND feedback IS NOT NULL
+        AND created_at >= ($1::timestamptz - INTERVAL '60 days')
+        AND created_at <= $1::timestamptz
+    `, [dl.deadline]);
+
+    const r = riskResult.rows[0];
+    const total = Number(r.total);
+    const onTime = Number(r.on_time);
+    const last48h = Number(r.last_48h);
+    const avgFindingsEarly = Number(Number(r.avg_findings_early).toFixed(1));
+    const avgFindingsLate = Number(Number(r.avg_findings_late).toFixed(1));
+
+    totalLate48h += last48h;
+
+    // Aggregate for overall early/late comparison
+    const earlyForDl = onTime - last48h;
+    if (earlyForDl > 0) {
+      earlyFindingsSum += avgFindingsEarly * earlyForDl;
+      earlyCount += earlyForDl;
+    }
+    if (last48h > 0) {
+      lateFindingsSum += avgFindingsLate * last48h;
+      lateCount += last48h;
+    }
+
+    riskBreakdown.push({
+      deadlineId: dl.id,
+      title: dl.title,
+      deadline: dl.deadline,
+      totalSubmissions: total,
+      onTimeCount: onTime,
+      onTimePercent: total > 0 ? Number(((onTime / total) * 100).toFixed(1)) : 100,
+      last48hCount: last48h,
+      avgFindings: Number(Number(r.avg_findings).toFixed(1)),
+      avgFindingsEarly,
+      avgFindingsLate,
+    });
+  }
+
+  return {
+    deadlines,
+    dailySubmissions,
+    riskBreakdown,
+    overallEarlyAvgFindings: earlyCount > 0 ? Number((earlyFindingsSum / earlyCount).toFixed(1)) : 0,
+    overallLateAvgFindings: lateCount > 0 ? Number((lateFindingsSum / lateCount).toFixed(1)) : 0,
+    last48hWarningCount: totalLate48h,
   };
 }

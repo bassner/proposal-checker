@@ -5,7 +5,7 @@ import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplate
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
-import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Download, Puzzle, ListOrdered, Repeat } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Download, Puzzle, ListOrdered, Repeat, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
@@ -18,6 +18,8 @@ import { AnalyticsExport } from "@/components/admin/analytics-export";
 import { PromptSnippetsEditor } from "@/components/admin/prompt-snippets-editor";
 import { CheckGroupOrderEditor } from "@/components/admin/check-group-order-editor";
 import { FindingPatternsDashboard } from "@/components/admin/finding-patterns-dashboard";
+import { DeadlineCalendar } from "@/components/admin/deadline-calendar";
+import { DeadlineRiskSummary } from "@/components/admin/deadline-risk-summary";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -126,6 +128,23 @@ export default async function AdminPage() {
               <h3 className="text-xs font-medium text-white/40">Export Analytics Data</h3>
             </div>
             <AnalyticsExport />
+          </div>
+        </div>
+
+        {/* Deadline Calendar & Risk Analysis */}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-blue-400" />
+            <h2 className="text-sm font-medium text-white/60">Submission Deadline Calendar</h2>
+          </div>
+          <DeadlineCalendar />
+
+          <div className="mt-5 border-t border-white/10 pt-5">
+            <div className="mb-3 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-400" />
+              <h3 className="text-xs font-medium text-white/40">Risk Analysis</h3>
+            </div>
+            <DeadlineRiskSummary />
           </div>
         </div>
 
