@@ -4,9 +4,11 @@ import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession, signIn } from "next-auth/react";
 import { FileDropzone } from "@/components/file-dropzone";
+import { BatchFileList } from "@/components/batch-file-list";
 import { ProviderSelect } from "@/components/provider-select";
 import { Button } from "@/components/ui/button";
 import { useReview } from "@/hooks/use-review";
+import { useBatchReview } from "@/hooks/use-batch-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import type { ProviderType, ReviewMode, ModelConfig, CheckGroupId } from "@/types/review";
 import { REVIEW_MODES, getCheckGroups } from "@/types/review";
@@ -23,6 +25,7 @@ import {
   BookOpen,
   ChevronDown,
   Settings2,
+  Layers,
 } from "lucide-react";
 
 /**
@@ -177,6 +180,9 @@ function UploadPage() {
     localStorage.setItem("proposal-checker:provider", v);
   }, []);
   const { startReview, error, isUploading } = useReview();
+  const batch = useBatchReview();
+  const isBatchMode = batch.files.length > 0;
+  const isAnySubmitting = isUploading || batch.isSubmitting;
 
   // Derived values for current mode
   const modeGroups = getCheckGroups(mode);
@@ -266,12 +272,29 @@ function UploadPage() {
     fetchModels();
   }, []);
 
+  const handleMultiFileSelect = useCallback((files: File[]) => {
+    // Switch to batch mode — clear any single file selection
+    setFile(null);
+    batch.addFiles(files);
+  }, [batch]);
+
   const handleStart = async () => {
-    if (!file || noneSelected) return;
-    const groupsToSend = allSelected ? undefined : [...selectedGroups];
-    const id = await startReview(file, provider, mode, groupsToSend);
-    if (id) {
-      router.push(`/review/${id}`);
+    if (isBatchMode) {
+      // Batch mode: submit all queued files sequentially
+      if (batch.files.length === 0 || noneSelected) return;
+      const groupsToSend = allSelected ? undefined : [...selectedGroups];
+      const { successCount } = await batch.submitAll(provider, mode, groupsToSend);
+      if (successCount > 0) {
+        router.push("/reviews");
+      }
+    } else {
+      // Single-file mode (unchanged)
+      if (!file || noneSelected) return;
+      const groupsToSend = allSelected ? undefined : [...selectedGroups];
+      const id = await startReview(file, provider, mode, groupsToSend);
+      if (id) {
+        router.push(`/review/${id}`);
+      }
     }
   };
 
@@ -297,12 +320,33 @@ function UploadPage() {
         </div>
 
         <div className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
-          <FileDropzone
-            onFileSelect={setFile}
-            selectedFile={file}
-            onClear={() => setFile(null)}
-            disabled={isUploading}
-          />
+          {isBatchMode ? (
+            <>
+              <BatchFileList
+                files={batch.files}
+                onRemove={batch.removeFile}
+                onClear={() => batch.clearFiles()}
+                disabled={batch.isSubmitting}
+              />
+              {!batch.isSubmitting && (
+                <FileDropzone
+                  onFileSelect={(f) => batch.addFiles([f])}
+                  onMultiFileSelect={(files) => batch.addFiles(files)}
+                  selectedFile={null}
+                  onClear={() => {}}
+                  disabled={batch.isSubmitting}
+                />
+              )}
+            </>
+          ) : (
+            <FileDropzone
+              onFileSelect={setFile}
+              onMultiFileSelect={handleMultiFileSelect}
+              selectedFile={file}
+              onClear={() => setFile(null)}
+              disabled={isAnySubmitting}
+            />
+          )}
 
           {/* Review mode selector */}
           <div>
@@ -312,7 +356,7 @@ function UploadPage() {
                 <button
                   key={m}
                   onClick={() => setMode(m)}
-                  disabled={isUploading}
+                  disabled={isAnySubmitting}
                   className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
                     mode === m
                       ? "border-blue-500/50 bg-blue-500/10 text-blue-400"
@@ -339,7 +383,7 @@ function UploadPage() {
             <ProviderSelect
               value={provider}
               onChange={setProvider}
-              disabled={isUploading}
+              disabled={isAnySubmitting}
               models={models}
             />
           )}
@@ -349,7 +393,7 @@ function UploadPage() {
             <button
               type="button"
               onClick={() => setOptionsOpen((prev) => !prev)}
-              disabled={isUploading}
+              disabled={isAnySubmitting}
               className="flex w-full items-center justify-between px-4 py-3 text-sm text-white/50 transition-colors hover:text-white/70 disabled:opacity-40"
             >
               <span className="flex items-center gap-2">
@@ -370,7 +414,7 @@ function UploadPage() {
                   <button
                     type="button"
                     onClick={toggleAll}
-                    disabled={isUploading}
+                    disabled={isAnySubmitting}
                     className="text-[11px] text-blue-400/70 transition-colors hover:text-blue-400 disabled:opacity-40"
                   >
                     {allSelected ? "Deselect all" : "Select all"}
@@ -384,14 +428,14 @@ function UploadPage() {
                         key={g.id}
                         className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
                           checked ? "bg-white/[0.04] text-white/70" : "text-white/30"
-                        } ${isUploading ? "pointer-events-none opacity-40" : "hover:bg-white/[0.06]"}`}
+                        } ${isAnySubmitting ? "pointer-events-none opacity-40" : "hover:bg-white/[0.06]"}`}
                       >
                         <div className="relative flex items-center">
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => toggleGroup(g.id)}
-                            disabled={isUploading}
+                            disabled={isAnySubmitting}
                             className="peer sr-only"
                           />
                           <div className={`h-4 w-7 rounded-full transition-colors ${
@@ -412,13 +456,23 @@ function UploadPage() {
 
           <Button
             onClick={handleStart}
-            disabled={!file || isUploading || models.length === 0 || noneSelected}
+            disabled={
+              isAnySubmitting ||
+              models.length === 0 ||
+              noneSelected ||
+              (isBatchMode ? batch.files.length === 0 : !file)
+            }
             className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
           >
-            {isUploading ? (
+            {isAnySubmitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Uploading...
+                {isBatchMode ? "Submitting..." : "Uploading..."}
+              </>
+            ) : isBatchMode ? (
+              <>
+                <Layers className="mr-2 h-4 w-4" />
+                Start {batch.files.length} Review{batch.files.length !== 1 ? "s" : ""}
               </>
             ) : (
               <>

@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 interface FileDropzoneProps {
   onFileSelect: (file: File) => void;
+  onMultiFileSelect?: (files: File[]) => void;
   disabled?: boolean;
   selectedFile: File | null;
   onClear: () => void;
@@ -16,9 +17,14 @@ interface FileDropzoneProps {
  * PDF upload zone with drag-and-drop support. Shows a drop target when no file
  * is selected, or a compact file info bar with a clear button when a file is chosen.
  * Validates file type and size client-side before propagating via `onFileSelect`.
+ *
+ * When `onMultiFileSelect` is provided, accepts multiple files via the picker and
+ * drag-and-drop. If multiple valid files are selected, calls `onMultiFileSelect`
+ * instead of `onFileSelect`. Single-file selection still uses `onFileSelect`.
  */
 export function FileDropzone({
   onFileSelect,
+  onMultiFileSelect,
   disabled,
   selectedFile,
   onClear,
@@ -35,22 +41,49 @@ export function FileDropzone({
     openPicker,
   } = useFileUpload();
 
-  // Both handlers call the hook's handler (for internal state) then validate
-  // independently to propagate to the parent. validate() returns null on success,
-  // so `!validate(f)` means the file passed validation.
   const handleDrop = (e: React.DragEvent) => {
+    // Read files before hookOnDrop processes the event
+    const fileList = e.dataTransfer.files;
+    const allFiles = Array.from(fileList);
+
+    // Always let the hook handle drag state reset + preventDefault
     hookOnDrop(e);
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && !validate(droppedFile)) {
-      onFileSelect(droppedFile);
+
+    if (allFiles.length > 1 && onMultiFileSelect) {
+      // Batch mode: validate each, pass all valid ones
+      const valid = allFiles.filter((f) => !validate(f));
+      if (valid.length > 0) {
+        onMultiFileSelect(valid);
+      }
+    } else {
+      const droppedFile = allFiles[0];
+      if (droppedFile && !validate(droppedFile)) {
+        onFileSelect(droppedFile);
+      }
     }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    hookOnInputChange(e);
-    const selectedFileFromInput = e.target.files?.[0];
-    if (selectedFileFromInput && !validate(selectedFileFromInput)) {
-      onFileSelect(selectedFileFromInput);
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const allFiles = Array.from(fileList);
+
+    if (allFiles.length > 1 && onMultiFileSelect) {
+      // Batch mode
+      const valid = allFiles.filter((f) => !validate(f));
+      if (valid.length > 0) {
+        onMultiFileSelect(valid);
+      }
+      // Reset input so the same files can be re-selected
+      if (inputRef.current) inputRef.current.value = "";
+    } else {
+      // Single file — use existing hook behavior
+      hookOnInputChange(e);
+      const selectedFileFromInput = allFiles[0];
+      if (selectedFileFromInput && !validate(selectedFileFromInput)) {
+        onFileSelect(selectedFileFromInput);
+      }
     }
   };
 
@@ -98,12 +131,15 @@ export function FileDropzone({
         <p className="text-sm font-medium text-white/70">
           Drop your proposal PDF here
         </p>
-        <p className="mt-1 text-xs text-white/40">or click to browse</p>
+        <p className="mt-1 text-xs text-white/40">
+          {onMultiFileSelect ? "or click to browse (multiple files supported)" : "or click to browse"}
+        </p>
       </div>
       <input
         ref={inputRef}
         type="file"
         accept=".pdf,application/pdf"
+        multiple={!!onMultiFileSelect}
         onChange={handleInputChange}
         className="hidden"
         disabled={disabled}
