@@ -336,6 +336,24 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_finding_resolutions_review
         ON finding_resolutions(review_id);
+
+      -- Token usage tracking (per-review, per-check-group cost attribution)
+      CREATE TABLE IF NOT EXISTS token_usage (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        check_group TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        input_tokens INT NOT NULL DEFAULT 0,
+        output_tokens INT NOT NULL DEFAULT 0,
+        reasoning_tokens INT NOT NULL DEFAULT 0,
+        estimated_cost_usd NUMERIC(10,6) NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_token_usage_review
+        ON token_usage(review_id);
+      CREATE INDEX IF NOT EXISTS idx_token_usage_created
+        ON token_usage(created_at);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -3168,4 +3186,227 @@ export async function getActivePromptForGroup(checkGroup: string): Promise<strin
   );
   if (result.rows.length === 0) return null;
   return result.rows[0].system_prompt as string;
+}
+
+// ---------------------------------------------------------------------------
+// Token usage tracking
+// ---------------------------------------------------------------------------
+
+export interface TokenUsageRow {
+  id: string;
+  reviewId: string;
+  checkGroup: string;
+  provider: string;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  estimatedCostUsd: number;
+  createdAt: string;
+}
+
+export interface TokenUsageSummary {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalReasoningTokens: number;
+  totalCostUsd: number;
+  reviewCount: number;
+  avgCostPerReview: number;
+  byProvider: { provider: string; inputTokens: number; outputTokens: number; reasoningTokens: number; costUsd: number; reviewCount: number }[];
+  byUser: { userId: string; userName: string; userEmail: string; totalCostUsd: number; reviewCount: number }[];
+  daily: { day: string; costUsd: number; reviewCount: number }[];
+}
+
+/**
+ * Record token usage for a single check group invocation.
+ */
+export async function recordTokenUsage(entry: {
+  reviewId: string;
+  checkGroup: string;
+  provider: string;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  estimatedCostUsd: number;
+}): Promise<void> {
+  if (!pool) return;
+  await ensureSchema();
+  await pool.query(
+    `INSERT INTO token_usage (review_id, check_group, provider, input_tokens, output_tokens, reasoning_tokens, estimated_cost_usd)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [entry.reviewId, entry.checkGroup, entry.provider, entry.inputTokens, entry.outputTokens, entry.reasoningTokens, entry.estimatedCostUsd]
+  );
+}
+
+/**
+ * Get token usage breakdown for a specific review.
+ */
+export async function getTokenUsageForReview(reviewId: string): Promise<TokenUsageRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT id, review_id, check_group, provider, input_tokens, output_tokens, reasoning_tokens, estimated_cost_usd, created_at
+     FROM token_usage WHERE review_id = $1 ORDER BY created_at ASC`,
+    [reviewId]
+  );
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    checkGroup: row.check_group as string,
+    provider: row.provider as string,
+    inputTokens: Number(row.input_tokens),
+    outputTokens: Number(row.output_tokens),
+    reasoningTokens: Number(row.reasoning_tokens),
+    estimatedCostUsd: Number(row.estimated_cost_usd),
+    createdAt: (row.created_at as Date).toISOString(),
+  }));
+}
+
+/**
+ * Get aggregated token usage summary across all reviews.
+ * Optionally filtered by number of days back from now.
+ */
+export async function getTokenUsageSummary(days?: number): Promise<TokenUsageSummary | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const dateFilter = days ? `AND tu.created_at >= NOW() - INTERVAL '${Number(days)} days'` : "";
+  const dailyDays = days ? Math.min(days, 90) : 30;
+
+  const result = await pool.query(`
+    WITH
+    filtered AS (
+      SELECT tu.*, r.user_id, r.user_name, r.user_email
+      FROM token_usage tu
+      JOIN reviews r ON r.id = tu.review_id
+      WHERE r.deleted_at IS NULL ${dateFilter}
+    ),
+
+    totals AS (
+      SELECT
+        COALESCE(SUM(input_tokens), 0) AS total_input,
+        COALESCE(SUM(output_tokens), 0) AS total_output,
+        COALESCE(SUM(reasoning_tokens), 0) AS total_reasoning,
+        COALESCE(SUM(estimated_cost_usd), 0) AS total_cost,
+        COUNT(DISTINCT review_id) AS review_count
+      FROM filtered
+    ),
+
+    by_provider AS (
+      SELECT
+        provider,
+        SUM(input_tokens) AS input_tokens,
+        SUM(output_tokens) AS output_tokens,
+        SUM(reasoning_tokens) AS reasoning_tokens,
+        SUM(estimated_cost_usd) AS cost_usd,
+        COUNT(DISTINCT review_id) AS review_count
+      FROM filtered
+      GROUP BY provider
+      ORDER BY cost_usd DESC
+    ),
+
+    by_user AS (
+      SELECT
+        user_id,
+        MAX(user_name) AS user_name,
+        MAX(user_email) AS user_email,
+        SUM(estimated_cost_usd) AS total_cost_usd,
+        COUNT(DISTINCT review_id) AS review_count
+      FROM filtered
+      GROUP BY user_id
+      ORDER BY total_cost_usd DESC
+      LIMIT 10
+    ),
+
+    daily_series AS (
+      SELECT gs::date AS day
+      FROM generate_series(
+        (NOW() AT TIME ZONE 'UTC')::date - ${dailyDays - 1},
+        (NOW() AT TIME ZONE 'UTC')::date,
+        '1 day'::interval
+      ) AS gs
+    ),
+    daily_costs AS (
+      SELECT ds.day,
+        COALESCE(SUM(f.estimated_cost_usd), 0) AS cost_usd,
+        COUNT(DISTINCT f.review_id) AS review_count
+      FROM daily_series ds
+      LEFT JOIN filtered f
+        ON f.created_at >= (ds.day::timestamp AT TIME ZONE 'UTC')
+        AND f.created_at < ((ds.day + 1)::timestamp AT TIME ZONE 'UTC')
+      GROUP BY ds.day
+      ORDER BY ds.day
+    )
+
+    SELECT json_build_object(
+      'totals', (SELECT row_to_json(totals) FROM totals),
+      'byProvider', COALESCE((SELECT json_agg(row_to_json(by_provider)) FROM by_provider), '[]'::json),
+      'byUser', COALESCE((SELECT json_agg(row_to_json(by_user)) FROM by_user), '[]'::json),
+      'daily', COALESCE((SELECT json_agg(row_to_json(daily_costs)) FROM daily_costs), '[]'::json)
+    ) AS data
+  `);
+
+  const raw = result.rows[0].data;
+  const totals = raw.totals;
+  const reviewCount = Number(totals.review_count);
+
+  return {
+    totalInputTokens: Number(totals.total_input),
+    totalOutputTokens: Number(totals.total_output),
+    totalReasoningTokens: Number(totals.total_reasoning),
+    totalCostUsd: Number(totals.total_cost),
+    reviewCount,
+    avgCostPerReview: reviewCount > 0 ? Number(totals.total_cost) / reviewCount : 0,
+    byProvider: (raw.byProvider as { provider: string; input_tokens: string; output_tokens: string; reasoning_tokens: string; cost_usd: string; review_count: string }[]).map((r) => ({
+      provider: r.provider,
+      inputTokens: Number(r.input_tokens),
+      outputTokens: Number(r.output_tokens),
+      reasoningTokens: Number(r.reasoning_tokens),
+      costUsd: Number(r.cost_usd),
+      reviewCount: Number(r.review_count),
+    })),
+    byUser: (raw.byUser as { user_id: string; user_name: string; user_email: string; total_cost_usd: string; review_count: string }[]).map((r) => ({
+      userId: r.user_id,
+      userName: r.user_name,
+      userEmail: r.user_email,
+      totalCostUsd: Number(r.total_cost_usd),
+      reviewCount: Number(r.review_count),
+    })),
+    daily: (raw.daily as { day: string; cost_usd: string; review_count: string }[]).map((r) => ({
+      day: r.day,
+      costUsd: Number(r.cost_usd),
+      reviewCount: Number(r.review_count),
+    })),
+  };
+}
+
+/**
+ * Get token usage filtered by date range.
+ */
+export async function getTokenUsageByDateRange(startDate: string, endDate: string): Promise<TokenUsageRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const result = await pool.query(
+    `SELECT tu.id, tu.review_id, tu.check_group, tu.provider, tu.input_tokens, tu.output_tokens,
+            tu.reasoning_tokens, tu.estimated_cost_usd, tu.created_at
+     FROM token_usage tu
+     JOIN reviews r ON r.id = tu.review_id
+     WHERE r.deleted_at IS NULL
+       AND tu.created_at >= $1::timestamptz
+       AND tu.created_at <= $2::timestamptz
+     ORDER BY tu.created_at ASC`,
+    [startDate, endDate]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    checkGroup: row.check_group as string,
+    provider: row.provider as string,
+    inputTokens: Number(row.input_tokens),
+    outputTokens: Number(row.output_tokens),
+    reasoningTokens: Number(row.reasoning_tokens),
+    estimatedCostUsd: Number(row.estimated_cost_usd),
+    createdAt: (row.created_at as Date).toISOString(),
+  }));
 }
