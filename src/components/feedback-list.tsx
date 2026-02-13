@@ -1,9 +1,10 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, Search, X as XIcon, Filter } from "lucide-react";
 
 interface FeedbackListProps {
   feedback: MergedFeedback;
@@ -112,11 +113,192 @@ function groupBySeverity(findings: Finding[]): Partial<Record<Severity, IndexedF
   return groups;
 }
 
+/** Group pre-indexed findings by severity. */
+function groupIndexedBySeverity(indexed: IndexedFinding[]): Partial<Record<Severity, IndexedFinding[]>> {
+  const groups: Partial<Record<Severity, IndexedFinding[]>> = {};
+  for (const item of indexed) {
+    const sev = item.finding.severity;
+    if (!groups[sev]) groups[sev] = [];
+    groups[sev]!.push(item);
+  }
+  for (const arr of Object.values(groups)) {
+    arr?.sort((a, b) => minPage(a.finding) - minPage(b.finding));
+  }
+  return groups;
+}
+
+type AnnotationFilter = "all" | "unaddressed" | "accepted" | "dismissed" | "fixed";
+
+const ANNOTATION_FILTER_OPTIONS: { value: AnnotationFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "unaddressed", label: "Unaddressed" },
+  { value: "accepted", label: "Accepted" },
+  { value: "dismissed", label: "Dismissed" },
+  { value: "fixed", label: "Fixed" },
+];
+
+function FilterBar({
+  severityFilter,
+  onToggleSeverity,
+  annotationFilter,
+  onAnnotationFilter,
+  searchQuery,
+  onSearchQuery,
+  presentSeverities,
+  visibleCount,
+  totalCount,
+}: {
+  severityFilter: Set<Severity>;
+  onToggleSeverity: (s: Severity) => void;
+  annotationFilter: AnnotationFilter;
+  onAnnotationFilter: (f: AnnotationFilter) => void;
+  searchQuery: string;
+  onSearchQuery: (q: string) => void;
+  presentSeverities: Severity[];
+  visibleCount: number;
+  totalCount: number;
+}) {
+  const isFiltering = severityFilter.size < 4 || annotationFilter !== "all" || searchQuery.length > 0;
+
+  return (
+    <div className="no-print space-y-3 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Severity toggles */}
+        <div className="flex items-center gap-1.5">
+          <Filter className="h-3.5 w-3.5 text-white/30" />
+          {SEVERITY_ORDER.map((s) => {
+            const col = severityColumnConfig[s];
+            const active = severityFilter.has(s);
+            const hasFindingsOfType = presentSeverities.includes(s);
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onToggleSeverity(s)}
+                disabled={!hasFindingsOfType}
+                className={cn(
+                  "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40",
+                  active && hasFindingsOfType
+                    ? cn(col.headerBg, col.headerText)
+                    : "text-white/20 hover:text-white/40",
+                  !hasFindingsOfType && "opacity-30 cursor-not-allowed",
+                )}
+              >
+                {col.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Annotation status filter */}
+        <div className="flex items-center gap-1 border-l border-white/10 pl-3">
+          {ANNOTATION_FILTER_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onAnnotationFilter(value)}
+              className={cn(
+                "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40",
+                annotationFilter === value
+                  ? "bg-white/10 text-white/70"
+                  : "text-white/25 hover:text-white/45",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Search input */}
+        <div className="relative ml-auto min-w-[180px]">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/25" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchQuery(e.target.value)}
+            placeholder="Search findings..."
+            className="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-8 text-[11px] text-white/70 placeholder:text-white/20 focus:border-white/20 focus:outline-none"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+            >
+              <XIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter status */}
+      {isFiltering && (
+        <p className="text-[11px] text-white/35">
+          Showing {visibleCount} of {totalCount} finding{totalCount !== 1 ? "s" : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
-  const grouped = groupBySeverity(feedback.findings);
-  const presentSeverities = SEVERITY_ORDER.filter((s) => grouped[s] && grouped[s]!.length > 0);
+
+  // ── Filter state ──────────────────────────────────────────────────────
+  const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set(SEVERITY_ORDER));
+  const [annotationFilter, setAnnotationFilter] = useState<AnnotationFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const handleToggleSeverity = (s: Severity) => {
+    setSeverityFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(s)) {
+        next.delete(s);
+      } else {
+        next.add(s);
+      }
+      return next;
+    });
+  };
+
+  // Unfiltered grouping (for the assessment banner counts and knowing which severities exist)
+  const allGrouped = groupBySeverity(feedback.findings);
+  const allPresentSeverities = SEVERITY_ORDER.filter((s) => allGrouped[s] && allGrouped[s]!.length > 0);
+
+  // ── Apply filters ─────────────────────────────────────────────────────
+  const searchLower = searchQuery.toLowerCase();
+
+  const filteredIndexed: IndexedFinding[] = useMemo(() => {
+    const result: IndexedFinding[] = [];
+    for (let i = 0; i < feedback.findings.length; i++) {
+      const f = feedback.findings[i];
+      // Severity filter
+      if (!severityFilter.has(f.severity)) continue;
+      // Annotation status filter
+      if (annotationFilter !== "all") {
+        const status = annotations?.[String(i)]?.status;
+        if (annotationFilter === "unaddressed") {
+          if (status) continue; // has a status → skip
+        } else {
+          if (status !== annotationFilter) continue;
+        }
+      }
+      // Text search
+      if (searchLower) {
+        const inTitle = f.title.toLowerCase().includes(searchLower);
+        const inDesc = f.description.toLowerCase().includes(searchLower);
+        if (!inTitle && !inDesc) continue;
+      }
+      result.push({ finding: f, globalIndex: i });
+    }
+    return result;
+  }, [feedback.findings, severityFilter, annotationFilter, searchLower, annotations]);
+
+  const filtered = groupIndexedBySeverity(filteredIndexed);
+  const presentSeverities = SEVERITY_ORDER.filter((s) => filtered[s] && filtered[s]!.length > 0);
 
   // Annotation summary counts — only count entries that have a status set
   const totalFindings = feedback.findings.length;
@@ -143,7 +325,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
               </p>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/40">
                 {SEVERITY_ORDER.map((s) => {
-                  const count = grouped[s]?.length || 0;
+                  const count = allGrouped[s]?.length || 0;
                   if (count === 0) return null;
                   const col = severityColumnConfig[s];
                   return (
@@ -174,12 +356,36 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
         </div>
       )}
 
+      {/* Filter bar — only show when there are findings */}
+      {totalFindings > 0 && (
+        <FilterBar
+          severityFilter={severityFilter}
+          onToggleSeverity={handleToggleSeverity}
+          annotationFilter={annotationFilter}
+          onAnnotationFilter={setAnnotationFilter}
+          searchQuery={searchQuery}
+          onSearchQuery={setSearchQuery}
+          presentSeverities={allPresentSeverities}
+          visibleCount={filteredIndexed.length}
+          totalCount={totalFindings}
+        />
+      )}
+
+      {/* Empty filter result */}
+      {totalFindings > 0 && filteredIndexed.length === 0 && (
+        <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-sm">
+          <p className="text-sm text-white/40">
+            No findings match the current filters.
+          </p>
+        </div>
+      )}
+
       {/* Severity columns */}
       <div
         className={cn("print-single-col grid gap-4", GRID_COLS[presentSeverities.length] ?? "grid-cols-1")}
       >
         {presentSeverities.map((severity) => {
-          const items = grouped[severity]!;
+          const items = filtered[severity]!;
           const col = severityColumnConfig[severity];
           return (
             <div key={severity} className="min-w-0">
