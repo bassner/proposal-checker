@@ -13,7 +13,7 @@ import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton, DownloadCsvButton, DownloadJsonButton } from "@/components/export-button";
 import { GraduationCap, RotateCcw, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import type { MergedFeedback, ReviewMode, Annotations } from "@/types/review";
+import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
 import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { getNavigationOrder } from "@/lib/finding-nav-order";
@@ -21,6 +21,7 @@ import { useMemo } from "react";
 import { useComments } from "@/hooks/use-comments";
 import { TimeEstimate } from "@/components/time-estimate";
 import { DeleteReviewButton } from "@/components/delete-review-button";
+import { ReviewStats } from "@/components/review-stats";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -90,7 +91,7 @@ export default function ReviewPage() {
 
   // ── Live SSE: results view ──────────────────────────────────────────────
   if (hasResult) {
-    return <ResultsView feedback={state.result!} reviewId={id} reviewMode={state.mode ?? undefined} isOwner />;
+    return <ResultsView feedback={state.result!} reviewId={id} reviewMode={state.mode ?? undefined} checkGroups={state.checkGroups} isOwner />;
   }
 
   // ── Live SSE: processing / error view ───────────────────────────────────
@@ -123,7 +124,7 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; initialAnnotations?: Annotations; isOwner?: boolean }) {
+function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean }) {
   const { data: session } = useSession();
   const role = session?.user?.role;
   const isSupervisor = role === "admin" || role === "phd";
@@ -227,6 +228,9 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             <UserMenu />
           </nav>
         </header>
+        <div className="mb-4">
+          <ReviewStats feedback={feedback} annotations={mergedAnnotations} checkGroups={checkGroups} />
+        </div>
         <main id="main-content">
         <FeedbackList
           feedback={feedback}
