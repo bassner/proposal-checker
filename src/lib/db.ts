@@ -370,6 +370,22 @@ async function ensureSchema(): Promise<void> {
         ON review_versions(group_id);
       CREATE INDEX IF NOT EXISTS idx_review_versions_review
         ON review_versions(review_id);
+
+      -- Severity overrides (supervisor reclassification audit trail)
+      CREATE TABLE IF NOT EXISTS severity_overrides (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        finding_index INT NOT NULL,
+        original_severity TEXT NOT NULL,
+        new_severity TEXT NOT NULL,
+        reason TEXT,
+        changed_by TEXT NOT NULL,
+        changed_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_severity_overrides_review
+        ON severity_overrides(review_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -3550,4 +3566,209 @@ export async function unlinkReviewVersion(reviewId: string): Promise<boolean> {
     [reviewId]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Severity overrides (supervisor reclassification audit trail)
+// ---------------------------------------------------------------------------
+
+export const SEVERITY_VALUES = ["critical", "major", "minor", "suggestion"] as const;
+export type SeverityValue = (typeof SEVERITY_VALUES)[number];
+
+export interface SeverityOverrideRow {
+  id: string;
+  reviewId: string;
+  findingIndex: number;
+  originalSeverity: string;
+  newSeverity: string;
+  reason: string | null;
+  changedBy: string;
+  changedByName: string | null;
+  createdAt: string;
+}
+
+function rowToSeverityOverride(row: Record<string, unknown>): SeverityOverrideRow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    findingIndex: row.finding_index as number,
+    originalSeverity: row.original_severity as string,
+    newSeverity: row.new_severity as string,
+    reason: (row.reason as string) ?? null,
+    changedBy: row.changed_by as string,
+    changedByName: (row.changed_by_name as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Insert a new severity override for a finding. Append-only: each override
+ * is a new row in the audit trail.
+ */
+export async function overrideFindingSeverity(override: {
+  reviewId: string;
+  findingIndex: number;
+  originalSeverity: string;
+  newSeverity: string;
+  reason?: string;
+  changedBy: string;
+  changedByName?: string | null;
+}): Promise<SeverityOverrideRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+
+  const result = await pool.query(
+    `INSERT INTO severity_overrides
+       (review_id, finding_index, original_severity, new_severity, reason, changed_by, changed_by_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [
+      override.reviewId,
+      override.findingIndex,
+      override.originalSeverity,
+      override.newSeverity,
+      override.reason ?? null,
+      override.changedBy,
+      override.changedByName ?? null,
+    ]
+  );
+
+  return rowToSeverityOverride(result.rows[0]);
+}
+
+/**
+ * Get all severity overrides for a review, ordered by finding index then time.
+ * Returns a Map keyed by finding_index, each value is the list of overrides
+ * (newest last) so the caller can determine the current effective severity.
+ */
+export async function getSeverityOverridesForReview(
+  reviewId: string
+): Promise<Map<number, SeverityOverrideRow[]>> {
+  if (!pool) return new Map();
+  await ensureSchema();
+
+  const result = await pool.query(
+    `SELECT * FROM severity_overrides
+     WHERE review_id = $1
+     ORDER BY finding_index ASC, created_at ASC`,
+    [reviewId]
+  );
+
+  const map = new Map<number, SeverityOverrideRow[]>();
+  for (const raw of result.rows) {
+    const row = rowToSeverityOverride(raw);
+    if (!map.has(row.findingIndex)) {
+      map.set(row.findingIndex, []);
+    }
+    map.get(row.findingIndex)!.push(row);
+  }
+
+  return map;
+}
+
+/**
+ * Get the full override history for a single finding.
+ */
+export async function getSeverityOverrideHistory(
+  reviewId: string,
+  findingIndex: number
+): Promise<SeverityOverrideRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const result = await pool.query(
+    `SELECT * FROM severity_overrides
+     WHERE review_id = $1 AND finding_index = $2
+     ORDER BY created_at ASC`,
+    [reviewId, findingIndex]
+  );
+
+  return result.rows.map(rowToSeverityOverride);
+}
+
+/**
+ * Aggregate severity override statistics for admin analytics.
+ * Returns: transition counts (original -> new), top overriders, and totals.
+ */
+export async function getSeverityOverrideStats(): Promise<SeverityOverrideStats | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // Transition counts: how often each original severity gets changed to each new severity
+  const transitionsResult = await pool.query(`
+    SELECT original_severity, new_severity, COUNT(*)::int as count
+    FROM severity_overrides
+    GROUP BY original_severity, new_severity
+    ORDER BY count DESC
+  `);
+
+  // Top overriders: which supervisors override most
+  const overridersResult = await pool.query(`
+    SELECT changed_by, changed_by_name, COUNT(*)::int as count
+    FROM severity_overrides
+    GROUP BY changed_by, changed_by_name
+    ORDER BY count DESC
+    LIMIT 20
+  `);
+
+  // Direction summary: upgrades (more severe) vs downgrades (less severe)
+  const severityRank: Record<string, number> = {
+    suggestion: 0,
+    minor: 1,
+    major: 2,
+    critical: 3,
+  };
+
+  const transitions: SeverityOverrideStats["transitions"] = transitionsResult.rows.map(
+    (row: Record<string, unknown>) => ({
+      originalSeverity: row.original_severity as string,
+      newSeverity: row.new_severity as string,
+      count: row.count as number,
+    })
+  );
+
+  let upgrades = 0;
+  let downgrades = 0;
+  let total = 0;
+  for (const t of transitions) {
+    total += t.count;
+    const origRank = severityRank[t.originalSeverity] ?? 0;
+    const newRank = severityRank[t.newSeverity] ?? 0;
+    if (newRank > origRank) upgrades += t.count;
+    else if (newRank < origRank) downgrades += t.count;
+  }
+
+  const topOverriders: SeverityOverrideStats["topOverriders"] = overridersResult.rows.map(
+    (row: Record<string, unknown>) => ({
+      userId: row.changed_by as string,
+      userName: (row.changed_by_name as string) ?? null,
+      count: row.count as number,
+    })
+  );
+
+  return {
+    transitions,
+    topOverriders,
+    total,
+    upgrades,
+    downgrades,
+  };
+}
+
+export interface SeverityOverrideStats {
+  transitions: {
+    originalSeverity: string;
+    newSeverity: string;
+    count: number;
+  }[];
+  topOverriders: {
+    userId: string;
+    userName: string | null;
+    count: number;
+  }[];
+  total: number;
+  /** Cases where severity was increased (e.g. minor -> major) */
+  upgrades: number;
+  /** Cases where severity was decreased (e.g. major -> minor) */
+  downgrades: number;
 }
