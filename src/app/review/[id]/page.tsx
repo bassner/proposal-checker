@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useReviewStream, useCompletedReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import { ShareButton } from "@/components/share-button";
+import { ExportButton } from "@/components/export-button";
 import { GraduationCap, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback } from "@/types/review";
@@ -108,10 +109,15 @@ export default function ReviewPage() {
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
 function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null }) {
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
       <div className="relative mx-auto w-full px-3 py-4 sm:px-6 sm:py-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="print-header">
+          <h1 className="text-base font-semibold">Proposal Review Results</h1>
+          {fileName && <p className="text-sm text-gray-600">{fileName}</p>}
+          <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
+        </div>
+        <div className="no-print mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <IconBadge />
             <div>
@@ -120,6 +126,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: M
             </div>
             <ReviewAnotherButton size="sm" />
             <ShareButton reviewId={reviewId} initialShareToken={shareToken} />
+            <ExportButton />
           </div>
           <UserMenu />
         </div>
@@ -200,7 +207,7 @@ function IconBadge() {
 
 function BackgroundOrbs() {
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="background-orbs pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
       <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
     </div>

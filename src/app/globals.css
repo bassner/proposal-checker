@@ -149,3 +149,150 @@
   -webkit-text-fill-color: transparent;
   animation: shimmer-glow 2.5s ease-in-out infinite;
 }
+
+/* ── Print / PDF export styles ──────────────────────────────────────────── */
+
+/* Print-only header hidden on screen */
+.print-header {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Show print header */
+  .print-header {
+    display: block !important;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #ccc;
+  }
+
+  /* Hide non-content elements */
+  .no-print {
+    display: none !important;
+  }
+
+  .background-orbs {
+    display: none !important;
+  }
+
+  footer {
+    display: none !important;
+  }
+
+  /* ── Print-root scoped overrides ────────────────────────────────────── */
+
+  /* White background on main container */
+  .print-root {
+    background: white !important;
+  }
+
+  /* Text: white/* -> dark */
+  .print-root [class*="text-white"] {
+    color: #111 !important;
+  }
+
+  .print-root [class*="text-white/"] {
+    color: rgba(0, 0, 0, 0.65) !important;
+  }
+
+  /* Card / element backgrounds */
+  .print-root [class*="bg-white/"] {
+    background: #f5f5f5 !important;
+  }
+
+  .print-root [class*="bg-gradient"] {
+    background: white !important;
+  }
+
+  .print-root [class*="bg-slate"] {
+    background: white !important;
+  }
+
+  /* Borders */
+  .print-root [class*="border-white/"] {
+    border-color: #ddd !important;
+  }
+
+  /* Remove backdrop blur */
+  .print-root [class*="backdrop-blur"] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Assessment banner backgrounds: keep gradient tints but lighter */
+  .print-root [class*="from-emerald"] {
+    background: #ecfdf5 !important;
+    border-color: #6ee7b7 !important;
+  }
+
+  .print-root [class*="from-amber"] {
+    background: #fffbeb !important;
+    border-color: #fcd34d !important;
+  }
+
+  .print-root [class*="from-red"] {
+    background: #fef2f2 !important;
+    border-color: #fca5a5 !important;
+  }
+
+  /* Assessment text colors for print */
+  .print-root [class*="text-emerald"] {
+    color: #065f46 !important;
+  }
+
+  .print-root [class*="text-amber"] {
+    color: #92400e !important;
+  }
+
+  .print-root [class*="text-red"] {
+    color: #991b1b !important;
+  }
+
+  .print-root [class*="text-orange"] {
+    color: #9a3412 !important;
+  }
+
+  .print-root [class*="text-yellow"] {
+    color: #854d0e !important;
+  }
+
+  .print-root [class*="text-blue"] {
+    color: #1e40af !important;
+  }
+
+  /* Severity column header backgrounds for print */
+  .print-root [class*="bg-red-500/"] {
+    background: #fef2f2 !important;
+  }
+
+  .print-root [class*="bg-orange-500/"] {
+    background: #fff7ed !important;
+  }
+
+  .print-root [class*="bg-yellow-500/"] {
+    background: #fefce8 !important;
+  }
+
+  .print-root [class*="bg-blue-500/"] {
+    background: #eff6ff !important;
+  }
+
+  /* Force single-column layout for severity grid */
+  .print-single-col {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Prevent page breaks inside feedback cards */
+  .print-card {
+    break-inside: avoid;
+  }
+}

@@ -155,7 +155,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
 
       {/* Severity columns */}
       <div
-        className={cn("grid gap-4", GRID_COLS[presentSeverities.length] ?? "grid-cols-1")}
+        className={cn("print-single-col grid gap-4", GRID_COLS[presentSeverities.length] ?? "grid-cols-1")}
       >
         {presentSeverities.map((severity) => {
           const findings = grouped[severity]!;
