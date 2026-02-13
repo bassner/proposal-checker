@@ -1,7 +1,7 @@
 "use client";
 
 import { useSession, signIn } from "next-auth/react";
-import { LogOut, Shield, ClipboardList } from "lucide-react";
+import { LogOut, Shield, ClipboardList, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { NotificationBell } from "./notification-bell";
@@ -28,6 +28,7 @@ export function UserMenu() {
 
   const { name, email, role } = session.user;
   const isAdmin = role === "admin";
+  const isSupervisor = role === "admin" || role === "phd";
 
   return (
     <div className="flex items-center gap-2 md:gap-3">
@@ -39,6 +40,16 @@ export function UserMenu() {
         <ClipboardList className="h-3.5 w-3.5" />
         <span className="hidden md:inline">My Reviews</span>
       </Link>
+      {isSupervisor && (
+        <Link
+          href="/supervisor"
+          aria-label="Supervisor Dashboard"
+          className="flex items-center justify-center size-10 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
+        >
+          <Users className="h-3.5 w-3.5" />
+          <span className="hidden md:inline">Supervisor</span>
+        </Link>
+      )}
       {isAdmin && (
         <Link
           href="/admin"
