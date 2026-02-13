@@ -135,7 +135,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
   const suggestionIndices = totalFindings > 0
     ? feedback.findings
         .map((f, i) => ({ severity: f.severity, index: i }))
-        .filter((e) => e.severity === "suggestion" && annotations?.[String(e.index)]?.status !== "dismissed")
+        .filter((e) => e.severity === "suggestion" && !annotations?.[String(e.index)]?.status)
         .map((e) => e.index)
     : [];
 
@@ -181,6 +181,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
             {onBulkAnnotate && totalFindings > 0 && (
               <div className="no-print mt-2 flex flex-wrap gap-2">
                 <button
+                  type="button"
                   onClick={() => onBulkAnnotate(unaddressedIndices, "accepted")}
                   disabled={unaddressedIndices.length === 0}
                   className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
@@ -190,6 +191,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                 </button>
                 {suggestionIndices.length > 0 && (
                   <button
+                    type="button"
                     onClick={() => onBulkAnnotate(suggestionIndices, "dismissed")}
                     className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/70"
                   >
@@ -199,6 +201,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                 )}
                 {addressedCount > 0 && onClearAllAnnotations && (
                   <button
+                    type="button"
                     onClick={onClearAllAnnotations}
                     className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/70"
                   >
