@@ -20,6 +20,8 @@ interface FeedbackListProps {
   focusedPosition?: number | null;
   onAddComment?: (findingIndex: number, text: string) => Promise<void>;
   onDeleteComment?: (findingIndex: number, commentId: string) => Promise<void>;
+  onReplyComment?: (findingIndex: number, parentId: string, text: string) => Promise<void>;
+  onResolveThread?: (findingIndex: number, commentId: string, status: "resolved" | "open") => Promise<void>;
   commentSubmitting?: boolean;
   /** Called when a page reference in a finding is clicked (for PDF viewer navigation). */
   onPageClick?: (page: number) => void;
@@ -293,7 +295,7 @@ function FilterBar({
   );
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting, onPageClick, conflicts }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflicts }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
 
@@ -579,6 +581,8 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                     focused={focusedGlobalIndex === globalIndex}
                     onAddComment={onAddComment ? (text) => onAddComment(globalIndex, text) : undefined}
                     onDeleteComment={onDeleteComment ? (commentId) => onDeleteComment(globalIndex, commentId) : undefined}
+                    onReplyComment={onReplyComment ? (parentId, text) => onReplyComment(globalIndex, parentId, text) : undefined}
+                    onResolveThread={onResolveThread ? (commentId, status) => onResolveThread(globalIndex, commentId, status) : undefined}
                     commentSubmitting={commentSubmitting}
                     onPageClick={onPageClick}
                     conflict={conflicts?.get(globalIndex)}

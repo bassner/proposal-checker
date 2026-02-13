@@ -226,6 +226,8 @@ export interface ModelConfig {
 // Finding annotations (user feedback on individual findings)
 export type AnnotationStatus = "accepted" | "dismissed" | "fixed";
 
+export type ThreadStatus = "open" | "resolved";
+
 export interface Comment {
   id: string;
   text: string;
@@ -233,6 +235,16 @@ export interface Comment {
   /** Internal only — stripped before sending to clients. */
   authorId: string;
   createdAt: string;
+  /** If set, this comment is a reply to the comment with this ID. */
+  parentId?: string;
+  /** Thread status — only meaningful on top-level comments (no parentId). */
+  threadStatus?: ThreadStatus;
+  /** User ID who resolved the thread. Internal only — stripped before sending. */
+  resolvedBy?: string;
+  /** Display name of user who resolved the thread. */
+  resolvedByName?: string;
+  /** Timestamp when the thread was resolved. */
+  resolvedAt?: string;
 }
 
 export interface AnnotationEntry {

@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -856,7 +856,108 @@ export async function deleteComment(
 }
 
 /**
- * Strip authorId from all comments in annotations before sending to clients.
+ * Represents a top-level comment with its nested replies.
+ */
+export interface CommentThread {
+  comment: Comment;
+  replies: Comment[];
+}
+
+/**
+ * Get comments for a finding organized into threads.
+ * Returns top-level comments (no parentId) with their replies nested underneath,
+ * ordered by creation time (oldest first for both threads and replies).
+ */
+export async function getThreadedComments(
+  reviewId: string,
+  findingIndex: string
+): Promise<CommentThread[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT annotations FROM reviews WHERE id = $1",
+    [reviewId]
+  );
+  if (result.rows.length === 0) return [];
+
+  const annotations: Annotations = (result.rows[0].annotations as Annotations) ?? {};
+  const entry = annotations[findingIndex];
+  if (!entry?.comments?.length) return [];
+
+  const comments = entry.comments;
+  const topLevel = comments.filter((c) => !c.parentId);
+  const replyMap = new Map<string, Comment[]>();
+
+  for (const c of comments) {
+    if (c.parentId) {
+      if (!replyMap.has(c.parentId)) replyMap.set(c.parentId, []);
+      replyMap.get(c.parentId)!.push(c);
+    }
+  }
+
+  // Sort replies by creation time (oldest first)
+  for (const replies of replyMap.values()) {
+    replies.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  // Sort threads by creation time (oldest first)
+  topLevel.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  return topLevel.map((comment) => ({
+    comment,
+    replies: replyMap.get(comment.id) ?? [],
+  }));
+}
+
+/**
+ * Resolve or reopen a top-level comment's thread.
+ * Only top-level comments (no parentId) can have their thread status changed.
+ * Returns the updated annotations.
+ */
+export async function resolveThread(
+  reviewId: string,
+  findingIndex: string,
+  commentId: string,
+  userId: string,
+  userName: string,
+  status: ThreadStatus
+): Promise<Annotations> {
+  return mergeAnnotations(reviewId, (current) => {
+    const entry = current[findingIndex];
+    if (!entry?.comments) return current;
+
+    const comments = entry.comments.map((c) => {
+      if (c.id !== commentId) return c;
+      // Only allow resolving top-level comments
+      if (c.parentId) return c;
+      if (status === "resolved") {
+        return {
+          ...c,
+          threadStatus: "resolved" as ThreadStatus,
+          resolvedBy: userId,
+          resolvedByName: userName,
+          resolvedAt: new Date().toISOString(),
+        };
+      }
+      // Reopen: clear resolution fields
+      return {
+        id: c.id,
+        text: c.text,
+        authorName: c.authorName,
+        authorId: c.authorId,
+        createdAt: c.createdAt,
+        ...(c.parentId ? { parentId: c.parentId } : {}),
+        threadStatus: "open" as ThreadStatus,
+      };
+    });
+
+    return { ...current, [findingIndex]: { ...entry, comments, updatedAt: new Date().toISOString() } };
+  });
+}
+
+/**
+ * Strip internal-only fields (authorId, resolvedBy) from all comments
+ * in annotations before sending to clients.
  */
 export function sanitizeAnnotations(annotations: Annotations): Annotations {
   const sanitized: Annotations = {};
@@ -867,6 +968,7 @@ export function sanitizeAnnotations(annotations: Annotations): Annotations {
         comments: entry.comments.map((c) => {
           const sanitized = { ...c };
           delete (sanitized as Record<string, unknown>).authorId;
+          delete (sanitized as Record<string, unknown>).resolvedBy;
           return sanitized;
         }),
       };
