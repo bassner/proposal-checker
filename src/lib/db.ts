@@ -3551,3 +3551,217 @@ export async function unlinkReviewVersion(reviewId: string): Promise<boolean> {
   );
   return (result.rowCount ?? 0) > 0;
 }
+
+// ---------------------------------------------------------------------------
+// Student quality trends
+// ---------------------------------------------------------------------------
+
+export interface StudentTrendPoint {
+  reviewId: string;
+  fileName: string | null;
+  date: string;
+  qualityScore: number;
+  findingCount: number;
+  overallAssessment: string | null;
+  categoryBreakdown: { category: string; count: number; deduction: number }[];
+}
+
+export interface StudentTrendData {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  points: StudentTrendPoint[];
+}
+
+/**
+ * Returns quality trend data for a specific user across all their completed
+ * (non-deleted) reviews. Quality score is computed server-side using the same
+ * formula as the client: 100 minus the sum of severity weights per finding.
+ */
+export async function getStudentQualityTrends(userId: string): Promise<StudentTrendData | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // Get severity weights from config (same source as client-side QualityScore)
+  const weightsResult = await pool.query(
+    "SELECT severity, weight FROM severity_config"
+  );
+  const weightMap: Record<string, number> = {};
+  for (const row of weightsResult.rows) {
+    weightMap[row.severity as string] = Number(row.weight);
+  }
+
+  const result = await pool.query(
+    `SELECT
+       r.id,
+       r.user_name,
+       r.user_email,
+       r.file_name,
+       r.created_at,
+       r.feedback->>'overallAssessment' AS overall_assessment,
+       r.feedback->'findings' AS findings_json
+     FROM reviews r
+     WHERE r.user_id = $1
+       AND r.status = 'done'
+       AND r.deleted_at IS NULL
+       AND r.feedback IS NOT NULL
+       AND jsonb_typeof(r.feedback->'findings') = 'array'
+     ORDER BY r.created_at ASC`,
+    [userId]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const firstRow = result.rows[0];
+  const points: StudentTrendPoint[] = [];
+
+  for (const row of result.rows) {
+    const findings = (row.findings_json as { severity?: string; category?: string }[]) ?? [];
+    let totalDeduction = 0;
+    const catMap: Record<string, { count: number; deduction: number }> = {};
+
+    for (const f of findings) {
+      const sev = f.severity ?? "suggestion";
+      const cat = f.category ?? "other";
+      const w = weightMap[sev] ?? 0;
+      totalDeduction += w;
+      if (!catMap[cat]) catMap[cat] = { count: 0, deduction: 0 };
+      catMap[cat].count++;
+      catMap[cat].deduction += w;
+    }
+
+    points.push({
+      reviewId: row.id as string,
+      fileName: (row.file_name as string) ?? null,
+      date: (row.created_at as Date).toISOString(),
+      qualityScore: Math.max(0, 100 - totalDeduction),
+      findingCount: findings.length,
+      overallAssessment: (row.overall_assessment as string) ?? null,
+      categoryBreakdown: Object.entries(catMap)
+        .map(([category, data]) => ({ category, ...data }))
+        .sort((a, b) => b.deduction - a.deduction),
+    });
+  }
+
+  return {
+    userId,
+    userName: firstRow.user_name as string,
+    userEmail: firstRow.user_email as string,
+    points,
+  };
+}
+
+export interface StudentSummary {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  reviewCount: number;
+  avgScore: number;
+  /** "improving" | "declining" | "stable" based on linear trend of scores. */
+  trend: "improving" | "declining" | "stable";
+  lastReviewDate: string;
+}
+
+/**
+ * Returns summary data for all students: review count, average quality score,
+ * and trend direction. Used by the admin student-trends dashboard.
+ */
+export async function getAllStudentSummaries(): Promise<StudentSummary[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  // Get severity weights
+  const weightsResult = await pool.query(
+    "SELECT severity, weight FROM severity_config"
+  );
+  const weightMap: Record<string, number> = {};
+  for (const row of weightsResult.rows) {
+    weightMap[row.severity as string] = Number(row.weight);
+  }
+
+  const result = await pool.query(`
+    SELECT
+      r.user_id,
+      MAX(r.user_name) AS user_name,
+      MAX(r.user_email) AS user_email,
+      r.id,
+      r.created_at,
+      r.feedback->'findings' AS findings_json
+    FROM reviews r
+    WHERE r.status = 'done'
+      AND r.deleted_at IS NULL
+      AND r.feedback IS NOT NULL
+      AND jsonb_typeof(r.feedback->'findings') = 'array'
+    GROUP BY r.user_id, r.id, r.created_at, r.feedback
+    ORDER BY r.user_id, r.created_at ASC
+  `);
+
+  // Group by user and compute scores
+  const userMap = new Map<string, {
+    userName: string;
+    userEmail: string;
+    scores: number[];
+    lastDate: Date;
+  }>();
+
+  for (const row of result.rows) {
+    const uid = row.user_id as string;
+    const findings = (row.findings_json as { severity?: string }[]) ?? [];
+    let deduction = 0;
+    for (const f of findings) {
+      deduction += weightMap[f.severity ?? "suggestion"] ?? 0;
+    }
+    const score = Math.max(0, 100 - deduction);
+    const createdAt = row.created_at as Date;
+
+    if (!userMap.has(uid)) {
+      userMap.set(uid, {
+        userName: row.user_name as string,
+        userEmail: row.user_email as string,
+        scores: [],
+        lastDate: createdAt,
+      });
+    }
+    const entry = userMap.get(uid)!;
+    entry.scores.push(score);
+    if (createdAt > entry.lastDate) entry.lastDate = createdAt;
+  }
+
+  const summaries: StudentSummary[] = [];
+
+  for (const [userId, entry] of userMap) {
+    const avgScore = entry.scores.length > 0
+      ? Math.round(entry.scores.reduce((a, b) => a + b, 0) / entry.scores.length * 10) / 10
+      : 0;
+
+    // Compute trend: compare average of first half vs second half
+    let trend: "improving" | "declining" | "stable" = "stable";
+    if (entry.scores.length >= 2) {
+      const mid = Math.floor(entry.scores.length / 2);
+      const firstHalf = entry.scores.slice(0, mid);
+      const secondHalf = entry.scores.slice(mid);
+      const avgFirst = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+      const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+      const diff = avgSecond - avgFirst;
+      if (diff >= 5) trend = "improving";
+      else if (diff <= -5) trend = "declining";
+    }
+
+    summaries.push({
+      userId,
+      userName: entry.userName,
+      userEmail: entry.userEmail,
+      reviewCount: entry.scores.length,
+      avgScore,
+      trend,
+      lastReviewDate: entry.lastDate.toISOString(),
+    });
+  }
+
+  // Sort by most recent review first
+  summaries.sort((a, b) =>
+    new Date(b.lastReviewDate).getTime() - new Date(a.lastReviewDate).getTime()
+  );
+
+  return summaries;
+}
