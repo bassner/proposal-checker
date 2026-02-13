@@ -8,6 +8,7 @@ import { insertReview, completeReview, failReview } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
+import { sendReviewCompleteEmail, sendReviewErrorEmail } from "@/lib/email/send";
 
 /**
  * Sanitize error for client/DB to avoid leaking internal details.
@@ -219,14 +220,32 @@ export async function POST(request: NextRequest) {
       send("done", {});
       setSessionStatus(sessionId, "done");
       completeReview(sessionId, feedback, dbMeta)
-        .catch((err) => console.error("[api] DB complete failed:", err));
+        .then(() =>
+          sendReviewCompleteEmail({
+            to: dbMeta.userEmail,
+            userName: dbMeta.userName,
+            fileName: dbMeta.fileName,
+            reviewId: sessionId,
+            feedback,
+          })
+        )
+        .catch((err) => console.error("[api] DB complete / email failed:", err));
     },
     onError: (error) => {
       const sanitizedError = sanitizeError(error, sessionId);
       send("error", { error: sanitizedError });
       setSessionStatus(sessionId, "error");
       failReview(sessionId, sanitizedError, dbMeta)
-        .catch((err) => console.error("[api] DB fail failed:", err));
+        .then(() =>
+          sendReviewErrorEmail({
+            to: dbMeta.userEmail,
+            userName: dbMeta.userName,
+            fileName: dbMeta.fileName,
+            reviewId: sessionId,
+            error: sanitizedError,
+          })
+        )
+        .catch((err) => console.error("[api] DB fail / email failed:", err));
     },
   }, selectedGroups);
 
