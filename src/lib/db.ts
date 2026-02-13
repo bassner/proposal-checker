@@ -2832,6 +2832,35 @@ function rowToResolution(row: Record<string, unknown>): FindingResolutionRow {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Reviewer workload stats
+// ---------------------------------------------------------------------------
+
+export interface ReviewerWorkloadStats {
+  /** Per-reviewer breakdown */
+  reviewers: {
+    userId: string;
+    userName: string;
+    userEmail: string;
+    pending: number;
+    inProgress: number;
+    completed: number;
+    /** Average turnaround time in milliseconds (assignment created -> completed), null if no completed assignments */
+    avgTurnaroundMs: number | null;
+    /** Reviews assigned in last 7 days */
+    last7Days: number;
+    /** Reviews assigned in last 30 days */
+    last30Days: number;
+  }[];
+  /** Aggregate totals */
+  totals: {
+    totalPending: number;
+    totalInProgress: number;
+    totalCompleted: number;
+    totalAssignments: number;
+  };
+}
+
 /**
  * Get the current resolution status for every finding in a review.
  * Returns a Map keyed by finding_index, with the latest status and full history.
@@ -2901,4 +2930,124 @@ export async function getResolutionHistory(
   );
 
   return result.rows.map(rowToResolution);
+}
+
+// ---------------------------------------------------------------------------
+// Reviewer workload query
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregate reviewer workload from review_assignments and reviews tables.
+ * Returns null if the pool is absent.
+ */
+export async function getReviewerWorkload(): Promise<ReviewerWorkloadStats | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(`
+    WITH
+    assignment_stats AS (
+      SELECT
+        ra.assigned_to,
+        COUNT(*) FILTER (WHERE ra.status = 'pending') AS pending,
+        COUNT(*) FILTER (WHERE ra.status = 'in_progress') AS in_progress,
+        COUNT(*) FILTER (WHERE ra.status = 'completed') AS completed,
+        AVG(
+          CASE WHEN ra.status = 'completed'
+            THEN EXTRACT(EPOCH FROM (ra.updated_at - ra.created_at)) * 1000
+            ELSE NULL
+          END
+        ) AS avg_turnaround_ms,
+        COUNT(*) FILTER (WHERE ra.created_at >= NOW() - INTERVAL '7 days') AS last_7_days,
+        COUNT(*) FILTER (WHERE ra.created_at >= NOW() - INTERVAL '30 days') AS last_30_days
+      FROM review_assignments ra
+      GROUP BY ra.assigned_to
+    ),
+    user_info AS (
+      SELECT DISTINCT ON (user_id)
+        user_id,
+        user_name,
+        user_email
+      FROM reviews
+      WHERE deleted_at IS NULL
+      ORDER BY user_id, created_at DESC
+    ),
+    reviewer_rows AS (
+      SELECT
+        a.assigned_to AS user_id,
+        COALESCE(u.user_name, a.assigned_to) AS user_name,
+        COALESCE(u.user_email, '') AS user_email,
+        a.pending,
+        a.in_progress,
+        a.completed,
+        a.avg_turnaround_ms,
+        a.last_7_days,
+        a.last_30_days
+      FROM assignment_stats a
+      LEFT JOIN user_info u ON u.user_id = a.assigned_to
+      ORDER BY (a.pending + a.in_progress) DESC, a.assigned_to
+    ),
+    totals AS (
+      SELECT
+        COALESCE(SUM(pending), 0) AS total_pending,
+        COALESCE(SUM(in_progress), 0) AS total_in_progress,
+        COALESCE(SUM(completed), 0) AS total_completed
+      FROM assignment_stats
+    )
+
+    SELECT json_build_object(
+      'reviewers', COALESCE(
+        (SELECT json_agg(json_build_object(
+          'userId', r.user_id,
+          'userName', r.user_name,
+          'userEmail', r.user_email,
+          'pending', r.pending,
+          'inProgress', r.in_progress,
+          'completed', r.completed,
+          'avgTurnaroundMs', r.avg_turnaround_ms,
+          'last7Days', r.last_7_days,
+          'last30Days', r.last_30_days
+        )) FROM reviewer_rows r),
+        '[]'::json
+      ),
+      'totals', (SELECT json_build_object(
+        'totalPending', total_pending,
+        'totalInProgress', total_in_progress,
+        'totalCompleted', total_completed,
+        'totalAssignments', total_pending + total_in_progress + total_completed
+      ) FROM totals)
+    ) AS data
+  `);
+
+  const raw = result.rows[0].data;
+
+  return {
+    reviewers: (raw.reviewers as {
+      userId: string;
+      userName: string;
+      userEmail: string;
+      pending: string;
+      inProgress: string;
+      completed: string;
+      avgTurnaroundMs: string | null;
+      last7Days: string;
+      last30Days: string;
+    }[]).map((r) => ({
+      userId: r.userId,
+      userName: r.userName,
+      userEmail: r.userEmail,
+      pending: Number(r.pending),
+      inProgress: Number(r.inProgress),
+      completed: Number(r.completed),
+      avgTurnaroundMs: r.avgTurnaroundMs != null ? Number(r.avgTurnaroundMs) : null,
+      last7Days: Number(r.last7Days),
+      last30Days: Number(r.last30Days),
+    })),
+    totals: {
+      totalPending: Number(raw.totals.totalPending),
+      totalInProgress: Number(raw.totals.totalInProgress),
+      totalCompleted: Number(raw.totals.totalCompleted),
+      totalAssignments: Number(raw.totals.totalAssignments),
+    },
+  };
 }
