@@ -1,12 +1,12 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { FeedbackList } from "@/components/feedback-list";
 import { ThinkingBubble } from "@/components/thinking-bubble";
 import { Button } from "@/components/ui/button";
 import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
-import { GraduationCap, ArrowLeft } from "lucide-react";
+import { GraduationCap, ArrowLeft, Lock, Clock } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback, Annotations } from "@/types/review";
 import { useComments } from "@/hooks/use-comments";
@@ -28,31 +28,131 @@ export default function SharedReviewPage() {
   const [review, setReview] = useState<SharedReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [expired, setExpired] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
+  const fetchReview = useCallback(async (pwd?: string) => {
+    setLoading(true);
+    setError(null);
+    setPasswordError(null);
 
-    fetch(`/api/shared/${token}`)
-      .then(async (res) => {
-        if (cancelled) return;
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          setError(body.error || "Failed to load shared review");
+    try {
+      const url = pwd
+        ? `/api/shared/${token}?password=${encodeURIComponent(pwd)}`
+        : `/api/shared/${token}`;
+      const res = await fetch(url);
+
+      if (res.status === 410) {
+        setExpired(true);
+        setLoading(false);
+        return;
+      }
+
+      if (res.status === 401) {
+        const body = await res.json().catch(() => ({}));
+        if (body.passwordRequired) {
+          setNeedsPassword(true);
+          if (pwd) {
+            setPasswordError("Incorrect password");
+          }
+          setLoading(false);
           return;
         }
-        const data = await res.json();
-        setReview(data);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load shared review");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      }
 
-    return () => { cancelled = true; };
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || "Failed to load shared review");
+        setLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      setReview(data);
+      setNeedsPassword(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load shared review");
+    } finally {
+      setLoading(false);
+    }
   }, [token]);
+
+  useEffect(() => {
+    fetchReview();
+  }, [fetchReview]);
+
+  const handlePasswordSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!password.trim()) return;
+      fetchReview(password);
+    },
+    [password, fetchReview]
+  );
+
+  // ── Expired state ──
+  if (expired) {
+    return (
+      <PageShell>
+        <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 text-center backdrop-blur-xl">
+          <Clock className="mx-auto mb-3 h-8 w-8 text-amber-400/60" />
+          <p className="text-sm font-medium text-amber-300">Share link expired</p>
+          <p className="mt-1 text-xs text-amber-300/50">
+            This share link is no longer valid. Ask the review owner for a new link.
+          </p>
+          <Link href="/" className="mt-4 inline-block">
+            <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Home
+            </Button>
+          </Link>
+        </div>
+      </PageShell>
+    );
+  }
+
+  // ── Password prompt ──
+  if (needsPassword && !review) {
+    return (
+      <PageShell>
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
+          <div className="mx-auto max-w-xs text-center">
+            <Lock className="mx-auto mb-3 h-8 w-8 text-blue-400/60" />
+            <p className="text-sm font-medium text-white/80">Password required</p>
+            <p className="mt-1 text-xs text-white/40">
+              This shared review is password protected.
+            </p>
+            <form onSubmit={handlePasswordSubmit} className="mt-4 space-y-3">
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setPasswordError(null);
+                }}
+                placeholder="Enter password"
+                autoFocus
+                className="h-9 w-full rounded-md border border-white/10 bg-white/5 px-3 text-center text-sm text-white/80 placeholder:text-white/25 focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/10"
+              />
+              {passwordError && (
+                <p className="text-xs text-red-400">{passwordError}</p>
+              )}
+              <Button
+                type="submit"
+                size="sm"
+                className="w-full"
+                disabled={!password.trim() || loading}
+              >
+                {loading ? "Checking..." : "Unlock"}
+              </Button>
+            </form>
+          </div>
+        </div>
+      </PageShell>
+    );
+  }
 
   if (loading) {
     return (

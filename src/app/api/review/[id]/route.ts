@@ -56,6 +56,8 @@ export async function GET(
     feedback: review.feedback,
     errorMessage: review.errorMessage,
     shareToken: review.shareToken,
+    shareExpiresAt: review.shareExpiresAt,
+    shareHasPassword: !!review.sharePasswordHash,
     annotations: sanitizeAnnotations(review.annotations),
     retryCount: review.retryCount,
     canRetry: !!review.pdfPath,

@@ -187,6 +187,8 @@ export interface CompletedReview {
   feedback: MergedFeedback | null;
   errorMessage: string | null;
   shareToken: string | null;
+  shareExpiresAt: string | null;
+  shareHasPassword: boolean;
   annotations: Annotations;
   retryCount: number;
   canRetry: boolean;

@@ -98,6 +98,10 @@ async function ensureSchema(): Promise<void> {
       -- Finding annotations (user actions on individual findings)
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS annotations JSONB;
 
+      -- Share link security: expiration and password protection
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_expires_at TIMESTAMPTZ;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_password_hash TEXT;
+
       -- Retry support: PDF storage path, selected check groups, retry counter
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS pdf_path TEXT;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS selected_groups JSONB;
@@ -147,6 +151,8 @@ export interface ReviewRow {
   feedback: unknown | null;
   errorMessage: string | null;
   shareToken: string | null;
+  shareExpiresAt: string | null;
+  sharePasswordHash: string | null;
   annotations: Annotations;
   pdfPath: string | null;
   selectedGroups: CheckGroupId[] | null;
@@ -170,6 +176,8 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     feedback: row.feedback ?? null,
     errorMessage: (row.error_message as string) ?? null,
     shareToken: (row.share_token as string) ?? null,
+    shareExpiresAt: row.share_expires_at ? (row.share_expires_at as Date).toISOString() : null,
+    sharePasswordHash: (row.share_password_hash as string) ?? null,
     annotations: (row.annotations as Annotations) ?? {},
     pdfPath: (row.pdf_path as string) ?? null,
     selectedGroups: (row.selected_groups as CheckGroupId[]) ?? null,
@@ -449,10 +457,17 @@ export async function getReviewCount(userId?: string, search?: string): Promise<
 /**
  * Generate a share token for a review. Idempotent: if already shared, returns
  * the existing token. Retries on unique-violation (23505) for collision safety.
+ * Optionally sets an expiration time and/or password hash.
  */
-export async function shareReview(id: string): Promise<string> {
+export async function shareReview(
+  id: string,
+  options?: { expiresAt?: Date | null; passwordHash?: string | null }
+): Promise<{ token: string; expiresAt: string | null }> {
   if (!pool) throw new Error("Database pool not initialized");
   await ensureSchema();
+
+  const expiresAt = options?.expiresAt ?? null;
+  const passwordHash = options?.passwordHash ?? null;
 
   const MAX_RETRIES = 3;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -461,13 +476,19 @@ export async function shareReview(id: string): Promise<string> {
       const result = await pool.query(
         `UPDATE reviews
          SET share_token = COALESCE(share_token, $2),
+             share_expires_at = CASE WHEN share_token IS NULL THEN $3 ELSE share_expires_at END,
+             share_password_hash = CASE WHEN share_token IS NULL THEN $4 ELSE share_password_hash END,
              updated_at = CASE WHEN share_token IS NULL THEN NOW() ELSE updated_at END
          WHERE id = $1
-         RETURNING share_token`,
-        [id, token]
+         RETURNING share_token, share_expires_at`,
+        [id, token, expiresAt, passwordHash]
       );
       if (result.rowCount === 0) throw new Error("Review not found");
-      return result.rows[0].share_token as string;
+      const row = result.rows[0];
+      return {
+        token: row.share_token as string,
+        expiresAt: row.share_expires_at ? (row.share_expires_at as Date).toISOString() : null,
+      };
     } catch (err: unknown) {
       const pgErr = err as { code?: string };
       if (pgErr.code === "23505" && attempt < MAX_RETRIES - 1) continue; // unique violation — retry
@@ -482,7 +503,7 @@ export async function unshareReview(id: string): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   await pool.query(
-    "UPDATE reviews SET share_token = NULL, updated_at = NOW() WHERE id = $1",
+    "UPDATE reviews SET share_token = NULL, share_expires_at = NULL, share_password_hash = NULL, updated_at = NOW() WHERE id = $1",
     [id]
   );
 }
