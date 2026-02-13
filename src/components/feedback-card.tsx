@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import type { Finding, Severity, AnnotationStatus, AnnotationEntry } from "@/types/review";
+import type { Finding, Severity, AnnotationStatus, AnnotationEntry, Comment } from "@/types/review";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Check, X, Wrench } from "lucide-react";
+import { Check, X, Wrench, MessageSquare, Send, Trash2 } from "lucide-react";
 
 interface FeedbackCardProps {
   finding: Finding;
   annotation?: AnnotationEntry;
   onAnnotate?: (status: AnnotationStatus) => void;
+  onAddComment?: (text: string) => Promise<void>;
+  onDeleteComment?: (commentId: string) => Promise<void>;
+  commentSubmitting?: boolean;
 }
 
 const severityConfig: Record<
@@ -41,7 +44,84 @@ function renderQuoteWithBold(quote: string): ReactNode {
   );
 }
 
-export function FeedbackCard({ finding, annotation, onAnnotate }: FeedbackCardProps) {
+function formatCommentDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+    " " +
+    d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function CommentItem({ comment, onDelete }: { comment: Comment; onDelete?: (id: string) => Promise<void> }) {
+  const [deleting, setDeleting] = useState(false);
+
+  return (
+    <div className="group flex gap-2 rounded-md bg-white/[0.03] px-2.5 py-2">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-medium text-purple-300/80">{comment.authorName}</span>
+          <span className="text-[9px] text-white/20">{formatCommentDate(comment.createdAt)}</span>
+        </div>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-white/60 whitespace-pre-wrap break-words">
+          {comment.text}
+        </p>
+      </div>
+      {onDelete && (
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={async () => {
+            setDeleting(true);
+            try { await onDelete(comment.id); } finally { setDeleting(false); }
+          }}
+          className="no-print shrink-0 self-start opacity-0 group-hover:opacity-100 transition-opacity text-white/20 hover:text-red-400"
+          aria-label="Delete comment"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Promise<void>; submitting?: boolean }) {
+  const [text, setText] = useState("");
+
+  const handleSubmit = async () => {
+    const trimmed = text.trim();
+    if (!trimmed || submitting) return;
+    await onSubmit(trimmed);
+    setText("");
+  };
+
+  return (
+    <div className="no-print flex items-start gap-1.5">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Add supervisor comment..."
+        rows={1}
+        className="flex-1 resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] text-white/70 placeholder:text-white/20 focus:border-purple-500/40 focus:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            handleSubmit();
+          }
+        }}
+      />
+      <button
+        type="button"
+        disabled={!text.trim() || submitting}
+        onClick={handleSubmit}
+        className="shrink-0 rounded-md bg-purple-500/20 p-1.5 text-purple-300 transition-colors hover:bg-purple-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
+        aria-label="Submit comment"
+      >
+        <Send className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+export function FeedbackCard({ finding, annotation, onAnnotate, onAddComment, onDeleteComment, commentSubmitting }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
   const [locationsExpanded, setLocationsExpanded] = useState(false);
 
@@ -56,24 +136,34 @@ export function FeedbackCard({ finding, annotation, onAnnotate }: FeedbackCardPr
 
   const isDismissed = annotation?.status === "dismissed";
   const isFixed = annotation?.status === "fixed";
+  const comments = annotation?.comments ?? [];
+  const commentCount = comments.length;
 
   return (
     <div
       className={cn(
         "print-card rounded-lg border border-white/10 border-l-4 bg-white/5 p-3 backdrop-blur-sm transition-all hover:bg-white/[0.07]",
         // Default severity border, overridden by annotation state
-        !annotation && config.borderColor,
+        !annotation?.status && config.borderColor,
         isFixed && "border-l-emerald-500 bg-emerald-500/5",
         isDismissed && "border-l-white/20 opacity-50",
       )}
     >
       <div className="space-y-1.5">
-        <p className={cn(
-          "text-xs font-medium leading-snug text-white/90",
-          isDismissed && "line-through text-white/40"
-        )}>
-          {finding.title}
-        </p>
+        <div className="flex items-start gap-1.5">
+          <p className={cn(
+            "flex-1 text-xs font-medium leading-snug text-white/90",
+            isDismissed && "line-through text-white/40"
+          )}>
+            {finding.title}
+          </p>
+          {commentCount > 0 && (
+            <span className="no-print flex shrink-0 items-center gap-0.5 rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-medium text-purple-300/80">
+              <MessageSquare className="h-2.5 w-2.5" />
+              {commentCount}
+            </span>
+          )}
+        </div>
         <p className={cn(
           "text-xs leading-relaxed text-white/50",
           isDismissed && "text-white/25"
@@ -87,7 +177,7 @@ export function FeedbackCard({ finding, annotation, onAnnotate }: FeedbackCardPr
                 <span className="font-medium text-white/45">
                   {[loc.page != null && `p.\u00A0${loc.page}`, loc.section]
                     .filter(Boolean)
-                    .join(" · ") || "\u2014"}
+                    .join(" \u00B7 ") || "\u2014"}
                 </span>
                 {" "}
                 <span className="italic">
@@ -138,6 +228,26 @@ export function FeedbackCard({ finding, annotation, onAnnotate }: FeedbackCardPr
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {/* Supervisor comments */}
+        {commentCount > 0 && (
+          <div className="space-y-1.5 pt-2 border-t border-white/5">
+            {comments.map((comment) => (
+              <CommentItem
+                key={comment.id}
+                comment={comment}
+                onDelete={onDeleteComment}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Comment form for supervisors */}
+        {onAddComment && (
+          <div className="pt-1.5">
+            <CommentForm onSubmit={onAddComment} submitting={commentSubmitting} />
           </div>
         )}
       </div>

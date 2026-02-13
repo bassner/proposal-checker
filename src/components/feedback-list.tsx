@@ -9,6 +9,9 @@ interface FeedbackListProps {
   feedback: MergedFeedback;
   annotations?: Annotations;
   onAnnotate?: (findingIndex: number, status: AnnotationStatus) => void;
+  onAddComment?: (findingIndex: number, text: string) => Promise<void>;
+  onDeleteComment?: (findingIndex: number, commentId: string) => Promise<void>;
+  commentSubmitting?: boolean;
 }
 
 const assessmentConfig = {
@@ -105,16 +108,16 @@ function groupBySeverity(findings: Finding[]): Partial<Record<Severity, IndexedF
   return groups;
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onAddComment, onDeleteComment, commentSubmitting }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
   const grouped = groupBySeverity(feedback.findings);
   const presentSeverities = SEVERITY_ORDER.filter((s) => grouped[s] && grouped[s]!.length > 0);
 
-  // Annotation summary counts
+  // Annotation summary counts — only count entries that have a status set
   const totalFindings = feedback.findings.length;
   const addressedCount = annotations
-    ? Object.keys(annotations).length
+    ? Object.values(annotations).filter((e) => e.status).length
     : 0;
 
   return (
@@ -198,6 +201,9 @@ export function FeedbackList({ feedback, annotations, onAnnotate }: FeedbackList
                     finding={finding}
                     annotation={annotations?.[String(globalIndex)]}
                     onAnnotate={onAnnotate ? (status) => onAnnotate(globalIndex, status) : undefined}
+                    onAddComment={onAddComment ? (text) => onAddComment(globalIndex, text) : undefined}
+                    onDeleteComment={onDeleteComment ? (commentId) => onDeleteComment(globalIndex, commentId) : undefined}
+                    commentSubmitting={commentSubmitting}
                   />
                 ))}
               </div>

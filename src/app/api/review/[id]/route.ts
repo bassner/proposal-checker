@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById } from "@/lib/db";
+import { isAvailable, getReviewById, sanitizeAnnotations } from "@/lib/db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -39,8 +39,8 @@ export async function GET(
   }
 
   const isOwner = review.userId === session.user.id;
-  const isAdmin = session.user.role === "admin";
-  if (!isOwner && !isAdmin) {
+  const isSupervisor = session.user.role === "admin" || session.user.role === "phd";
+  if (!isOwner && !isSupervisor) {
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
@@ -55,6 +55,7 @@ export async function GET(
     feedback: review.feedback,
     errorMessage: review.errorMessage,
     shareToken: review.shareToken,
-    annotations: review.annotations,
+    annotations: sanitizeAnnotations(review.annotations),
+    isOwner,
   });
 }

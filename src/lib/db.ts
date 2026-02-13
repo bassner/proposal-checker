@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, Annotations } from "@/types/review";
+import type { ProviderType, ReviewMode, Annotations, Comment } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -399,22 +399,131 @@ export async function getReviewByShareToken(token: string): Promise<ReviewRow | 
 // ---------------------------------------------------------------------------
 
 /**
- * Save the full annotations map for a review (replaces existing).
- * The client maintains the canonical state and sends the full map on each save.
+ * Atomically read-modify-write the annotations JSONB column using a row lock.
+ * The `mergeFn` receives the current annotations and returns the new value.
+ * Uses SELECT ... FOR UPDATE to prevent lost updates from concurrent writes.
+ */
+async function mergeAnnotations(
+  reviewId: string,
+  mergeFn: (current: Annotations) => Annotations
+): Promise<Annotations> {
+  if (!pool) return {};
+  await ensureSchema();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const res = await client.query(
+      "SELECT annotations FROM reviews WHERE id = $1 FOR UPDATE",
+      [reviewId]
+    );
+    const current: Annotations = (res.rows[0]?.annotations as Annotations) ?? {};
+    const merged = mergeFn(current);
+    await client.query(
+      "UPDATE reviews SET annotations = $1::jsonb, updated_at = NOW() WHERE id = $2",
+      [JSON.stringify(merged), reviewId]
+    );
+    await client.query("COMMIT");
+    return merged;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Save annotation statuses for a review.
+ * Merges client-sent status values with existing comments from DB.
+ * Only the `status` and `updatedAt` fields from `statusUpdates` are used;
+ * any `comments` in existing entries are preserved.
  */
 export async function saveAnnotations(
   reviewId: string,
-  annotations: Annotations
+  statusUpdates: Annotations
 ): Promise<void> {
-  if (!pool) return;
-  await ensureSchema();
-  await pool.query(
-    `UPDATE reviews
-     SET annotations = $2::jsonb,
-         updated_at = NOW()
-     WHERE id = $1`,
-    [reviewId, JSON.stringify(annotations)]
-  );
+  await mergeAnnotations(reviewId, (current) => {
+    const result: Annotations = {};
+
+    // Preserve comment-only entries not in statusUpdates
+    for (const [key, entry] of Object.entries(current)) {
+      if (entry.comments?.length && !(key in statusUpdates)) {
+        result[key] = { updatedAt: entry.updatedAt, comments: entry.comments };
+      }
+    }
+
+    // Apply status updates, preserving existing comments
+    for (const [key, update] of Object.entries(statusUpdates)) {
+      const existing = current[key];
+      result[key] = {
+        status: update.status,
+        updatedAt: update.updatedAt,
+        ...(existing?.comments?.length ? { comments: existing.comments } : {}),
+      };
+    }
+
+    return result;
+  });
+}
+
+/**
+ * Add a comment to a specific finding. Returns the updated annotations.
+ */
+export async function addComment(
+  reviewId: string,
+  findingIndex: string,
+  comment: Comment
+): Promise<Annotations> {
+  return mergeAnnotations(reviewId, (current) => {
+    const entry = current[findingIndex] ?? { updatedAt: new Date().toISOString() };
+    const comments = [...(entry.comments ?? []), comment];
+    return { ...current, [findingIndex]: { ...entry, comments, updatedAt: new Date().toISOString() } };
+  });
+}
+
+/**
+ * Delete a comment by its ID from a specific finding. Returns the updated annotations.
+ */
+export async function deleteComment(
+  reviewId: string,
+  findingIndex: string,
+  commentId: string
+): Promise<Annotations> {
+  return mergeAnnotations(reviewId, (current) => {
+    const entry = current[findingIndex];
+    if (!entry?.comments) return current;
+
+    const comments = entry.comments.filter((c) => c.id !== commentId);
+    // If entry has no status and no remaining comments, remove it entirely
+    if (!entry.status && comments.length === 0) {
+      const result = { ...current };
+      delete result[findingIndex];
+      return result;
+    }
+    return { ...current, [findingIndex]: { ...entry, comments, updatedAt: new Date().toISOString() } };
+  });
+}
+
+/**
+ * Strip authorId from all comments in annotations before sending to clients.
+ */
+export function sanitizeAnnotations(annotations: Annotations): Annotations {
+  const sanitized: Annotations = {};
+  for (const [key, entry] of Object.entries(annotations)) {
+    if (entry.comments?.length) {
+      sanitized[key] = {
+        ...entry,
+        comments: entry.comments.map((c) => {
+          const sanitized = { ...c };
+          delete (sanitized as Record<string, unknown>).authorId;
+          return sanitized;
+        }),
+      };
+    } else {
+      sanitized[key] = entry;
+    }
+  }
+  return sanitized;
 }
 
 // ---------------------------------------------------------------------------

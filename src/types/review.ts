@@ -155,9 +155,19 @@ export interface ModelConfig {
 // Finding annotations (user feedback on individual findings)
 export type AnnotationStatus = "accepted" | "dismissed" | "fixed";
 
+export interface Comment {
+  id: string;
+  text: string;
+  authorName: string;
+  /** Internal only — stripped before sending to clients. */
+  authorId: string;
+  createdAt: string;
+}
+
 export interface AnnotationEntry {
-  status: AnnotationStatus;
+  status?: AnnotationStatus;
   updatedAt: string;
+  comments?: Comment[];
 }
 
 /** Keys are stringified finding indices from the feedback.findings array. */

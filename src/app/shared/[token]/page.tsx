@@ -9,6 +9,7 @@ import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
 import { GraduationCap, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback, Annotations } from "@/types/review";
+import { useComments } from "@/hooks/use-comments";
 
 interface SharedReview {
   id: string;
@@ -19,6 +20,7 @@ interface SharedReview {
   feedback: MergedFeedback | null;
   userName: string;
   annotations?: Annotations;
+  canComment?: boolean;
 }
 
 export default function SharedReviewPage() {
@@ -101,6 +103,29 @@ export default function SharedReviewPage() {
   }
 
   return (
+    <SharedResultsView review={review} />
+  );
+}
+
+function SharedResultsView({ review }: { review: SharedReview }) {
+  const canComment = review.canComment === true;
+  const { annotations, addComment, deleteComment, submitting } = useComments(
+    review.id,
+    review.annotations
+  );
+
+  // Use comment-managed annotations if supervisor, otherwise use static annotations
+  const displayAnnotations = canComment ? annotations : (review.annotations ?? {});
+
+  const handleAddComment = canComment
+    ? async (findingIndex: number, text: string) => { await addComment(findingIndex, text); }
+    : undefined;
+
+  const handleDeleteComment = canComment
+    ? async (findingIndex: number, commentId: string) => { await deleteComment(findingIndex, commentId); }
+    : undefined;
+
+  return (
     <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
       <div className="relative mx-auto w-full px-3 py-4 sm:px-6 sm:py-8">
@@ -123,7 +148,7 @@ export default function SharedReviewPage() {
           </div>
           <div className="flex items-center gap-2">
             <PrintButton />
-            <CopyMarkdownButton feedback={review.feedback} fileName={review.fileName} />
+            <CopyMarkdownButton feedback={review.feedback!} fileName={review.fileName} />
             <Link href="/">
               <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
                 <ArrowLeft className="mr-2 h-4 w-4" />
@@ -132,7 +157,13 @@ export default function SharedReviewPage() {
             </Link>
           </div>
         </div>
-        <FeedbackList feedback={review.feedback} annotations={review.annotations} />
+        <FeedbackList
+          feedback={review.feedback!}
+          annotations={displayAnnotations}
+          onAddComment={handleAddComment}
+          onDeleteComment={handleDeleteComment}
+          commentSubmitting={submitting}
+        />
         <footer className="mt-12 pb-4 text-center text-xs text-white/20">
           Created with &#10084;&#65039; by{" "}
           <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">

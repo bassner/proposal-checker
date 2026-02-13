@@ -187,6 +187,7 @@ export interface CompletedReview {
   errorMessage: string | null;
   shareToken: string | null;
   annotations: Annotations;
+  isOwner?: boolean;
   isStale?: boolean; // Computed when fetched for running reviews
 }
 
