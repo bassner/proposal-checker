@@ -271,6 +271,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
               <PdfViewer
                 reviewId={reviewId}
                 targetPage={pdfTargetPage}
+                findings={feedback.findings}
                 onClose={() => setPdfOpen(false)}
               />
             </aside>

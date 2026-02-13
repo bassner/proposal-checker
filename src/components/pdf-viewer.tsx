@@ -1,21 +1,49 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, forwardRef } from "react";
 import { X, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
+import type { Finding } from "@/types/review";
+
+/** Quotes to highlight on a specific page, grouped from findings. */
+interface PageHighlight {
+  quote: string;
+  severity: string;
+}
 
 interface PdfViewerProps {
   reviewId: string;
   /** Page number to scroll to (1-indexed), driven by finding selection. */
   targetPage?: number | null;
+  /** All findings, used to extract quote highlights per page. */
+  findings?: Finding[];
   onClose: () => void;
 }
 
-export function PdfViewer({ reviewId, targetPage, onClose }: PdfViewerProps) {
+/** Build a map of page number -> highlights from findings. */
+function buildHighlightMap(findings: Finding[]): Map<number, PageHighlight[]> {
+  const map = new Map<number, PageHighlight[]>();
+  for (const finding of findings) {
+    for (const loc of finding.locations) {
+      if (loc.page == null) continue;
+      const existing = map.get(loc.page) ?? [];
+      // Avoid duplicate quotes on the same page
+      if (!existing.some((h) => h.quote === loc.quote)) {
+        existing.push({ quote: loc.quote, severity: finding.severity });
+      }
+      map.set(loc.page, existing);
+    }
+  }
+  return map;
+}
+
+export function PdfViewer({ reviewId, targetPage, findings, onClose }: PdfViewerProps) {
   const [pageCount, setPageCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  const highlightMap = findings ? buildHighlightMap(findings) : new Map();
 
   // Fetch page count on mount
   useEffect(() => {
@@ -127,6 +155,7 @@ export function PdfViewer({ reviewId, targetPage, onClose }: PdfViewerProps) {
             reviewId={reviewId}
             pageNumber={pageNum}
             isTarget={targetPage === pageNum}
+            highlights={highlightMap.get(pageNum)}
             ref={(el) => {
               if (el) pageRefs.current.set(pageNum, el);
               else pageRefs.current.delete(pageNum);
@@ -138,14 +167,20 @@ export function PdfViewer({ reviewId, targetPage, onClose }: PdfViewerProps) {
   );
 }
 
-/** Lazily loads a single PDF page image using IntersectionObserver. */
-import { forwardRef } from "react";
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "border-l-red-500/60 bg-red-500/10",
+  major: "border-l-orange-500/60 bg-orange-500/10",
+  minor: "border-l-yellow-500/60 bg-yellow-500/10",
+  suggestion: "border-l-blue-500/60 bg-blue-500/10",
+};
 
+/** Lazily loads a single PDF page image using IntersectionObserver. */
 const PageImage = forwardRef<HTMLDivElement, {
   reviewId: string;
   pageNumber: number;
   isTarget: boolean;
-}>(function PageImage({ reviewId, pageNumber, isTarget }, ref) {
+  highlights?: PageHighlight[];
+}>(function PageImage({ reviewId, pageNumber, isTarget, highlights }, ref) {
   const [loaded, setLoaded] = useState(false);
   const [visible, setVisible] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -167,6 +202,9 @@ const PageImage = forwardRef<HTMLDivElement, {
     return () => observer.disconnect();
   }, []);
 
+  // Only show highlights when this page is the active target
+  const showHighlights = isTarget && highlights && highlights.length > 0;
+
   return (
     <div
       ref={ref}
@@ -180,6 +218,13 @@ const PageImage = forwardRef<HTMLDivElement, {
       <div className="absolute left-2 top-2 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm">
         Page {pageNumber}
       </div>
+
+      {/* Finding highlight count badge */}
+      {highlights && highlights.length > 0 && (
+        <div className="absolute right-2 top-2 z-10 rounded bg-amber-500/70 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+          {highlights.length} finding{highlights.length !== 1 ? "s" : ""}
+        </div>
+      )}
 
       <div ref={sentinelRef} className="w-full">
         {visible ? (
@@ -201,6 +246,28 @@ const PageImage = forwardRef<HTMLDivElement, {
           <div className="h-48 w-full" aria-hidden="true" />
         )}
       </div>
+
+      {/* Quote highlight overlay — shown when this page is the active target */}
+      {showHighlights && loaded && (
+        <div className="absolute inset-x-0 bottom-0 z-10 max-h-[60%] overflow-y-auto rounded-b-lg bg-gradient-to-t from-black/80 via-black/60 to-transparent p-2 pt-6">
+          <div className="space-y-1">
+            {highlights.map((h, i) => {
+              // Strip bold markers for clean display
+              const cleanQuote = h.quote.replace(/\*\*/g, "");
+              return (
+                <div
+                  key={i}
+                  className={`rounded border-l-2 px-2 py-1 text-[10px] leading-snug text-white/80 ${
+                    SEVERITY_COLORS[h.severity] ?? "border-l-white/30 bg-white/10"
+                  }`}
+                >
+                  <span className="italic">&ldquo;{cleanQuote}&rdquo;</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 });
