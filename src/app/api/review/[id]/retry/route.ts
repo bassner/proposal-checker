@@ -8,6 +8,7 @@ import { readPdf } from "@/lib/uploads";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
+import { cacheInvalidate } from "@/lib/cache";
 import type { ProviderType, ReviewMode } from "@/types/review";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -116,6 +117,9 @@ export async function POST(
       { status: 409 }
     );
   }
+
+  // Invalidate cached review data — the review is now back to "running"
+  cacheInvalidate(`review:${id}`);
 
   const retryCount = claimed.retryCount;
   const mode = claimed.reviewMode as ReviewMode;
