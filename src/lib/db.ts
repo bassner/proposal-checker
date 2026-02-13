@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus, FindingCategory } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus, FindingCategory, Finding, MergedFeedback } from "@/types/review";
 import { FINDING_CATEGORY_VALUES } from "@/types/review";
 
 // ---------------------------------------------------------------------------
@@ -491,6 +491,20 @@ async function ensureSchema(): Promise<void> {
         UNIQUE(student_a_id, student_b_id)
       );
       CREATE INDEX IF NOT EXISTS idx_peer_pairings_students ON peer_pairings(student_a_id, student_b_id);
+
+      -- Revision summaries (change summaries between two review versions)
+      CREATE TABLE IF NOT EXISTS revision_summaries (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        old_review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        new_review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        fixed_count INT NOT NULL DEFAULT 0,
+        new_count INT NOT NULL DEFAULT 0,
+        persistent_count INT NOT NULL DEFAULT 0,
+        summary JSONB NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(old_review_id, new_review_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_revision_summaries_new ON revision_summaries(new_review_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -5030,6 +5044,56 @@ function rowToDeadline(row: Record<string, unknown>): DeadlineRow {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Revision summaries (change summaries between two review versions)
+// ---------------------------------------------------------------------------
+
+/** A matched finding pair used in revision summaries. */
+export interface RevisionFindingMatch {
+  oldTitle: string;
+  newTitle: string;
+  category: string;
+  similarity: number;
+}
+
+/** Summary data stored as JSONB in the revision_summaries table. */
+export interface RevisionSummaryData {
+  fixedFindings: { title: string; category: string; severity: string }[];
+  newFindings: { title: string; category: string; severity: string }[];
+  persistentFindings: { oldTitle: string; newTitle: string; category: string; similarity: number }[];
+  improvementPct: number;
+}
+
+/** A row from the revision_summaries table. */
+export interface RevisionSummaryRow {
+  id: string;
+  oldReviewId: string;
+  newReviewId: string;
+  fixedCount: number;
+  newCount: number;
+  persistentCount: number;
+  summary: RevisionSummaryData;
+  createdAt: string;
+}
+
+function rowToRevisionSummary(row: Record<string, unknown>): RevisionSummaryRow {
+  return {
+    id: row.id as string,
+    oldReviewId: row.old_review_id as string,
+    newReviewId: row.new_review_id as string,
+    fixedCount: Number(row.fixed_count ?? 0),
+    newCount: Number(row.new_count ?? 0),
+    persistentCount: Number(row.persistent_count ?? 0),
+    summary: (row.summary as RevisionSummaryData) ?? {
+      fixedFindings: [],
+      newFindings: [],
+      persistentFindings: [],
+      improvementPct: 0,
+    },
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
 /** Create a new submission deadline. */
 export async function createDeadline(deadline: {
   title: string;
@@ -5532,4 +5596,150 @@ export async function updatePairingStatus(
 
   if (fullResult.rows.length === 0) return null;
   return rowToPairing(fullResult.rows[0]);
+}
+
+/**
+ * Compare two reviews' findings using word-level Jaccard similarity and persist
+ * the result as a revision summary. If a summary already exists for this pair
+ * it is replaced (upsert).
+ *
+ * Both reviews must be completed (status = 'done') with feedback.
+ */
+export async function generateRevisionSummary(
+  oldReviewId: string,
+  newReviewId: string
+): Promise<RevisionSummaryRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // Load both reviews
+  const oldReview = await getReviewById(oldReviewId);
+  const newReview = await getReviewById(newReviewId);
+
+  if (!oldReview || !newReview) return null;
+  if (oldReview.status !== "done" || newReview.status !== "done") return null;
+
+  const oldFeedback = oldReview.feedback as MergedFeedback | null;
+  const newFeedback = newReview.feedback as MergedFeedback | null;
+
+  if (!oldFeedback?.findings || !newFeedback?.findings) return null;
+
+  const oldFindings: Finding[] = oldFeedback.findings;
+  const newFindings: Finding[] = newFeedback.findings;
+
+  // --- Match findings using Jaccard similarity ---
+  const matchedOldIndices = new Set<number>();
+  const matchedNewIndices = new Set<number>();
+  const persistentPairs: { oldIdx: number; newIdx: number; similarity: number }[] = [];
+
+  // For each new finding, find the best-matching old finding
+  for (let ni = 0; ni < newFindings.length; ni++) {
+    let bestScore = 0;
+    let bestOldIdx = -1;
+
+    for (let oi = 0; oi < oldFindings.length; oi++) {
+      if (matchedOldIndices.has(oi)) continue;
+
+      // Category must match
+      if (oldFindings[oi].category.toLowerCase() !== newFindings[ni].category.toLowerCase()) continue;
+
+      const score = jaccardSimilarity(oldFindings[oi].title, newFindings[ni].title);
+      if (score > bestScore) {
+        bestScore = score;
+        bestOldIdx = oi;
+      }
+    }
+
+    if (bestScore >= SIMILARITY_THRESHOLD && bestOldIdx >= 0) {
+      matchedOldIndices.add(bestOldIdx);
+      matchedNewIndices.add(ni);
+      persistentPairs.push({ oldIdx: bestOldIdx, newIdx: ni, similarity: bestScore });
+    }
+  }
+
+  // Fixed = old findings that didn't match any new finding
+  const fixedFindings = oldFindings
+    .filter((_, i) => !matchedOldIndices.has(i))
+    .map((f) => ({ title: f.title, category: f.category, severity: f.severity }));
+
+  // New = new findings that didn't match any old finding
+  const newFindingsUnmatched = newFindings
+    .filter((_, i) => !matchedNewIndices.has(i))
+    .map((f) => ({ title: f.title, category: f.category, severity: f.severity }));
+
+  // Persistent = matched pairs
+  const persistentFindings = persistentPairs.map((p) => ({
+    oldTitle: oldFindings[p.oldIdx].title,
+    newTitle: newFindings[p.newIdx].title,
+    category: newFindings[p.newIdx].category,
+    similarity: Math.round(p.similarity * 100) / 100,
+  }));
+
+  const fixedCount = fixedFindings.length;
+  const newCount = newFindingsUnmatched.length;
+  const persistentCount = persistentFindings.length;
+
+  // Improvement = fixed / (fixed + persistent), or 0 if no old findings
+  const denominator = fixedCount + persistentCount;
+  const improvementPct = denominator > 0
+    ? Math.round((fixedCount / denominator) * 100)
+    : 0;
+
+  const summaryData: RevisionSummaryData = {
+    fixedFindings,
+    newFindings: newFindingsUnmatched,
+    persistentFindings,
+    improvementPct,
+  };
+
+  // Upsert
+  const result = await pool.query(
+    `INSERT INTO revision_summaries (old_review_id, new_review_id, fixed_count, new_count, persistent_count, summary)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (old_review_id, new_review_id) DO UPDATE SET
+       fixed_count = $3,
+       new_count = $4,
+       persistent_count = $5,
+       summary = $6,
+       created_at = NOW()
+     RETURNING *`,
+    [oldReviewId, newReviewId, fixedCount, newCount, persistentCount, JSON.stringify(summaryData)]
+  );
+
+  return rowToRevisionSummary(result.rows[0]);
+}
+
+/**
+ * Get a specific revision summary comparing two reviews.
+ */
+export async function getRevisionSummary(
+  oldReviewId: string,
+  newReviewId: string
+): Promise<RevisionSummaryRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(
+    "SELECT * FROM revision_summaries WHERE old_review_id = $1 AND new_review_id = $2",
+    [oldReviewId, newReviewId]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToRevisionSummary(result.rows[0]);
+}
+
+/**
+ * List all revision summaries where the given review is the "new" side.
+ * Useful for showing how a review compares to all its predecessors.
+ */
+export async function listRevisionSummariesForReview(
+  reviewId: string
+): Promise<RevisionSummaryRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const result = await pool.query(
+    "SELECT * FROM revision_summaries WHERE new_review_id = $1 ORDER BY created_at DESC",
+    [reviewId]
+  );
+  return result.rows.map(rowToRevisionSummary);
 }
