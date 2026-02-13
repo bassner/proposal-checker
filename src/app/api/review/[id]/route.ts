@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, sanitizeAnnotations } from "@/lib/db";
+import { isAvailable, getReviewById, softDeleteReview, sanitizeAnnotations } from "@/lib/db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -63,4 +63,48 @@ export async function GET(
     canRetry: !!review.pdfPath,
     isOwner,
   });
+}
+
+/**
+ * DELETE /api/review/[id] — Soft-delete a review.
+ *
+ * Owners can delete their own reviews; admins can delete any review.
+ * Returns 404 for missing/unauthorized (IDOR prevention).
+ */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  let session;
+  try {
+    session = await requireAuth();
+  } catch (response) {
+    return response as Response;
+  }
+
+  if (!UUID_RE.test(id)) {
+    return Response.json({ error: "Invalid review ID" }, { status: 400 });
+  }
+
+  if (!(await isAvailable())) {
+    return Response.json({ error: "Database unavailable" }, { status: 503 });
+  }
+
+  const review = await getReviewById(id);
+
+  if (!review) {
+    return Response.json({ error: "Review not found" }, { status: 404 });
+  }
+
+  const isOwner = review.userId === session.user.id;
+  const isAdmin = session.user.role === "admin";
+  if (!isOwner && !isAdmin) {
+    return Response.json({ error: "Review not found" }, { status: 404 });
+  }
+
+  await softDeleteReview(id);
+
+  return Response.json({ ok: true });
 }

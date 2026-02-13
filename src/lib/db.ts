@@ -107,6 +107,9 @@ async function ensureSchema(): Promise<void> {
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS selected_groups JSONB;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
 
+      -- Soft delete support
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
       -- Notifications
       CREATE TABLE IF NOT EXISTS notifications (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -171,6 +174,7 @@ export interface ReviewRow {
   pdfPath: string | null;
   selectedGroups: CheckGroupId[] | null;
   retryCount: number;
+  deletedAt: string | null;
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
@@ -196,6 +200,7 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     pdfPath: (row.pdf_path as string) ?? null,
     selectedGroups: (row.selected_groups as CheckGroupId[]) ?? null,
     retryCount: Number(row.retry_count ?? 0),
+    deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
   };
 }
 
@@ -298,13 +303,31 @@ export async function failReview(
 }
 
 // ---------------------------------------------------------------------------
+// Soft delete
+// ---------------------------------------------------------------------------
+
+/**
+ * Soft-delete a review by setting deleted_at. Returns true if the row was
+ * actually updated (i.e. it existed and wasn't already deleted).
+ */
+export async function softDeleteReview(id: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "UPDATE reviews SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
 // Read operations
 // ---------------------------------------------------------------------------
 
 export async function getReviewById(id: string): Promise<ReviewRow | null> {
   if (!pool) return null;
   await ensureSchema();
-  const result = await pool.query("SELECT * FROM reviews WHERE id = $1", [id]);
+  const result = await pool.query("SELECT * FROM reviews WHERE id = $1 AND deleted_at IS NULL", [id]);
   if (result.rows.length === 0) return null;
   return rowToReview(result.rows[0]);
 }
@@ -331,7 +354,7 @@ export async function queryReviews(opts: ReviewQueryOptions): Promise<ReviewRow[
   if (!pool) return [];
   await ensureSchema();
 
-  const conditions: string[] = [];
+  const conditions: string[] = ["deleted_at IS NULL"];
   const params: unknown[] = [];
   let paramIdx = 1;
 
@@ -349,7 +372,7 @@ export async function queryReviews(opts: ReviewQueryOptions): Promise<ReviewRow[
     params.push(pattern);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
 
   const sortCol = opts.sortBy && ALLOWED_SORT_COLUMNS.has(opts.sortBy) ? opts.sortBy : "created_at";
   const sortDir = opts.sortDir === "asc" ? "ASC" : "DESC";
@@ -388,7 +411,7 @@ export async function queryReviewsGrouped(opts: {
   if (!pool) return { reviews: [], total: 0, truncated: false };
   await ensureSchema();
 
-  const conditions: string[] = [];
+  const conditions: string[] = ["deleted_at IS NULL"];
   const params: unknown[] = [];
   let paramIdx = 1;
 
@@ -406,7 +429,7 @@ export async function queryReviewsGrouped(opts: {
     params.push(pattern);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
 
   // Count total first
   const countResult = await pool.query(`SELECT COUNT(*) FROM reviews ${where}`, params);
@@ -441,7 +464,7 @@ export async function getReviewCount(userId?: string, search?: string): Promise<
   if (!pool) return 0;
   await ensureSchema();
 
-  const conditions: string[] = [];
+  const conditions: string[] = ["deleted_at IS NULL"];
   const params: unknown[] = [];
   let paramIdx = 1;
 
@@ -459,7 +482,7 @@ export async function getReviewCount(userId?: string, search?: string): Promise<
     params.push(pattern);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const where = `WHERE ${conditions.join(" AND ")}`;
   const result = await pool.query(`SELECT COUNT(*) FROM reviews ${where}`, params);
   return parseInt(result.rows[0].count, 10);
 }
@@ -527,7 +550,7 @@ export async function getReviewByShareToken(token: string): Promise<ReviewRow | 
   if (!pool) return null;
   await ensureSchema();
   const result = await pool.query(
-    "SELECT * FROM reviews WHERE share_token = $1",
+    "SELECT * FROM reviews WHERE share_token = $1 AND deleted_at IS NULL",
     [token]
   );
   if (result.rows.length === 0) return null;
@@ -552,7 +575,7 @@ export async function getSharedReviewMeta(token: string): Promise<SharedReviewMe
        share_password_hash IS NOT NULL AS has_password,
        CASE WHEN share_expires_at IS NOT NULL AND share_expires_at < NOW() THEN TRUE ELSE FALSE END AS expired
      FROM reviews
-     WHERE share_token = $1`,
+     WHERE share_token = $1 AND deleted_at IS NULL`,
     [token]
   );
   if (result.rows.length === 0) return null;
@@ -587,7 +610,8 @@ export async function getSharedReviewFull(token: string): Promise<SharedReviewDa
             feedback, user_name, annotations
      FROM reviews
      WHERE share_token = $1
-       AND (share_expires_at IS NULL OR share_expires_at > NOW())`,
+       AND (share_expires_at IS NULL OR share_expires_at > NOW())
+       AND deleted_at IS NULL`,
     [token]
   );
   if (result.rows.length === 0) return null;
@@ -859,7 +883,7 @@ export async function getFailedReviews(): Promise<FailedReviewsData | null> {
     pool.query(
       `SELECT id, user_name, user_email, file_name, provider, error_message, retry_count, created_at
        FROM reviews
-       WHERE status = 'error'
+       WHERE status = 'error' AND deleted_at IS NULL
        ORDER BY created_at DESC
        LIMIT 50`
     ),
@@ -867,12 +891,12 @@ export async function getFailedReviews(): Promise<FailedReviewsData | null> {
       `SELECT
          COUNT(*) AS total,
          COUNT(*) FILTER (WHERE status = 'error') AS failed
-       FROM reviews`
+       FROM reviews WHERE deleted_at IS NULL`
     ),
     pool.query(
       `SELECT error_message, COUNT(*) AS cnt
        FROM reviews
-       WHERE status = 'error' AND error_message IS NOT NULL
+       WHERE status = 'error' AND error_message IS NOT NULL AND deleted_at IS NULL
        GROUP BY error_message
        ORDER BY cnt DESC
        LIMIT 5`
@@ -932,10 +956,10 @@ export async function getAnalytics(): Promise<AnalyticsData | null> {
     severities(sev) AS (VALUES ('critical'),('major'),('minor'),('suggestion')),
 
     status_counts AS (
-      SELECT status, COUNT(*) AS cnt FROM reviews GROUP BY status
+      SELECT status, COUNT(*) AS cnt FROM reviews WHERE deleted_at IS NULL GROUP BY status
     ),
     provider_counts AS (
-      SELECT provider, COUNT(*) AS cnt FROM reviews GROUP BY provider
+      SELECT provider, COUNT(*) AS cnt FROM reviews WHERE deleted_at IS NULL GROUP BY provider
     ),
 
     daily_series AS (
@@ -952,6 +976,7 @@ export async function getAnalytics(): Promise<AnalyticsData | null> {
       LEFT JOIN reviews r
         ON r.created_at >= (ds.day::timestamp AT TIME ZONE 'UTC')
         AND r.created_at < ((ds.day + 1)::timestamp AT TIME ZONE 'UTC')
+        AND r.deleted_at IS NULL
       GROUP BY ds.day ORDER BY ds.day
     ),
 
@@ -962,7 +987,7 @@ export async function getAnalytics(): Promise<AnalyticsData | null> {
           THEN feedback->'findings'
           ELSE '[]'::jsonb
         END AS findings
-      FROM reviews WHERE status = 'done'
+      FROM reviews WHERE status = 'done' AND deleted_at IS NULL
     ),
     per_review_severity AS (
       SELECT c.id, s.sev AS severity,
@@ -991,7 +1016,7 @@ export async function getAnalytics(): Promise<AnalyticsData | null> {
         MAX(user_name) AS user_name,
         MAX(user_email) AS user_email,
         COUNT(*) AS cnt
-      FROM reviews GROUP BY user_id ORDER BY cnt DESC LIMIT 5
+      FROM reviews WHERE deleted_at IS NULL GROUP BY user_id ORDER BY cnt DESC LIMIT 5
     )
 
     SELECT json_build_object(
