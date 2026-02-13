@@ -7,6 +7,7 @@ import { ThinkingBubble } from "@/components/thinking-bubble";
 import { Button } from "@/components/ui/button";
 import { useReviewStream, useCompletedReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
+import { ShareButton } from "@/components/share-button";
 import { GraduationCap, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback } from "@/types/review";
@@ -40,7 +41,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} />;
     }
 
     if (review?.status === "error") {
@@ -75,7 +76,7 @@ export default function ReviewPage() {
 
   // ── Live SSE: results view ──────────────────────────────────────────────
   if (hasResult) {
-    return <ResultsView feedback={state.result!} />;
+    return <ResultsView feedback={state.result!} reviewId={id} />;
   }
 
   // ── Live SSE: processing / error view ───────────────────────────────────
@@ -105,7 +106,7 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName }: { feedback: MergedFeedback; fileName?: string | null }) {
+function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null }) {
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
@@ -118,6 +119,7 @@ function ResultsView({ feedback, fileName }: { feedback: MergedFeedback; fileNam
               {fileName && <p className="text-xs text-white/40">{fileName}</p>}
             </div>
             <ReviewAnotherButton size="sm" />
+            <ShareButton reviewId={reviewId} initialShareToken={shareToken} />
           </div>
           <UserMenu />
         </div>
