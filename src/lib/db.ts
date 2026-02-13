@@ -253,6 +253,15 @@ async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_prompt_snippets_category_name
         ON prompt_snippets(category, name);
 
+      -- Custom check group prompts (admin overrides for hardcoded prompts)
+      CREATE TABLE IF NOT EXISTS custom_prompts (
+        check_group TEXT PRIMARY KEY,
+        system_prompt TEXT NOT NULL,
+        updated_by TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        is_active BOOLEAN NOT NULL DEFAULT true
+      );
+
       -- Review tags (user-applied labels for organizing reviews)
       CREATE TABLE IF NOT EXISTS review_tags (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -3050,4 +3059,113 @@ export async function getReviewerWorkload(): Promise<ReviewerWorkloadStats | nul
       totalAssignments: Number(raw.totals.totalAssignments),
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Custom prompts (admin overrides for check group system prompts)
+// ---------------------------------------------------------------------------
+
+export interface CustomPromptRow {
+  checkGroup: string;
+  systemPrompt: string;
+  updatedBy: string;
+  updatedAt: string;
+  isActive: boolean;
+}
+
+function rowToCustomPrompt(row: Record<string, unknown>): CustomPromptRow {
+  return {
+    checkGroup: row.check_group as string,
+    systemPrompt: row.system_prompt as string,
+    updatedBy: row.updated_by as string,
+    updatedAt: (row.updated_at as Date).toISOString(),
+    isActive: row.is_active as boolean,
+  };
+}
+
+/** Get a single custom prompt by check group ID. Returns null if not found. */
+export async function getCustomPrompt(checkGroup: string): Promise<CustomPromptRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM custom_prompts WHERE check_group = $1",
+    [checkGroup]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToCustomPrompt(result.rows[0]);
+}
+
+/** List all custom prompt overrides, ordered by check group name. */
+export async function getAllCustomPrompts(): Promise<CustomPromptRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM custom_prompts ORDER BY check_group"
+  );
+  return result.rows.map(rowToCustomPrompt);
+}
+
+/** Create or update a custom prompt override. Returns the upserted row. */
+export async function upsertCustomPrompt(
+  checkGroup: string,
+  systemPrompt: string,
+  userId: string
+): Promise<CustomPromptRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO custom_prompts (check_group, system_prompt, updated_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (check_group) DO UPDATE SET
+       system_prompt = $2,
+       updated_by = $3,
+       updated_at = NOW()
+     RETURNING *`,
+    [checkGroup, systemPrompt, userId]
+  );
+  return rowToCustomPrompt(result.rows[0]);
+}
+
+/** Delete a custom prompt override (reverts to default). Returns true if deleted. */
+export async function deleteCustomPrompt(checkGroup: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM custom_prompts WHERE check_group = $1",
+    [checkGroup]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Toggle the active state of a custom prompt. Returns the updated row or null. */
+export async function toggleCustomPromptActive(
+  checkGroup: string,
+  isActive: boolean
+): Promise<CustomPromptRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE custom_prompts
+     SET is_active = $2, updated_at = NOW()
+     WHERE check_group = $1
+     RETURNING *`,
+    [checkGroup, isActive]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToCustomPrompt(result.rows[0]);
+}
+
+/**
+ * Get the active custom prompt for a check group, if one exists.
+ * Used by the pipeline to resolve the effective prompt.
+ */
+export async function getActivePromptForGroup(checkGroup: string): Promise<string | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT system_prompt FROM custom_prompts WHERE check_group = $1 AND is_active = true",
+    [checkGroup]
+  );
+  if (result.rows.length === 0) return null;
+  return result.rows[0].system_prompt as string;
 }

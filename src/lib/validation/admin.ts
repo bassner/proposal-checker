@@ -42,3 +42,23 @@ export const promptSnippetSchema = z.object({
 });
 
 export type PromptSnippetInput = z.infer<typeof promptSnippetSchema>;
+
+export const customPromptUpsertSchema = z.object({
+  checkGroup: z.enum(CHECK_GROUP_IDS),
+  systemPrompt: z.string().min(1, "Prompt content is required").max(50000),
+});
+
+export type CustomPromptUpsert = z.infer<typeof customPromptUpsertSchema>;
+
+export const customPromptDeleteSchema = z.object({
+  checkGroup: z.enum(CHECK_GROUP_IDS),
+});
+
+export type CustomPromptDelete = z.infer<typeof customPromptDeleteSchema>;
+
+export const customPromptToggleSchema = z.object({
+  checkGroup: z.enum(CHECK_GROUP_IDS),
+  isActive: z.boolean(),
+});
+
+export type CustomPromptToggle = z.infer<typeof customPromptToggleSchema>;
