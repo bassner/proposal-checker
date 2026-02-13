@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ReviewStepper } from "@/components/review-stepper";
@@ -96,7 +96,7 @@ export default function ReviewPage() {
   return (
     <PageShell title="Proposal Checker" subtitle={state.status === "idle" ? "Connecting..." : state.mode === "thesis" ? "Reviewing thesis..." : "Reviewing proposal..."}>
       {isRunning && (
-        <div className="mb-4 flex items-center justify-center gap-2 py-2">
+        <div className="mb-4 flex items-center justify-center gap-2 py-2" aria-live="polite" role="status">
           <ThinkingBubble />
           <span className="text-xs text-white/40">{state.mode === "thesis" ? "Analyzing thesis..." : "Analyzing proposal..."}</span>
           <TimeEstimate state={state} />
@@ -104,10 +104,10 @@ export default function ReviewPage() {
       )}
 
       {state.status !== "idle" && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
+        <aside aria-label="Review progress" className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           <h2 className="mb-4 text-sm font-medium text-white/60">Progress</h2>
           <ReviewStepper state={state} />
-        </div>
+        </aside>
       )}
 
       {hasError && (
@@ -154,6 +154,12 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
   const focusedGlobalIndex = focusedIndex != null ? navOrder[focusedIndex] ?? null : null;
   const focusedPosition = focusedIndex != null ? focusedIndex + 1 : null;
 
+  // Focus the results heading when the results view mounts
+  const resultsHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    resultsHeadingRef.current?.focus();
+  }, []);
+
   // Merge annotation status from useAnnotations with comments from useComments
   const mergedAnnotations: Annotations = {};
   const allKeys = new Set([...Object.keys(annotations), ...Object.keys(commentAnnotations)]);
@@ -190,12 +196,12 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
           {fileName && <p className="text-sm text-gray-600">{fileName}</p>}
           <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
         </div>
-        <div className="no-print mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="no-print mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <IconBadge />
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-semibold text-white">Review Results</h1>
+                <h1 ref={resultsHeadingRef} tabIndex={-1} className="text-lg font-semibold text-white outline-none">Review Results</h1>
                 {reviewMode === "thesis" && (
                   <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-400">
                     thesis
@@ -204,15 +210,20 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
               </div>
               {fileName && <p className="text-xs text-white/40">{fileName}</p>}
             </div>
-            <ReviewAnotherButton size="sm" />
-            <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
-            <PrintButton />
-            <CopyMarkdownButton feedback={feedback} fileName={fileName} />
-            <DownloadCsvButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
-            <DownloadJsonButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
+            <nav aria-label="Review actions">
+              <ReviewAnotherButton size="sm" />
+              <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
+              <PrintButton />
+              <CopyMarkdownButton feedback={feedback} fileName={fileName} />
+              <DownloadCsvButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
+              <DownloadJsonButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
+            </nav>
           </div>
-          <UserMenu />
-        </div>
+          <nav aria-label="User navigation">
+            <UserMenu />
+          </nav>
+        </header>
+        <main id="main-content">
         <FeedbackList
           feedback={feedback}
           annotations={mergedAnnotations}
@@ -225,6 +236,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
           onDeleteComment={handleDeleteComment}
           commentSubmitting={commentSubmitting}
         />
+        </main>
         <Footer />
       </div>
     </div>
@@ -237,7 +249,7 @@ function PageShell({ title, subtitle, children }: { title: string; subtitle?: st
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
       <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <IconBadge />
             <div>
@@ -245,9 +257,13 @@ function PageShell({ title, subtitle, children }: { title: string; subtitle?: st
               {subtitle && <p className="text-xs text-white/40">{subtitle}</p>}
             </div>
           </div>
-          <UserMenu />
-        </div>
-        {children}
+          <nav aria-label="User navigation">
+            <UserMenu />
+          </nav>
+        </header>
+        <main id="main-content">
+          {children}
+        </main>
         <Footer />
       </div>
     </div>
@@ -357,7 +373,7 @@ function BackgroundOrbs() {
 
 function Footer() {
   return (
-    <footer className="mt-12 pb-4 text-center text-xs text-white/20">
+    <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">
       Created with &#10084;&#65039; by{" "}
       <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
         @bassner

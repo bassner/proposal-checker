@@ -498,7 +498,7 @@ export default function ReviewsPage() {
 
       <div className="relative mx-auto w-full max-w-[1200px] px-3 py-4 sm:px-6 sm:py-8">
         {/* Header */}
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <ClipboardList className="h-5 w-5 text-blue-400" />
@@ -507,14 +507,14 @@ export default function ReviewsPage() {
               <h1 className="text-lg font-semibold text-white">
                 {isAdmin ? "All Reviews" : "My Reviews"}
               </h1>
-              <p className="text-xs text-white/40">
+              <p className="text-xs text-white/40" aria-live="polite">
                 {isLoading && !hasData
                   ? "Loading..."
                   : `${displayTotal} review${displayTotal !== 1 ? "s" : ""}${groupByFile ? ` in ${fileGroups.length} group${fileGroups.length !== 1 ? "s" : ""}` : ""}`}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <nav aria-label="Reviews navigation" className="flex items-center gap-3">
             <Button
               variant="outline"
               className={
@@ -557,17 +557,18 @@ export default function ReviewsPage() {
               </Button>
             </Link>
             <UserMenu />
-          </div>
-        </div>
+          </nav>
+        </header>
 
         {/* Content */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
+        <main id="main-content" className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           {/* Search bar */}
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
             <input
               type="text"
               placeholder="Search by file name, user name, or email..."
+              aria-label="Search reviews"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-9 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-blue-500/50 focus:bg-white/[0.07]"
@@ -750,7 +751,7 @@ export default function ReviewsPage() {
               )}
             </>
           )}
-        </div>
+        </main>
       </div>
     </div>
   );

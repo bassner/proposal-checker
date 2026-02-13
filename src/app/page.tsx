@@ -65,7 +65,7 @@ function SignInLanding() {
         <div className="absolute left-1/2 top-1/3 h-64 w-64 -translate-x-1/2 rounded-full bg-blue-400/5 blur-3xl" />
       </div>
 
-      <div className="relative flex w-full max-w-md flex-col items-center px-6 py-12">
+      <main id="main-content" className="relative flex w-full max-w-md flex-col items-center px-6 py-12">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-500/20 backdrop-blur-sm">
           <GraduationCap className="h-8 w-8 text-blue-400" />
         </div>
@@ -96,13 +96,13 @@ function SignInLanding() {
           View proposal guidelines
         </Link>
 
-        <footer className="mt-12 text-center text-xs text-white/20">
+        <footer className="mt-12 text-center text-xs text-white/20" role="contentinfo">
           Created with ❤️ by{" "}
           <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
             @bassner
           </a>
         </footer>
-      </div>
+      </main>
     </div>
   );
 }
@@ -126,8 +126,8 @@ function Unauthorized() {
         <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-red-500/5 blur-3xl" />
       </div>
 
-      <div className="relative w-full max-w-md px-6">
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 backdrop-blur-xl">
+      <main id="main-content" className="relative w-full max-w-md px-6">
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-8 backdrop-blur-xl" role="alert">
           <div className="flex flex-col items-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/20">
               <ShieldX className="h-6 w-6 text-red-400" />
@@ -138,7 +138,7 @@ function Unauthorized() {
             </p>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -306,7 +306,7 @@ function UploadPage() {
       </div>
 
       <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <GraduationCap className="h-5 w-5 text-blue-400" />
@@ -316,10 +316,12 @@ function UploadPage() {
               <p className="text-xs text-white/40">Research Group for Applied Education Technologies</p>
             </div>
           </div>
-          <UserMenu />
-        </div>
+          <nav aria-label="User navigation">
+            <UserMenu />
+          </nav>
+        </header>
 
-        <div className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
+        <main id="main-content" className="space-y-5 rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           {isBatchMode ? (
             <>
               <BatchFileList
@@ -483,10 +485,10 @@ function UploadPage() {
           </Button>
 
           {noneSelected && (
-            <p className="text-sm text-amber-400">Select at least one check group to start a review.</p>
+            <p className="text-sm text-amber-400" role="alert">Select at least one check group to start a review.</p>
           )}
-          {error && <p className="text-sm text-red-400">{error}</p>}
-        </div>
+          {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
+        </main>
 
         <Link
           href="/guidelines"
@@ -496,7 +498,7 @@ function UploadPage() {
           View proposal guidelines
         </Link>
 
-        <footer className="mt-12 pb-4 text-center text-xs text-white/20">
+        <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">
           Created with ❤️ by{" "}
           <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
             @bassner
