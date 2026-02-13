@@ -115,7 +115,7 @@ Review the proposal against these specific rules only:
 
 4. **Forbidden Sentence Starters**: Sentences must NOT start with "As…", "Since…", "To…", "In order to…", or "Because…". Flag each occurrence.
 
-5. **Paragraph Length**: Paragraphs should be 5-8 lines long. Flag paragraphs that are too short (1-2 lines) or too long (>10 lines).
+5. **Paragraph Length**: Paragraphs should be 5-8 lines long. Flag paragraphs that are too short (1-2 lines) or too long (>10 lines). Use the rendered page images to visually assess actual paragraph line counts, as line count depends on formatting, margins, and font size which the extracted text alone cannot convey.
 
 6. **One Idea Per Paragraph**: Each paragraph should develop one single coherent idea. Flag paragraphs that jump between multiple unrelated topics.
 
