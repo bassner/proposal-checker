@@ -27,6 +27,7 @@ import Link from "next/link";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { PinButton } from "@/components/pin-button";
 import { WorkflowStatusLabel } from "@/components/workflow-status-badge";
+import { BulkActionsBar } from "@/components/admin/bulk-actions-bar";
 import type { WorkflowStatus } from "@/types/review";
 import { Tag, Filter } from "lucide-react";
 
@@ -373,6 +374,9 @@ export default function ReviewsPage() {
   const [groupedData, setGroupedData] = useState<GroupedReviewsResponse | null>(null);
   const [groupedLoading, setGroupedLoading] = useState(false);
 
+  // Bulk selection (admin only, separate from compare selection)
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set());
+
   const isAdmin = session?.user?.role === "admin";
   const [refreshKey, setRefreshKey] = useState(0);
   const handleDeleted = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -443,6 +447,7 @@ export default function ReviewsPage() {
   // Clear selection when table data changes
   useEffect(() => {
     setSelectedIds([]);
+    setBulkSelectedIds(new Set());
   }, [page, sort, dir, debouncedSearch]);
 
   // Build file groups from grouped data
@@ -544,6 +549,29 @@ export default function ReviewsPage() {
       return [...prev, id];
     });
   }
+
+  function toggleBulkSelection(id: string) {
+    setBulkSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (!sortedReviews.length) return;
+    const allIds = sortedReviews.map((r) => r.id);
+    const allSelected = allIds.every((id) => bulkSelectedIds.has(id));
+    if (allSelected) {
+      setBulkSelectedIds(new Set());
+    } else {
+      setBulkSelectedIds(new Set(allIds));
+    }
+  }
+
+  const handleBulkClear = useCallback(() => setBulkSelectedIds(new Set()), []);
+  const handleBulkComplete = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   function handleRowClick(r: ReviewListItem) {
     if (compareMode) {
@@ -744,6 +772,17 @@ export default function ReviewsPage() {
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-white/10">
+                      {isAdmin && !compareMode && (
+                        <th className={thClass} style={{ width: 32 }}>
+                          <input
+                            type="checkbox"
+                            checked={sortedReviews.length > 0 && sortedReviews.every((r) => bulkSelectedIds.has(r.id))}
+                            onChange={toggleSelectAll}
+                            className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 accent-blue-500 dark:border-white/20"
+                            title="Select all"
+                          />
+                        </th>
+                      )}
                       {compareMode && <th className={thClass} style={{ width: 32 }}></th>}
                       <th className={thClass} style={{ width: 32 }}></th>
                       <th className={sortableThClass} onClick={() => handleSort("created_at")}>
@@ -775,14 +814,25 @@ export default function ReviewsPage() {
                   <tbody>
                     {sortedReviews.map((r) => {
                       const isSelected = selectedIds.includes(r.id);
+                      const isBulkSelected = bulkSelectedIds.has(r.id);
                       const isSelectable = compareMode && r.status === "done";
                       const canSelect = isSelectable && (isSelected || selectedIds.length < 2);
                       return (
                       <tr
                         key={r.id}
-                        className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/5 ${isSelected ? "bg-purple-500/10" : ""}`}
+                        className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/5 ${isSelected ? "bg-purple-500/10" : ""} ${isBulkSelected ? "bg-blue-500/10" : ""}`}
                         onClick={() => handleRowClick(r)}
                       >
+                        {isAdmin && !compareMode && (
+                          <td className="py-2.5 pr-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isBulkSelected}
+                              onChange={() => toggleBulkSelection(r.id)}
+                              className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 accent-blue-500 dark:border-white/20"
+                            />
+                          </td>
+                        )}
                         {compareMode && (
                           <td className="py-2.5 pr-2" onClick={(e) => e.stopPropagation()}>
                             {r.status === "done" ? (
@@ -915,6 +965,15 @@ export default function ReviewsPage() {
             </>
           )}
         </main>
+
+        {/* Bulk actions bar (admin only) */}
+        {isAdmin && (
+          <BulkActionsBar
+            selectedIds={Array.from(bulkSelectedIds)}
+            onClearSelection={handleBulkClear}
+            onActionComplete={handleBulkComplete}
+          />
+        )}
       </div>
     </div>
   );
