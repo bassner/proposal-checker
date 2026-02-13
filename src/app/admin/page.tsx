@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
+import { getAnalytics } from "@/lib/db";
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
 import { Shield, ArrowLeft, ClipboardList, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
+import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -17,13 +19,19 @@ export default async function AdminPage() {
     redirect("/");
   }
 
-  // Load config from DB for each role
-  const configResults = await Promise.all(
-    APP_ROLES.map(async (role) => ({
-      role,
-      result: await getAllowedProviders(role),
-    }))
-  );
+  // Load config + analytics from DB in parallel
+  const [configResults, analyticsData] = await Promise.all([
+    Promise.all(
+      APP_ROLES.map(async (role) => ({
+        role,
+        result: await getAllowedProviders(role),
+      }))
+    ),
+    getAnalytics().catch((err) => {
+      console.error("[admin] Failed to load analytics:", err);
+      return null;
+    }),
+  ]);
 
   const configUnavailable = configResults.some(
     ({ result }) => result.status === "unavailable"
@@ -49,7 +57,7 @@ export default async function AdminPage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-white">Admin Panel</h1>
-              <p className="text-xs text-white/40">Role configuration</p>
+              <p className="text-xs text-white/40">Analytics &amp; configuration</p>
             </div>
           </div>
           <Link
@@ -60,6 +68,12 @@ export default async function AdminPage() {
             <ArrowLeft className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Back to Home</span>
           </Link>
+        </div>
+
+        {/* Analytics Dashboard */}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <h2 className="mb-4 text-sm font-medium text-white/60">Review Analytics</h2>
+          <AnalyticsDashboard initialData={analyticsData} />
         </div>
 
         {/* Role-Provider Mapping */}
