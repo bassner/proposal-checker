@@ -370,6 +370,22 @@ async function ensureSchema(): Promise<void> {
         ON review_versions(group_id);
       CREATE INDEX IF NOT EXISTS idx_review_versions_review
         ON review_versions(review_id);
+
+      -- Proposal relationships (links between related proposals)
+      CREATE TABLE IF NOT EXISTS proposal_relationships (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        source_review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        target_review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        relationship_type TEXT NOT NULL CHECK (relationship_type IN ('similar_topic', 'shared_advisor', 'builds_upon', 'contradicts', 'related')),
+        notes TEXT,
+        created_by TEXT NOT NULL,
+        created_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(source_review_id, target_review_id, relationship_type)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_proposal_rel_source ON proposal_relationships(source_review_id);
+      CREATE INDEX IF NOT EXISTS idx_proposal_rel_target ON proposal_relationships(target_review_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -3550,4 +3566,182 @@ export async function unlinkReviewVersion(reviewId: string): Promise<boolean> {
     [reviewId]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Proposal relationships
+// ---------------------------------------------------------------------------
+
+export type RelationshipType =
+  | "similar_topic"
+  | "shared_advisor"
+  | "builds_upon"
+  | "contradicts"
+  | "related";
+
+export interface ProposalRelationshipRow {
+  id: string;
+  sourceReviewId: string;
+  targetReviewId: string;
+  relationshipType: RelationshipType;
+  notes: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  /** Joined fields from the reviews table (filled only by getRelationshipsForReview). */
+  sourceFileName?: string | null;
+  targetFileName?: string | null;
+  sourceUserName?: string | null;
+  targetUserName?: string | null;
+}
+
+function rowToRelationship(row: Record<string, unknown>): ProposalRelationshipRow {
+  return {
+    id: row.id as string,
+    sourceReviewId: row.source_review_id as string,
+    targetReviewId: row.target_review_id as string,
+    relationshipType: row.relationship_type as RelationshipType,
+    notes: (row.notes as string) ?? null,
+    createdBy: row.created_by as string,
+    createdByName: (row.created_by_name as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+    sourceFileName: (row.source_file_name as string) ?? null,
+    targetFileName: (row.target_file_name as string) ?? null,
+    sourceUserName: (row.source_user_name as string) ?? null,
+    targetUserName: (row.target_user_name as string) ?? null,
+  };
+}
+
+/** Create a relationship between two reviews. Returns the created row. */
+export async function createProposalRelationship(rel: {
+  sourceReviewId: string;
+  targetReviewId: string;
+  relationshipType: RelationshipType;
+  notes?: string | null;
+  createdBy: string;
+  createdByName?: string | null;
+}): Promise<ProposalRelationshipRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO proposal_relationships (source_review_id, target_review_id, relationship_type, notes, created_by, created_by_name)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (source_review_id, target_review_id, relationship_type) DO NOTHING
+     RETURNING *`,
+    [rel.sourceReviewId, rel.targetReviewId, rel.relationshipType, rel.notes ?? null, rel.createdBy, rel.createdByName ?? null]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToRelationship(result.rows[0]);
+}
+
+/**
+ * Get all relationships involving a specific review (as source or target).
+ * Joins with reviews table to include file names and user names.
+ */
+export async function getRelationshipsForReview(reviewId: string): Promise<ProposalRelationshipRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT
+       pr.*,
+       src.file_name AS source_file_name,
+       src.user_name AS source_user_name,
+       tgt.file_name AS target_file_name,
+       tgt.user_name AS target_user_name
+     FROM proposal_relationships pr
+     LEFT JOIN reviews src ON src.id = pr.source_review_id
+     LEFT JOIN reviews tgt ON tgt.id = pr.target_review_id
+     WHERE pr.source_review_id = $1 OR pr.target_review_id = $1
+     ORDER BY pr.created_at DESC`,
+    [reviewId]
+  );
+  return result.rows.map(rowToRelationship);
+}
+
+/** Delete a relationship by ID. Returns true if deleted. */
+export async function deleteProposalRelationship(id: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM proposal_relationships WHERE id = $1",
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Get a single relationship by ID. */
+export async function getProposalRelationshipById(id: string): Promise<ProposalRelationshipRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM proposal_relationships WHERE id = $1",
+    [id]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToRelationship(result.rows[0]);
+}
+
+/**
+ * Get all relationships as an edge list for visualization / admin overview.
+ * Joins with reviews to include file names and user names.
+ */
+export async function getRelationshipGraph(): Promise<ProposalRelationshipRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT
+       pr.*,
+       src.file_name AS source_file_name,
+       src.user_name AS source_user_name,
+       tgt.file_name AS target_file_name,
+       tgt.user_name AS target_user_name
+     FROM proposal_relationships pr
+     LEFT JOIN reviews src ON src.id = pr.source_review_id
+     LEFT JOIN reviews tgt ON tgt.id = pr.target_review_id
+     ORDER BY pr.created_at DESC`
+  );
+  return result.rows.map(rowToRelationship);
+}
+
+/**
+ * Get relationship statistics: count per type and most-connected reviews.
+ */
+export async function getRelationshipStats(): Promise<{
+  countByType: { type: string; count: number }[];
+  mostConnected: { reviewId: string; fileName: string | null; userName: string | null; count: number }[];
+}> {
+  if (!pool) return { countByType: [], mostConnected: [] };
+  await ensureSchema();
+
+  const typeResult = await pool.query(
+    `SELECT relationship_type AS type, COUNT(*)::int AS count
+     FROM proposal_relationships
+     GROUP BY relationship_type
+     ORDER BY count DESC`
+  );
+
+  const connectedResult = await pool.query(
+    `SELECT rid AS review_id, r.file_name, r.user_name, cnt AS count FROM (
+       SELECT rid, COUNT(*)::int AS cnt FROM (
+         SELECT source_review_id AS rid FROM proposal_relationships
+         UNION ALL
+         SELECT target_review_id AS rid FROM proposal_relationships
+       ) sub
+       GROUP BY rid
+       ORDER BY cnt DESC
+       LIMIT 10
+     ) top
+     LEFT JOIN reviews r ON r.id = top.rid
+     ORDER BY cnt DESC`
+  );
+
+  return {
+    countByType: typeResult.rows.map((r) => ({ type: r.type as string, count: Number(r.count) })),
+    mostConnected: connectedResult.rows.map((r) => ({
+      reviewId: r.review_id as string,
+      fileName: (r.file_name as string) ?? null,
+      userName: (r.user_name as string) ?? null,
+      count: Number(r.count),
+    })),
+  };
 }
