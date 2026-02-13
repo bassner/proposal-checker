@@ -31,6 +31,10 @@ interface FeedbackCardProps {
   onPageClick?: (page: number) => void;
   /** Conflict data for this finding, if any. */
   conflict?: AnnotationConflict;
+  /** Review ID — required for reaction API calls. */
+  reviewId?: string;
+  /** Current user ID — for highlighting the user's own reactions. */
+  currentUserId?: string;
 }
 
 const severityConfig: Record<
@@ -176,7 +180,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
   );
 }
 
-export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflict }: FeedbackCardProps) {
+export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflict, reviewId, currentUserId }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
   const SevIcon = config.icon;
   const [locationsExpanded, setLocationsExpanded] = useState(false);
@@ -356,6 +360,8 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
                 onDelete={onDeleteComment}
                 onResolve={onResolveThread}
                 submitting={commentSubmitting}
+                reviewId={reviewId}
+                currentUserId={currentUserId}
               />
             ))}
           </div>

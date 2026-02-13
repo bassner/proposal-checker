@@ -285,6 +285,7 @@ function SharedResultsView({ review }: { review: SharedReview }) {
             onReplyComment={handleReplyComment}
             onResolveThread={handleResolveThread}
             commentSubmitting={submitting}
+            reviewId={review.id}
           />
         </main>
         <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">

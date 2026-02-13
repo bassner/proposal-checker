@@ -505,6 +505,20 @@ async function ensureSchema(): Promise<void> {
         UNIQUE(old_review_id, new_review_id)
       );
       CREATE INDEX IF NOT EXISTS idx_revision_summaries_new ON revision_summaries(new_review_id);
+
+      -- Comment reactions (emoji reactions on discussion thread comments)
+      CREATE TABLE IF NOT EXISTS comment_reactions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        comment_id UUID NOT NULL,
+        user_id TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        reaction TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(comment_id, user_id, reaction)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
+        ON comment_reactions(comment_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -5742,4 +5756,79 @@ export async function listRevisionSummariesForReview(
     [reviewId]
   );
   return result.rows.map(rowToRevisionSummary);
+}
+
+// ---------------------------------------------------------------------------
+// Comment reactions
+// ---------------------------------------------------------------------------
+
+export interface CommentReaction {
+  id: string;
+  commentId: string;
+  userId: string;
+  userName: string;
+  reaction: string;
+  createdAt: string;
+}
+
+/**
+ * Toggle a reaction on a comment. If the user already has this reaction,
+ * it is removed; otherwise it is inserted.
+ * Returns "added" or "removed" to indicate what happened.
+ */
+export async function toggleCommentReaction(
+  commentId: string,
+  userId: string,
+  userName: string,
+  reaction: string
+): Promise<"added" | "removed"> {
+  if (!pool) throw new Error("Database unavailable");
+  await ensureSchema();
+
+  // Try to delete first — if a row was deleted, the reaction existed and we toggled it off.
+  const del = await pool.query(
+    "DELETE FROM comment_reactions WHERE comment_id = $1 AND user_id = $2 AND reaction = $3 RETURNING id",
+    [commentId, userId, reaction]
+  );
+  if (del.rowCount && del.rowCount > 0) {
+    return "removed";
+  }
+
+  // No existing reaction — insert.
+  await pool.query(
+    "INSERT INTO comment_reactions (comment_id, user_id, user_name, reaction) VALUES ($1, $2, $3, $4)",
+    [commentId, userId, userName, reaction]
+  );
+  return "added";
+}
+
+/**
+ * Bulk-fetch reactions for multiple comments.
+ * Returns a map from commentId to an array of reactions.
+ */
+export async function getReactionsForComments(
+  commentIds: string[]
+): Promise<Record<string, CommentReaction[]>> {
+  if (!pool || commentIds.length === 0) return {};
+  await ensureSchema();
+
+  const result = await pool.query(
+    "SELECT * FROM comment_reactions WHERE comment_id = ANY($1) ORDER BY created_at ASC",
+    [commentIds]
+  );
+
+  const grouped: Record<string, CommentReaction[]> = {};
+  for (const row of result.rows) {
+    const cr: CommentReaction = {
+      id: row.id as string,
+      commentId: row.comment_id as string,
+      userId: row.user_id as string,
+      userName: row.user_name as string,
+      reaction: row.reaction as string,
+      createdAt: (row.created_at as Date).toISOString(),
+    };
+    if (!grouped[cr.commentId]) grouped[cr.commentId] = [];
+    grouped[cr.commentId].push(cr);
+  }
+  return grouped;
 }

@@ -36,6 +36,10 @@ interface FeedbackListProps {
   /** Optional custom display order for check groups (from admin config).
    *  When provided, the failed groups banner and category ordering respect this order. */
   checkGroupOrder?: CheckGroupOrderEntry[];
+  /** Review ID — required for reaction API calls on comments. */
+  reviewId?: string;
+  /** Current user ID — for highlighting the user's own reactions. */
+  currentUserId?: string;
 }
 
 const assessmentConfig = {
@@ -304,7 +308,7 @@ function FilterBar({
   );
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflicts, checkGroupOrder }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflicts, checkGroupOrder, reviewId, currentUserId }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
 
@@ -616,6 +620,8 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                     commentSubmitting={commentSubmitting}
                     onPageClick={onPageClick}
                     conflict={conflicts?.get(globalIndex)}
+                    reviewId={reviewId}
+                    currentUserId={currentUserId}
                   />
                 ))}
               </div>

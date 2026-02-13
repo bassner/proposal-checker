@@ -302,6 +302,8 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
               commentSubmitting={commentSubmitting}
               onPageClick={handlePageClick}
               conflicts={conflicts}
+              reviewId={reviewId}
+              currentUserId={session?.user?.id ?? undefined}
             />
           </main>
           {pdfOpen && (
