@@ -24,6 +24,7 @@ import { useConflicts } from "@/hooks/use-conflicts";
 import { TimeEstimate } from "@/components/time-estimate";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { ReviewStats } from "@/components/review-stats";
+import { QualityScore } from "@/components/quality-score";
 import { AuditLog } from "@/components/audit-log";
 
 /**
@@ -251,7 +252,8 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             <UserMenu />
           </nav>
         </header>
-        <div className="mb-4">
+        <div className="mb-4 space-y-3">
+          <QualityScore findings={feedback.findings} />
           <ReviewStats feedback={feedback} annotations={mergedAnnotations} checkGroups={checkGroups} />
         </div>
         <div className={`flex gap-4 ${pdfOpen ? "flex-col lg:flex-row" : ""}`}>
