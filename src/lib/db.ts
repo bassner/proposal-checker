@@ -5743,3 +5743,217 @@ export async function listRevisionSummariesForReview(
   );
   return result.rows.map(rowToRevisionSummary);
 }
+
+// ---------------------------------------------------------------------------
+// Score trends (admin dashboard: per-student score trends + aggregate summary)
+// ---------------------------------------------------------------------------
+
+export interface ScoreTrendPoint {
+  reviewId: string;
+  fileName: string | null;
+  date: string;
+  qualityScore: number;
+  findingCount: number;
+  overallAssessment: string | null;
+}
+
+export interface ScoreTrendStudent {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  reviewCount: number;
+  avgScore: number;
+  latestScore: number;
+  trend: "improving" | "declining" | "stable";
+  improvementRate: number; // score change per review (positive = improving)
+  lastReviewDate: string;
+  points: ScoreTrendPoint[];
+}
+
+export interface ScoreTrendsSummary {
+  totalStudents: number;
+  avgImprovementRate: number;
+  bestImprover: { userId: string; userName: string; improvementRate: number } | null;
+  worstTrending: { userId: string; userName: string; improvementRate: number } | null;
+  improvingCount: number;
+  decliningCount: number;
+  stableCount: number;
+}
+
+/**
+ * Returns per-student score trend data. If userId is provided, returns data
+ * for that single student; otherwise returns data for all students with
+ * completed reviews.
+ */
+export async function getStudentScoreTrends(userId?: string): Promise<ScoreTrendStudent[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  // Get severity weights from config
+  const weightsResult = await pool.query(
+    "SELECT severity, weight FROM severity_config"
+  );
+  const weightMap: Record<string, number> = {};
+  for (const row of weightsResult.rows) {
+    weightMap[row.severity as string] = Number(row.weight);
+  }
+
+  const whereClause = userId
+    ? "AND r.user_id = $1"
+    : "";
+  const params = userId ? [userId] : [];
+
+  const result = await pool.query(
+    `SELECT
+       r.user_id,
+       r.user_name,
+       r.user_email,
+       r.id,
+       r.file_name,
+       r.created_at,
+       r.feedback->>'overallAssessment' AS overall_assessment,
+       r.feedback->'findings' AS findings_json
+     FROM reviews r
+     WHERE r.status = 'done'
+       AND r.deleted_at IS NULL
+       AND r.feedback IS NOT NULL
+       AND jsonb_typeof(r.feedback->'findings') = 'array'
+       ${whereClause}
+     ORDER BY r.user_id, r.created_at ASC`,
+    params
+  );
+
+  // Group by user and compute scores
+  const userMap = new Map<string, {
+    userName: string;
+    userEmail: string;
+    points: ScoreTrendPoint[];
+    lastDate: Date;
+  }>();
+
+  for (const row of result.rows) {
+    const uid = row.user_id as string;
+    const findings = (row.findings_json as { severity?: string }[]) ?? [];
+    let deduction = 0;
+    for (const f of findings) {
+      deduction += weightMap[f.severity ?? "suggestion"] ?? 0;
+    }
+    const score = Math.max(0, 100 - deduction);
+    const createdAt = row.created_at as Date;
+
+    if (!userMap.has(uid)) {
+      userMap.set(uid, {
+        userName: row.user_name as string,
+        userEmail: row.user_email as string,
+        points: [],
+        lastDate: createdAt,
+      });
+    }
+    const entry = userMap.get(uid)!;
+    entry.points.push({
+      reviewId: row.id as string,
+      fileName: (row.file_name as string) ?? null,
+      date: createdAt.toISOString(),
+      qualityScore: score,
+      findingCount: findings.length,
+      overallAssessment: (row.overall_assessment as string) ?? null,
+    });
+    if (createdAt > entry.lastDate) entry.lastDate = createdAt;
+  }
+
+  const students: ScoreTrendStudent[] = [];
+
+  for (const [uid, entry] of userMap) {
+    const scores = entry.points.map((p) => p.qualityScore);
+    const avgScore = scores.length > 0
+      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) / 10
+      : 0;
+
+    // Compute trend + improvement rate via linear regression
+    let trend: "improving" | "declining" | "stable" = "stable";
+    let improvementRate = 0;
+
+    if (scores.length >= 2) {
+      // Simple linear regression: slope of score vs review index
+      const n = scores.length;
+      const xMean = (n - 1) / 2;
+      const yMean = scores.reduce((a, b) => a + b, 0) / n;
+      let num = 0;
+      let den = 0;
+      for (let i = 0; i < n; i++) {
+        num += (i - xMean) * (scores[i] - yMean);
+        den += (i - xMean) * (i - xMean);
+      }
+      improvementRate = den !== 0 ? Math.round((num / den) * 100) / 100 : 0;
+
+      if (improvementRate >= 2) trend = "improving";
+      else if (improvementRate <= -2) trend = "declining";
+    }
+
+    students.push({
+      userId: uid,
+      userName: entry.userName,
+      userEmail: entry.userEmail,
+      reviewCount: scores.length,
+      avgScore,
+      latestScore: scores[scores.length - 1] ?? 0,
+      trend,
+      improvementRate,
+      lastReviewDate: entry.lastDate.toISOString(),
+      points: entry.points,
+    });
+  }
+
+  // Sort by most recent review first
+  students.sort((a, b) =>
+    new Date(b.lastReviewDate).getTime() - new Date(a.lastReviewDate).getTime()
+  );
+
+  return students;
+}
+
+/**
+ * Returns aggregate score trend summary across all students.
+ */
+export async function getScoreTrendsSummary(): Promise<ScoreTrendsSummary> {
+  const students = await getStudentScoreTrends();
+
+  if (students.length === 0) {
+    return {
+      totalStudents: 0,
+      avgImprovementRate: 0,
+      bestImprover: null,
+      worstTrending: null,
+      improvingCount: 0,
+      decliningCount: 0,
+      stableCount: 0,
+    };
+  }
+
+  const avgImprovementRate = Math.round(
+    (students.reduce((sum, s) => sum + s.improvementRate, 0) / students.length) * 100
+  ) / 100;
+
+  // Only consider students with 2+ reviews for best/worst
+  const multiReview = students.filter((s) => s.reviewCount >= 2);
+  const bestImprover = multiReview.length > 0
+    ? multiReview.reduce((best, s) => s.improvementRate > best.improvementRate ? s : best)
+    : null;
+  const worstTrending = multiReview.length > 0
+    ? multiReview.reduce((worst, s) => s.improvementRate < worst.improvementRate ? s : worst)
+    : null;
+
+  return {
+    totalStudents: students.length,
+    avgImprovementRate,
+    bestImprover: bestImprover
+      ? { userId: bestImprover.userId, userName: bestImprover.userName, improvementRate: bestImprover.improvementRate }
+      : null,
+    worstTrending: worstTrending
+      ? { userId: worstTrending.userId, userName: worstTrending.userName, improvementRate: worstTrending.improvementRate }
+      : null,
+    improvingCount: students.filter((s) => s.trend === "improving").length,
+    decliningCount: students.filter((s) => s.trend === "declining").length,
+    stableCount: students.filter((s) => s.trend === "stable").length,
+  };
+}
