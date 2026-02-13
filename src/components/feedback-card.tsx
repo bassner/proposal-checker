@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { Finding, Severity, AnnotationStatus, AnnotationEntry, Comment } from "@/types/review";
+import { FINDING_CATEGORIES, normalizeFindingCategory } from "@/types/review";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Check, X, Wrench, MessageSquare, Send, Trash2, AlertOctagon, AlertTriangle, AlertCircle, Lightbulb, FileText } from "lucide-react";
@@ -235,6 +236,20 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
             </span>
           )}
         </div>
+        {/* Category badge */}
+        {finding.category && (() => {
+          const cat = normalizeFindingCategory(finding.category);
+          const meta = FINDING_CATEGORIES[cat];
+          return (
+            <span className={cn(
+              "inline-block rounded-full px-2 py-0.5 text-[10px] font-medium leading-none",
+              meta.bgClass, meta.textClass,
+              isDismissed && "opacity-40"
+            )}>
+              {meta.label}
+            </span>
+          );
+        })()}
         <p className={cn(
           "text-xs leading-relaxed text-slate-600 dark:text-white/50",
           isDismissed && "text-slate-400 dark:text-white/25"

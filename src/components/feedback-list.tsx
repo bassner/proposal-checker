@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus } from "@/types/review";
+import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus, FindingCategory } from "@/types/review";
+import { FINDING_CATEGORIES, FINDING_CATEGORY_VALUES, normalizeFindingCategory } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb, CheckCheck, Eraser, Search, XIcon, Filter } from "lucide-react";
@@ -149,6 +150,9 @@ const ANNOTATION_FILTER_OPTIONS: { value: AnnotationFilter; label: string }[] = 
 function FilterBar({
   severityFilter,
   onToggleSeverity,
+  categoryFilter,
+  onToggleCategory,
+  presentCategories,
   annotationFilter,
   onAnnotationFilter,
   searchQuery,
@@ -159,6 +163,9 @@ function FilterBar({
 }: {
   severityFilter: Set<Severity>;
   onToggleSeverity: (s: Severity) => void;
+  categoryFilter: Set<FindingCategory>;
+  onToggleCategory: (c: FindingCategory) => void;
+  presentCategories: FindingCategory[];
   annotationFilter: AnnotationFilter;
   onAnnotationFilter: (f: AnnotationFilter) => void;
   searchQuery: string;
@@ -167,7 +174,11 @@ function FilterBar({
   visibleCount: number;
   totalCount: number;
 }) {
-  const isFiltering = severityFilter.size < 4 || annotationFilter !== "all" || searchQuery.length > 0;
+  const isFiltering =
+    severityFilter.size < 4 ||
+    categoryFilter.size < FINDING_CATEGORY_VALUES.length ||
+    annotationFilter !== "all" ||
+    searchQuery.length > 0;
 
   return (
     <div className="no-print space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
@@ -199,6 +210,33 @@ function FilterBar({
             );
           })}
         </div>
+
+        {/* Category toggles */}
+        {presentCategories.length > 0 && (
+          <div className="flex items-center gap-1 border-l border-slate-200 pl-3 dark:border-white/10">
+            <span className="mr-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-white/25">Cat</span>
+            {presentCategories.map((cat) => {
+              const meta = FINDING_CATEGORIES[cat];
+              const active = categoryFilter.has(cat);
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => onToggleCategory(cat)}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-white/40",
+                    active
+                      ? cn(meta.bgClass, meta.textClass)
+                      : "text-slate-400 hover:text-slate-600 dark:text-white/20 dark:hover:text-white/40",
+                  )}
+                >
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Annotation status filter */}
         <div className="flex items-center gap-1 border-l border-slate-200 pl-3 dark:border-white/10">
@@ -259,6 +297,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
 
   // ── Filter state ──────────────────────────────────────────────────────
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set(SEVERITY_ORDER));
+  const [categoryFilter, setCategoryFilter] = useState<Set<FindingCategory>>(new Set(FINDING_CATEGORY_VALUES));
   const [annotationFilter, setAnnotationFilter] = useState<AnnotationFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -274,9 +313,31 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
     });
   };
 
+  const handleToggleCategory = (c: FindingCategory) => {
+    setCategoryFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(c)) {
+        next.delete(c);
+      } else {
+        next.add(c);
+      }
+      return next;
+    });
+  };
+
   // Unfiltered grouping (for the assessment banner counts and knowing which severities exist)
   const allGrouped = groupBySeverity(feedback.findings);
   const allPresentSeverities = SEVERITY_ORDER.filter((s) => allGrouped[s] && allGrouped[s]!.length > 0);
+
+  // Categories present in findings (for showing only relevant category filter buttons)
+  const allPresentCategories: FindingCategory[] = useMemo(() => {
+    const cats = new Set<FindingCategory>();
+    for (const f of feedback.findings) {
+      cats.add(normalizeFindingCategory(f.category));
+    }
+    // Return in the canonical order defined in FINDING_CATEGORY_VALUES
+    return FINDING_CATEGORY_VALUES.filter((c) => cats.has(c));
+  }, [feedback.findings]);
 
   // ── Apply filters ─────────────────────────────────────────────────────
   const searchLower = searchQuery.toLowerCase();
@@ -287,6 +348,11 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
       const f = feedback.findings[i];
       // Severity filter
       if (!severityFilter.has(f.severity)) continue;
+      // Category filter
+      if (categoryFilter.size < FINDING_CATEGORY_VALUES.length) {
+        const cat = normalizeFindingCategory(f.category);
+        if (!categoryFilter.has(cat)) continue;
+      }
       // Annotation status filter
       if (annotationFilter !== "all") {
         const status = annotations?.[String(i)]?.status;
@@ -305,7 +371,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
       result.push({ finding: f, globalIndex: i });
     }
     return result;
-  }, [feedback.findings, severityFilter, annotationFilter, searchLower, annotations]);
+  }, [feedback.findings, severityFilter, categoryFilter, annotationFilter, searchLower, annotations]);
 
   const filtered = groupIndexedBySeverity(filteredIndexed);
   const presentSeverities = SEVERITY_ORDER.filter((s) => filtered[s] && filtered[s]!.length > 0);
@@ -450,6 +516,9 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
         <FilterBar
           severityFilter={severityFilter}
           onToggleSeverity={handleToggleSeverity}
+          categoryFilter={categoryFilter}
+          onToggleCategory={handleToggleCategory}
+          presentCategories={allPresentCategories}
           annotationFilter={annotationFilter}
           onAnnotationFilter={setAnnotationFilter}
           searchQuery={searchQuery}
