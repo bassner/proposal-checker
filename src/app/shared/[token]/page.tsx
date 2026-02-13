@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { FeedbackList } from "@/components/feedback-list";
 import { ThinkingBubble } from "@/components/thinking-bubble";
 import { Button } from "@/components/ui/button";
-import { ExportButton } from "@/components/export-button";
+import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
 import { GraduationCap, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback } from "@/types/review";
@@ -121,7 +121,8 @@ export default function SharedReviewPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ExportButton />
+            <PrintButton />
+            <CopyMarkdownButton feedback={review.feedback} fileName={review.fileName} />
             <Link href="/">
               <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
                 <ArrowLeft className="mr-2 h-4 w-4" />
