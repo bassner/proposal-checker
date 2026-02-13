@@ -8,6 +8,12 @@ import { cn } from "@/lib/utils";
 import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb, CheckCheck, Eraser, Search, XIcon, Filter } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+/** Check group display order entry (from admin config). */
+export interface CheckGroupOrderEntry {
+  checkGroup: string;
+  displayOrder: number;
+}
+
 interface FeedbackListProps {
   feedback: MergedFeedback;
   annotations?: Annotations;
@@ -27,6 +33,9 @@ interface FeedbackListProps {
   onPageClick?: (page: number) => void;
   /** Annotation conflicts keyed by finding index. */
   conflicts?: Map<number, AnnotationConflict>;
+  /** Optional custom display order for check groups (from admin config).
+   *  When provided, the failed groups banner and category ordering respect this order. */
+  checkGroupOrder?: CheckGroupOrderEntry[];
 }
 
 const assessmentConfig = {
@@ -295,9 +304,30 @@ function FilterBar({
   );
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflicts }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, onReplyComment, onResolveThread, commentSubmitting, onPageClick, conflicts, checkGroupOrder }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
+
+  // Build a check group order lookup map for sorting
+  const checkGroupOrderMap = useMemo(() => {
+    if (!checkGroupOrder || checkGroupOrder.length === 0) return null;
+    const map = new Map<string, number>();
+    for (const entry of checkGroupOrder) {
+      map.set(entry.checkGroup, entry.displayOrder);
+    }
+    return map;
+  }, [checkGroupOrder]);
+
+  // Sort failed groups by custom order if available
+  const sortedFailedGroups = useMemo(() => {
+    if (!feedback.failedGroups || feedback.failedGroups.length === 0) return feedback.failedGroups;
+    if (!checkGroupOrderMap) return feedback.failedGroups;
+    return [...feedback.failedGroups].sort((a, b) => {
+      const orderA = checkGroupOrderMap.get(a.groupId) ?? Infinity;
+      const orderB = checkGroupOrderMap.get(b.groupId) ?? Infinity;
+      return orderA - orderB;
+    });
+  }, [feedback.failedGroups, checkGroupOrderMap]);
 
   // ── Filter state ──────────────────────────────────────────────────────
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set(SEVERITY_ORDER));
@@ -480,7 +510,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
       </div>
 
       {/* Partial results warning banner */}
-      {feedback.failedGroups && feedback.failedGroups.length > 0 && (
+      {sortedFailedGroups && sortedFailedGroups.length > 0 && (
         <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-4 backdrop-blur-sm">
           <div className="flex items-start gap-3">
             <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0 text-orange-400" />
@@ -489,12 +519,12 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                 Partial Results
               </p>
               <p className="mt-1 text-sm text-orange-300/60">
-                {feedback.failedGroups.length === 1
+                {sortedFailedGroups.length === 1
                   ? "1 check group failed during the review. Results below may be incomplete."
-                  : `${feedback.failedGroups.length} check groups failed during the review. Results below may be incomplete.`}
+                  : `${sortedFailedGroups.length} check groups failed during the review. Results below may be incomplete.`}
               </p>
               <ul className="mt-2 space-y-1">
-                {feedback.failedGroups.map((g) => (
+                {sortedFailedGroups.map((g) => (
                   <li key={g.groupId} className="text-xs text-orange-300/50">
                     <span className="font-medium text-orange-300/70">{g.label}</span>
                     {" — "}
