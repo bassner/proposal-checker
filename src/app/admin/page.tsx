@@ -1,15 +1,16 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
-import { getAnalytics, getFailedReviews } from "@/lib/db";
+import { getAnalytics, getFailedReviews, getReviewTemplates } from "@/lib/db";
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
-import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
 import { FailedReviewsDashboard } from "@/components/admin/failed-reviews-dashboard";
+import { ReviewTemplatesEditor } from "@/components/admin/review-templates-editor";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -20,8 +21,8 @@ export default async function AdminPage() {
     redirect("/");
   }
 
-  // Load config + analytics + failed reviews from DB in parallel
-  const [configResults, analyticsData, failedReviewsData] = await Promise.all([
+  // Load config + analytics + failed reviews + templates from DB in parallel
+  const [configResults, analyticsData, failedReviewsData, templatesData] = await Promise.all([
     Promise.all(
       APP_ROLES.map(async (role) => ({
         role,
@@ -35,6 +36,10 @@ export default async function AdminPage() {
     getFailedReviews().catch((err) => {
       console.error("[admin] Failed to load failed reviews:", err);
       return null;
+    }),
+    getReviewTemplates().catch((err) => {
+      console.error("[admin] Failed to load review templates:", err);
+      return [];
     }),
   ]);
 
@@ -103,6 +108,15 @@ export default async function AdminPage() {
             </div>
           )}
           <RoleConfigEditor initialConfig={configMap} />
+        </div>
+
+        {/* Review Templates */}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-2">
+            <FileStack className="h-4 w-4 text-blue-400" />
+            <h2 className="text-sm font-medium text-white/60">Review Templates</h2>
+          </div>
+          <ReviewTemplatesEditor initialTemplates={templatesData} />
         </div>
 
         {/* Reviews link */}

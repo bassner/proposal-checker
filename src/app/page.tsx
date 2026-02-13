@@ -12,6 +12,14 @@ import { useBatchReview } from "@/hooks/use-batch-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import type { ProviderType, ReviewMode, ModelConfig, CheckGroupId } from "@/types/review";
 import { REVIEW_MODES, getCheckGroups } from "@/types/review";
+
+interface ReviewTemplate {
+  id: string;
+  name: string;
+  description: string;
+  checkGroups: CheckGroupId[];
+  reviewMode: ReviewMode;
+}
 import Link from "next/link";
 import {
   GraduationCap,
@@ -26,6 +34,7 @@ import {
   ChevronDown,
   Settings2,
   Layers,
+  FileStack,
 } from "lucide-react";
 
 /**
@@ -167,6 +176,8 @@ function UploadPage() {
   const [selectedGroups, setSelectedGroups] = useState<Set<CheckGroupId>>(() => new Set());
   const [groupsInitialized, setGroupsInitialized] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [templates, setTemplates] = useState<ReviewTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const setMode = useCallback((v: ReviewMode) => {
     setModeRaw(v);
     localStorage.setItem("proposal-checker:mode", v);
@@ -174,6 +185,7 @@ function UploadPage() {
     const allIds = new Set(getCheckGroups(v).map((g) => g.id));
     setSelectedGroups(allIds);
     localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify([...allIds]));
+    setSelectedTemplate(null);
   }, []);
   const setProvider = useCallback((v: ProviderType) => {
     setProviderRaw(v);
@@ -191,6 +203,7 @@ function UploadPage() {
   const noneSelected = groupsInitialized && selectedGroups.size === 0;
 
   const toggleGroup = useCallback((groupId: CheckGroupId) => {
+    setSelectedTemplate(null);
     setSelectedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(groupId)) {
@@ -204,6 +217,7 @@ function UploadPage() {
   }, []);
 
   const toggleAll = useCallback(() => {
+    setSelectedTemplate(null);
     setSelectedGroups((prev) => {
       const allIds = getCheckGroups(mode).map((g) => g.id);
       const next = prev.size === allIds.length
@@ -213,6 +227,15 @@ function UploadPage() {
       return next;
     });
   }, [mode]);
+
+  const applyTemplate = useCallback((template: ReviewTemplate) => {
+    setSelectedTemplate(template.id);
+    setModeRaw(template.reviewMode);
+    localStorage.setItem("proposal-checker:mode", template.reviewMode);
+    const groups = new Set<CheckGroupId>(template.checkGroups);
+    setSelectedGroups(groups);
+    localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify([...groups]));
+  }, []);
 
   useEffect(() => {
     // Restore saved mode + selectedGroups
@@ -270,6 +293,18 @@ function UploadPage() {
       }
     }
     fetchModels();
+
+    async function fetchTemplates() {
+      try {
+        const res = await fetch("/api/review-templates");
+        if (!res.ok) return;
+        const data = await res.json();
+        setTemplates(data.templates ?? []);
+      } catch {
+        // Templates are optional — silently ignore
+      }
+    }
+    fetchTemplates();
   }, []);
 
   const handleMultiFileSelect = useCallback((files: File[]) => {
@@ -388,6 +423,35 @@ function UploadPage() {
               disabled={isAnySubmitting}
               models={models}
             />
+          )}
+
+          {/* Template selector */}
+          {templates.length > 0 && (
+            <div>
+              <label className="mb-2 block text-xs font-medium text-white/50">
+                <FileStack className="mr-1.5 inline h-3.5 w-3.5" />
+                Template
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {templates.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => applyTemplate(t)}
+                    disabled={isAnySubmitting}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                      selectedTemplate === t.id
+                        ? "border-blue-500/50 bg-blue-500/10 text-blue-400"
+                        : "border-white/10 bg-white/[0.03] text-white/50 hover:border-white/20 hover:text-white/70"
+                    } disabled:opacity-40`}
+                  >
+                    <div className="font-medium">{t.name}</div>
+                    {t.description && (
+                      <div className="mt-0.5 text-[10px] font-normal opacity-60">{t.description}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Advanced Options — check group toggles */}

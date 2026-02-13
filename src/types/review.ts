@@ -17,6 +17,13 @@ export type CheckGroupId =
   | "methodology"
   | "evaluation";
 
+/** All valid check group IDs as a const tuple (for Zod enum validation). */
+export const CHECK_GROUP_IDS = [
+  "structure", "problem-motivation-objectives", "bibliography", "figures",
+  "writing-style", "writing-structure", "writing-formatting", "ai-transparency",
+  "schedule", "related-work", "methodology", "evaluation",
+] as const satisfies readonly CheckGroupId[];
+
 export interface CheckGroupMeta {
   id: CheckGroupId;
   label: string;
