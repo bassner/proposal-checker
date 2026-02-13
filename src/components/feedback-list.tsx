@@ -20,6 +20,8 @@ interface FeedbackListProps {
   onAddComment?: (findingIndex: number, text: string) => Promise<void>;
   onDeleteComment?: (findingIndex: number, commentId: string) => Promise<void>;
   commentSubmitting?: boolean;
+  /** Called when a page reference in a finding is clicked (for PDF viewer navigation). */
+  onPageClick?: (page: number) => void;
 }
 
 const assessmentConfig = {
@@ -251,7 +253,7 @@ function FilterBar({
   );
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting, onPageClick }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
 
@@ -507,6 +509,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                     onAddComment={onAddComment ? (text) => onAddComment(globalIndex, text) : undefined}
                     onDeleteComment={onDeleteComment ? (commentId) => onDeleteComment(globalIndex, commentId) : undefined}
                     commentSubmitting={commentSubmitting}
+                    onPageClick={onPageClick}
                   />
                 ))}
               </div>

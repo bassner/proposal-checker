@@ -11,7 +11,8 @@ import { useReviewStream, useCompletedReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton, DownloadCsvButton, DownloadJsonButton } from "@/components/export-button";
-import { GraduationCap, RotateCcw, RefreshCw } from "lucide-react";
+import { GraduationCap, RotateCcw, RefreshCw, FileText } from "lucide-react";
+import { PdfViewer } from "@/components/pdf-viewer";
 import Link from "next/link";
 import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
@@ -134,6 +135,15 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
   const { annotations, toggleAnnotation, bulkAnnotate, clearAllAnnotations } = useAnnotations(reviewId, initialAnnotations);
   const { annotations: commentAnnotations, addComment, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
 
+  // PDF viewer state
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfTargetPage, setPdfTargetPage] = useState<number | null>(null);
+
+  const handlePageClick = useCallback((page: number) => {
+    if (!pdfOpen) setPdfOpen(true);
+    setPdfTargetPage(page);
+  }, [pdfOpen]);
+
   // Keyboard navigation
   const navOrder = useMemo(() => getNavigationOrder(feedback.findings), [feedback.findings]);
 
@@ -222,6 +232,16 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
               {(isOwner || role === "admin") && (
                 <DeleteReviewButton reviewId={reviewId} fileName={fileName} variant="button" />
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPdfOpen((v) => !v)}
+                className={`border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white ${pdfOpen ? "bg-blue-500/10 dark:bg-blue-500/20 border-blue-500/30 dark:border-blue-500/30" : ""}`}
+                aria-pressed={pdfOpen}
+              >
+                <FileText className="mr-1.5 h-3.5 w-3.5" />
+                {pdfOpen ? "Hide PDF" : "Show PDF"}
+              </Button>
             </nav>
           </div>
           <nav aria-label="User navigation">
@@ -231,20 +251,36 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
         <div className="mb-4">
           <ReviewStats feedback={feedback} annotations={mergedAnnotations} checkGroups={checkGroups} />
         </div>
-        <main id="main-content">
-        <FeedbackList
-          feedback={feedback}
-          annotations={mergedAnnotations}
-          onAnnotate={canAnnotate ? toggleAnnotation : undefined}
-          onBulkAnnotate={canAnnotate ? bulkAnnotate : undefined}
-          onClearAllAnnotations={canAnnotate ? clearAllAnnotations : undefined}
-          focusedGlobalIndex={focusedGlobalIndex}
-          focusedPosition={focusedPosition}
-          onAddComment={handleAddComment}
-          onDeleteComment={handleDeleteComment}
-          commentSubmitting={commentSubmitting}
-        />
-        </main>
+        <div className={`flex gap-4 ${pdfOpen ? "flex-col lg:flex-row" : ""}`}>
+          <main id="main-content" className={pdfOpen ? "min-w-0 flex-1" : "w-full"}>
+            <FeedbackList
+              feedback={feedback}
+              annotations={mergedAnnotations}
+              onAnnotate={canAnnotate ? toggleAnnotation : undefined}
+              onBulkAnnotate={canAnnotate ? bulkAnnotate : undefined}
+              onClearAllAnnotations={canAnnotate ? clearAllAnnotations : undefined}
+              focusedGlobalIndex={focusedGlobalIndex}
+              focusedPosition={focusedPosition}
+              onAddComment={handleAddComment}
+              onDeleteComment={handleDeleteComment}
+              commentSubmitting={commentSubmitting}
+              onPageClick={handlePageClick}
+            />
+          </main>
+          {pdfOpen && (
+            <aside
+              aria-label="PDF preview"
+              className="no-print sticky top-4 h-[calc(100vh-2rem)] w-full shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl lg:w-[400px]"
+            >
+              <PdfViewer
+                reviewId={reviewId}
+                targetPage={pdfTargetPage}
+                findings={feedback.findings}
+                onClose={() => setPdfOpen(false)}
+              />
+            </aside>
+          )}
+        </div>
         <Footer />
       </div>
     </div>
