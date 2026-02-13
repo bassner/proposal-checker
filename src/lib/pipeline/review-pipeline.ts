@@ -81,7 +81,7 @@ export async function runReviewPipeline(
       pageImages = await renderPDFPages(bufferCopy);
       console.log(`[pipeline] Rendered ${pageImages.length} page images`);
     } catch (err) {
-      console.warn("[pipeline] PDF page rendering failed (figures check will use text only):", err instanceof Error ? err.message : err);
+      console.warn("[pipeline] PDF page rendering failed (image-enabled checks will use text only):", err instanceof Error ? err.message : err);
     }
 
     callbacks.onStep("extract", "done");
@@ -92,7 +92,9 @@ export async function runReviewPipeline(
     const maxConcurrency = provider === "ollama" ? 2 : undefined; // undefined = all at once
     console.log(`[pipeline] Using provider: ${provider}, concurrency: ${maxConcurrency ?? "unlimited"}`);
 
-    // Count input tokens for all 7 checks using tiktoken (exact same tokenizer as the model)
+    // Count input tokens for all checks using tiktoken (text only).
+    // NOTE: Image tokens (for groups receiving page images) are not included in this
+    // estimate. The actual API token count will be higher for image-enabled groups.
     let cumulativeInputTokens = 0;
     const userMessage = `Here is the proposal text to review:\n\n${extraction.fullText}`;
     const checkInputTokens = CHECK_GROUPS.reduce((sum, g) => {
