@@ -36,6 +36,8 @@ import {
   Layers,
   FileStack,
 } from "lucide-react";
+import { PreflightWarnings } from "@/components/preflight-warnings";
+import type { PreflightWarning } from "@/lib/pdf/preflight";
 
 /**
  * Root page. Shows the sign-in landing for unauthenticated users,
@@ -178,6 +180,10 @@ function UploadPage() {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [templates, setTemplates] = useState<ReviewTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [preflightWarnings, setPreflightWarnings] = useState<PreflightWarning[]>([]);
+  const [preflightPageCount, setPreflightPageCount] = useState<number>(0);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightDismissed, setPreflightDismissed] = useState(false);
   const setMode = useCallback((v: ReviewMode) => {
     setModeRaw(v);
     localStorage.setItem("proposal-checker:mode", v);
@@ -307,6 +313,40 @@ function UploadPage() {
     fetchTemplates();
   }, []);
 
+  // Run preflight analysis when a file is selected (single-file mode only)
+  useEffect(() => {
+    if (!file) {
+      setPreflightWarnings([]);
+      setPreflightPageCount(0);
+      setPreflightDismissed(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function analyze() {
+      setPreflightLoading(true);
+      setPreflightDismissed(false);
+      setPreflightWarnings([]);
+      try {
+        const formData = new FormData();
+        formData.append("file", file!);
+        const res = await fetch("/api/preflight", { method: "POST", body: formData });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) {
+          setPreflightWarnings(data.warnings ?? []);
+          setPreflightPageCount(data.pageCount ?? 0);
+        }
+      } catch {
+        // Preflight is best-effort — don't block the user on failure
+      } finally {
+        if (!cancelled) setPreflightLoading(false);
+      }
+    }
+    analyze();
+    return () => { cancelled = true; };
+  }, [file]);
+
   const handleMultiFileSelect = useCallback((files: File[]) => {
     // Switch to batch mode — clear any single file selection
     setFile(null);
@@ -381,6 +421,23 @@ function UploadPage() {
               onMultiFileSelect={handleMultiFileSelect}
               selectedFile={file}
               onClear={() => setFile(null)}
+              disabled={isAnySubmitting}
+            />
+          )}
+
+          {/* Preflight analysis warnings (single-file mode) */}
+          {!isBatchMode && file && preflightLoading && (
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+              <Loader2 className="h-4 w-4 animate-spin text-amber-500 dark:text-amber-400" />
+              <span className="text-sm text-slate-500 dark:text-white/50">Analyzing document structure...</span>
+            </div>
+          )}
+          {!isBatchMode && file && !preflightLoading && preflightWarnings.length > 0 && !preflightDismissed && (
+            <PreflightWarnings
+              warnings={preflightWarnings}
+              pageCount={preflightPageCount}
+              onReviewAnyway={() => setPreflightDismissed(true)}
+              onReUpload={() => setFile(null)}
               disabled={isAnySubmitting}
             />
           )}
