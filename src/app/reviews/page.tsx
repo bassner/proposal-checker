@@ -15,6 +15,7 @@ import {
   ArrowDown,
   Search,
   X,
+  GitCompareArrows,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -87,6 +88,8 @@ export default function ReviewsPage() {
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const isAdmin = session?.user?.role === "admin";
 
@@ -128,6 +131,11 @@ export default function ReviewsPage() {
     fetchReviews(page, sort, dir, debouncedSearch);
   }, [page, sort, dir, debouncedSearch, fetchReviews]);
 
+  // Clear selection when table data changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [page, sort, dir, debouncedSearch]);
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / limit)) : 1;
 
   function handleSort(column: SortColumn) {
@@ -138,6 +146,22 @@ export default function ReviewsPage() {
       setDir("desc");
     }
     setPage(1);
+  }
+
+  function toggleSelection(id: string) {
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return prev; // max 2
+      return [...prev, id];
+    });
+  }
+
+  function handleRowClick(r: ReviewListItem) {
+    if (compareMode) {
+      if (r.status === "done") toggleSelection(r.id);
+      return;
+    }
+    router.push(`/review/${r.id}`);
   }
 
   const thClass = "pb-2 pr-4 text-xs font-medium text-white/40";
@@ -167,6 +191,21 @@ export default function ReviewsPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              className={
+                compareMode
+                  ? "border-purple-500/50 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200"
+                  : "border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+              }
+              onClick={() => {
+                setCompareMode((m) => !m);
+                setSelectedIds([]);
+              }}
+            >
+              <GitCompareArrows className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">{compareMode ? "Exit Compare" : "Compare"}</span>
+            </Button>
             <Link href="/" aria-label="Back to Home">
               <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
                 <ArrowLeft className="h-4 w-4 sm:mr-2" />
@@ -219,6 +258,7 @@ export default function ReviewsPage() {
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/10">
+                      {compareMode && <th className={thClass} style={{ width: 32 }}></th>}
                       <th className={sortableThClass} onClick={() => handleSort("created_at")}>
                         Date <SortIcon column="created_at" activeSort={sort} activeDir={dir} />
                       </th>
@@ -240,12 +280,31 @@ export default function ReviewsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.reviews.map((r) => (
+                    {data.reviews.map((r) => {
+                      const isSelected = selectedIds.includes(r.id);
+                      const isSelectable = compareMode && r.status === "done";
+                      const canSelect = isSelectable && (isSelected || selectedIds.length < 2);
+                      return (
                       <tr
                         key={r.id}
-                        className="cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5"
-                        onClick={() => router.push(`/review/${r.id}`)}
+                        className={`cursor-pointer border-b border-white/5 transition-colors hover:bg-white/5 ${isSelected ? "bg-purple-500/10" : ""}`}
+                        onClick={() => handleRowClick(r)}
                       >
+                        {compareMode && (
+                          <td className="py-2.5 pr-2" onClick={(e) => e.stopPropagation()}>
+                            {r.status === "done" ? (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={!canSelect}
+                                onChange={() => toggleSelection(r.id)}
+                                className="h-3.5 w-3.5 cursor-pointer rounded border-white/20 bg-white/5 accent-purple-500"
+                              />
+                            ) : (
+                              <span className="inline-block h-3.5 w-3.5" />
+                            )}
+                          </td>
+                        )}
                         <td className="py-2.5 pr-4 text-xs text-white/50">
                           {new Date(r.createdAt).toLocaleString()}
                         </td>
@@ -269,10 +328,32 @@ export default function ReviewsPage() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+
+              {/* Compare mode bar */}
+              {compareMode && (
+                <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4">
+                  <p className="text-xs text-white/40">
+                    {selectedIds.length === 0
+                      ? "Select 2 completed reviews to compare"
+                      : selectedIds.length === 1
+                        ? "Select 1 more review"
+                        : "Ready to compare"}
+                  </p>
+                  {selectedIds.length === 2 && (
+                    <Link href={`/reviews/compare?a=${selectedIds[0]}&b=${selectedIds[1]}`}>
+                      <Button className="bg-purple-600 text-white hover:bg-purple-500">
+                        <GitCompareArrows className="mr-2 h-4 w-4" />
+                        Compare
+                      </Button>
+                    </Link>
+                  )}
+                </div>
+              )}
 
               {/* Pagination */}
               {totalPages > 1 && (
