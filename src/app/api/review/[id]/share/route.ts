@@ -1,16 +1,32 @@
+import { createHash } from "node:crypto";
 import { requireAuth } from "@/lib/auth/helpers";
 import { isAvailable, getReviewById, shareReview, unshareReview } from "@/lib/db";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Duration label -> milliseconds (null = never expires) */
+const EXPIRATION_DURATIONS: Record<string, number | null> = {
+  "1h": 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "1w": 7 * 24 * 60 * 60 * 1000,
+  never: null,
+};
+
+function hashPassword(password: string): string {
+  return createHash("sha256").update(password).digest("hex");
+}
 
 /**
  * POST /api/review/[id]/share — Generate a share link for a completed review.
  *
  * Requires ownership (or admin). Returns 409 if the review is not done yet.
  * Idempotent: returns the existing share token if already shared.
+ *
+ * Optional JSON body:
+ *   { expiration?: "1h" | "1d" | "1w" | "never", password?: string }
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -50,11 +66,39 @@ export async function POST(
     );
   }
 
-  const shareToken = await shareReview(id);
+  // Parse optional body for expiration and password
+  let expiration: string | undefined;
+  let password: string | undefined;
+  try {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const body = await request.json();
+      expiration = body.expiration;
+      password = body.password;
+    }
+  } catch {
+    // Ignore parse errors — body is optional
+  }
+
+  // Compute expiration date
+  let expiresAt: Date | null = null;
+  if (expiration && expiration in EXPIRATION_DURATIONS) {
+    const ms = EXPIRATION_DURATIONS[expiration];
+    if (ms !== null) {
+      expiresAt = new Date(Date.now() + ms);
+    }
+  }
+
+  // Hash password if provided
+  const passwordHash = password ? hashPassword(password) : null;
+
+  const result = await shareReview(id, { expiresAt, passwordHash });
 
   return Response.json({
-    shareToken,
-    shareUrl: `/shared/${shareToken}`,
+    shareToken: result.token,
+    shareUrl: `/shared/${result.token}`,
+    expiresAt: result.expiresAt,
+    hasPassword: passwordHash !== null,
   });
 }
 

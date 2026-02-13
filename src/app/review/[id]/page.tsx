@@ -49,7 +49,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} />;
     }
 
     if (review?.status === "error") {
@@ -120,7 +120,7 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; reviewMode?: ReviewMode; initialAnnotations?: Annotations; isOwner?: boolean }) {
+function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; initialAnnotations?: Annotations; isOwner?: boolean }) {
   const { data: session } = useSession();
   const role = session?.user?.role;
   const isSupervisor = role === "admin" || role === "phd";
@@ -203,7 +203,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, ini
               {fileName && <p className="text-xs text-white/40">{fileName}</p>}
             </div>
             <ReviewAnotherButton size="sm" />
-            <ShareButton reviewId={reviewId} initialShareToken={shareToken} />
+            <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
             <PrintButton />
             <CopyMarkdownButton feedback={feedback} fileName={fileName} />
           </div>
