@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth/helpers";
 import { isAvailable, queryReviews, getReviewCount, queryReviewsGrouped, getPinnedReviewIds } from "@/lib/db";
 
 const MAX_PAGE = 1000;
-const ALLOWED_SORT = new Set(["created_at", "file_name", "provider", "status", "user_name"]);
+const ALLOWED_SORT = new Set(["created_at", "file_name", "provider", "status", "user_name", "workflow_status"]);
 const MAX_SEARCH_LEN = 200;
 
 /**

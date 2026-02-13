@@ -56,6 +56,47 @@ export function normalizeFindingCategory(raw: string | undefined): FindingCatego
   return "other";
 }
 
+// ── Workflow status ─────────────────────────────────────────────────────
+export const WORKFLOW_STATUSES = [
+  "draft",
+  "submitted",
+  "under_review",
+  "approved",
+  "needs_revision",
+] as const;
+
+export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
+
+export interface WorkflowStatusMeta {
+  label: string;
+  bgClass: string;
+  textClass: string;
+}
+
+/** Display metadata for each workflow status. */
+export const WORKFLOW_STATUS_META: Record<WorkflowStatus, WorkflowStatusMeta> = {
+  draft:          { label: "Draft",          bgClass: "bg-slate-500/15",  textClass: "text-slate-400" },
+  submitted:      { label: "Submitted",      bgClass: "bg-blue-500/15",   textClass: "text-blue-400" },
+  under_review:   { label: "Under Review",   bgClass: "bg-amber-500/15",  textClass: "text-amber-400" },
+  approved:       { label: "Approved",        bgClass: "bg-green-500/15",  textClass: "text-green-400" },
+  needs_revision: { label: "Needs Revision", bgClass: "bg-red-500/15",    textClass: "text-red-400" },
+};
+
+/**
+ * Valid workflow status transitions, keyed by current status.
+ * draft -> submitted
+ * submitted -> under_review
+ * under_review -> approved | needs_revision
+ * needs_revision -> submitted
+ */
+export const WORKFLOW_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
+  draft:          ["submitted"],
+  submitted:      ["under_review"],
+  under_review:   ["approved", "needs_revision"],
+  approved:       [],
+  needs_revision: ["submitted"],
+};
+
 export const REVIEW_MODES = ["proposal", "thesis"] as const;
 export type ReviewMode = (typeof REVIEW_MODES)[number];
 
