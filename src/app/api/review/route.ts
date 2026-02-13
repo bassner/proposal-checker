@@ -6,7 +6,7 @@ import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
 import { insertReview, completeReview, failReview } from "@/lib/db";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
-import { checkRateLimit, REVIEW_RATE_LIMIT } from "@/lib/rate-limiter";
+import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
 
 /**
  * Sanitize error for client/DB to avoid leaking internal details.
@@ -43,22 +43,25 @@ export async function POST(request: NextRequest) {
     return response as Response;
   }
 
-  // Rate limiting: prevent abuse (20 reviews per user per hour)
-  const rateLimitResult = checkRateLimit(session.user.id, REVIEW_RATE_LIMIT);
-  if (!rateLimitResult.allowed) {
-    return new Response(
-      JSON.stringify({
-        error: "Rate limit exceeded (20 reviews per hour)",
-        retryAfter: rateLimitResult.retryAfter,
-      }),
-      {
-        status: 429,
-        headers: {
-          "Content-Type": "application/json",
-          "Retry-After": String(rateLimitResult.retryAfter ?? 60),
-        },
-      }
-    );
+  // Rate limiting: admins are exempt; all other users are subject to sliding window limits
+  if (session.user.role !== "admin") {
+    const rateLimitResult = checkRateLimit(session.user.id, REVIEW_RATE_LIMIT);
+    if (!rateLimitResult.allowed) {
+      const windowText = formatWindow(REVIEW_RATE_LIMIT.windowMs);
+      return new Response(
+        JSON.stringify({
+          error: `Rate limit exceeded (${REVIEW_RATE_LIMIT.perUserLimit} reviews per ${windowText})`,
+          retryAfter: rateLimitResult.retryAfter,
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": String(rateLimitResult.retryAfter ?? 60),
+          },
+        }
+      );
+    }
   }
 
   const formData = await request.formData();
