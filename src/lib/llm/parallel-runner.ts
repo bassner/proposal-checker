@@ -5,6 +5,7 @@ import type { CheckGroupResult } from "@/types/review";
 import { runCheckGroup } from "./check-runner";
 import type { TokenUsage } from "./structured-invoke";
 import type { RenderedPage } from "@/lib/pdf/render";
+import { insertCheckPerformance } from "@/lib/db";
 
 const CHECK_TIMEOUT_MS = 600_000;
 const MAX_RETRIES = 2;
@@ -19,6 +20,8 @@ interface ParallelRunnerOptions {
   /** Pre-built prompts with guidelines appended. If not provided, check-runner uses static prompts. */
   prompts?: Record<string, string>;
   maxConcurrency?: number;
+  /** Review ID for persisting per-check performance metrics. */
+  reviewId?: string;
   signal?: AbortSignal;
   onCheckStart?: (groupId: CheckGroupId) => void;
   onCheckComplete?: (groupId: CheckGroupId, findingCount: number, usage: TokenUsage | null) => void;
@@ -55,6 +58,7 @@ export async function runAllChecks(
     checkGroups,
     prompts,
     maxConcurrency,
+    reviewId,
     onCheckStart,
     onCheckComplete,
     onCheckFailed,
@@ -73,6 +77,7 @@ export async function runAllChecks(
       onCheckStart?.(group.id);
 
       let lastError: string = "Unknown error";
+      const groupStartTime = Date.now();
 
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
@@ -108,6 +113,20 @@ export async function runAllChecks(
           pipelineSignal?.removeEventListener("abort", onPipelineAbort);
           onCheckComplete?.(group.id, result.findings.length, result.usage);
 
+          // Record performance metrics (fire-and-forget)
+          if (reviewId) {
+            const durationMs = Date.now() - groupStartTime;
+            insertCheckPerformance({
+              reviewId,
+              checkGroup: group.id,
+              durationMs,
+              promptTokens: result.usage?.inputTokens ?? 0,
+              completionTokens: result.usage?.outputTokens ?? 0,
+              reasoningTokens: result.usage?.reasoningTokens ?? 0,
+              status: "done",
+            }).catch((err) => console.error(`[parallel] Failed to record metrics for ${group.id}:`, err));
+          }
+
           return {
             groupId: group.id,
             findings: result.findings,
@@ -128,6 +147,21 @@ export async function runAllChecks(
       }
 
       onCheckFailed?.(group.id, lastError);
+
+      // Record failed check performance metrics (fire-and-forget)
+      if (reviewId) {
+        const durationMs = Date.now() - groupStartTime;
+        insertCheckPerformance({
+          reviewId,
+          checkGroup: group.id,
+          durationMs,
+          promptTokens: 0,
+          completionTokens: 0,
+          reasoningTokens: 0,
+          status: "error",
+        }).catch((err) => console.error(`[parallel] Failed to record error metrics for ${group.id}:`, err));
+      }
+
       return {
         groupId: group.id,
         findings: [],

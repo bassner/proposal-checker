@@ -146,6 +146,24 @@ async function ensureSchema(): Promise<void> {
         created_by TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      -- Check group performance metrics
+      CREATE TABLE IF NOT EXISTS check_performance (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL,
+        check_group TEXT NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        completion_tokens INTEGER NOT NULL DEFAULT 0,
+        reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL CHECK (status IN ('done', 'error')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_check_performance_group
+        ON check_performance(check_group, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_check_performance_review
+        ON check_performance(review_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -1275,6 +1293,77 @@ export async function deleteReviewTemplate(id: string): Promise<boolean> {
   await ensureSchema();
   const result = await pool.query("DELETE FROM review_templates WHERE id = $1", [id]);
   return (result.rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Check performance metrics
+// ---------------------------------------------------------------------------
+
+export async function insertCheckPerformance(entry: {
+  reviewId: string;
+  checkGroup: string;
+  durationMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  status: "done" | "error";
+}): Promise<void> {
+  if (!pool) return;
+  await ensureSchema();
+  await pool.query(
+    `INSERT INTO check_performance (review_id, check_group, duration_ms, prompt_tokens, completion_tokens, reasoning_tokens, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [entry.reviewId, entry.checkGroup, entry.durationMs, entry.promptTokens, entry.completionTokens, entry.reasoningTokens, entry.status]
+  );
+}
+
+export interface CheckGroupMetrics {
+  checkGroup: string;
+  avgDurationMs: number;
+  avgPromptTokens: number;
+  avgCompletionTokens: number;
+  avgReasoningTokens: number;
+  totalRuns: number;
+  errorCount: number;
+  failureRate: number;
+}
+
+/**
+ * Aggregate check group performance metrics.
+ * Returns per-group averages for duration, tokens, and failure rate.
+ */
+export async function getCheckGroupMetrics(): Promise<CheckGroupMetrics[] | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(`
+    SELECT
+      check_group,
+      ROUND(AVG(duration_ms)) AS avg_duration_ms,
+      ROUND(AVG(prompt_tokens)) AS avg_prompt_tokens,
+      ROUND(AVG(completion_tokens)) AS avg_completion_tokens,
+      ROUND(AVG(reasoning_tokens)) AS avg_reasoning_tokens,
+      COUNT(*) AS total_runs,
+      COUNT(*) FILTER (WHERE status = 'error') AS error_count
+    FROM check_performance
+    GROUP BY check_group
+    ORDER BY check_group
+  `);
+
+  return result.rows.map((row) => {
+    const total = Number(row.total_runs);
+    const errors = Number(row.error_count);
+    return {
+      checkGroup: row.check_group as string,
+      avgDurationMs: Number(row.avg_duration_ms),
+      avgPromptTokens: Number(row.avg_prompt_tokens),
+      avgCompletionTokens: Number(row.avg_completion_tokens),
+      avgReasoningTokens: Number(row.avg_reasoning_tokens),
+      totalRuns: total,
+      errorCount: errors,
+      failureRate: total > 0 ? Math.round((errors / total) * 1000) / 10 : 0,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

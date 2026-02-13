@@ -275,7 +275,7 @@ export async function POST(request: NextRequest) {
         })
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, selectedGroups);
+  }, selectedGroups, sessionId);
 
   return new Response(JSON.stringify({ id: sessionId }), {
     status: 202,
