@@ -131,7 +131,8 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
 
   useEffect(() => {
     if (focused && cardRef.current) {
-      cardRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      cardRef.current.scrollIntoView({ behavior: prefersReducedMotion ? "auto" : "smooth", block: "nearest" });
     }
   }, [focused]);
 
