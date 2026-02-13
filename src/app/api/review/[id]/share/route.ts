@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { requireAuth } from "@/lib/auth/helpers";
 import { isAvailable, getReviewById, shareReview, unshareReview } from "@/lib/db";
+import { hashSharePassword } from "@/lib/share-password";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -11,10 +11,6 @@ const EXPIRATION_DURATIONS: Record<string, number | null> = {
   "1w": 7 * 24 * 60 * 60 * 1000,
   never: null,
 };
-
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
-}
 
 /**
  * POST /api/review/[id]/share — Generate a share link for a completed review.
@@ -89,8 +85,8 @@ export async function POST(
     }
   }
 
-  // Hash password if provided
-  const passwordHash = password ? hashPassword(password) : null;
+  // Hash password with PBKDF2 if provided (per-link random salt, versioned format)
+  const passwordHash = password ? await hashSharePassword(password) : null;
 
   const result = await shareReview(id, { expiresAt, passwordHash });
 

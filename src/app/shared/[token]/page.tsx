@@ -39,13 +39,24 @@ export default function SharedReviewPage() {
     setPasswordError(null);
 
     try {
-      const url = pwd
-        ? `/api/shared/${token}?password=${encodeURIComponent(pwd)}`
-        : `/api/shared/${token}`;
-      const res = await fetch(url);
+      // If a password is provided, POST to /verify; otherwise GET the shared review
+      const res = pwd
+        ? await fetch(`/api/shared/${token}/verify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: pwd }),
+          })
+        : await fetch(`/api/shared/${token}`);
 
       if (res.status === 410) {
         setExpired(true);
+        setLoading(false);
+        return;
+      }
+
+      if (res.status === 429) {
+        const body = await res.json().catch(() => ({}));
+        setPasswordError(body.error || "Too many attempts. Try again later.");
         setLoading(false);
         return;
       }
