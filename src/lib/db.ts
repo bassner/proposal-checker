@@ -86,6 +86,11 @@ async function ensureSchema(): Promise<void> {
         ('phd', ARRAY['azure', 'ollama']::TEXT[]),
         ('student', ARRAY['ollama']::TEXT[])
       ON CONFLICT (role) DO NOTHING;
+
+      -- Share links: add share_token column (safe for deployed DB)
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_token TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_share_token
+        ON reviews(share_token) WHERE share_token IS NOT NULL;
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -129,6 +134,7 @@ export interface ReviewRow {
   completedAt: string | null;
   feedback: unknown | null;
   errorMessage: string | null;
+  shareToken: string | null;
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
@@ -145,6 +151,7 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     completedAt: row.completed_at ? (row.completed_at as Date).toISOString() : null,
     feedback: row.feedback ?? null,
     errorMessage: (row.error_message as string) ?? null,
+    shareToken: (row.share_token as string) ?? null,
   };
 }
 
@@ -314,6 +321,63 @@ export async function getReviewCount(userId?: string, search?: string): Promise<
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const result = await pool.query(`SELECT COUNT(*) FROM reviews ${where}`, params);
   return parseInt(result.rows[0].count, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Share link operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a share token for a review. Idempotent: if already shared, returns
+ * the existing token. Retries on unique-violation (23505) for collision safety.
+ */
+export async function shareReview(id: string): Promise<string> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const token = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+    try {
+      const result = await pool.query(
+        `UPDATE reviews
+         SET share_token = COALESCE(share_token, $2),
+             updated_at = CASE WHEN share_token IS NULL THEN NOW() ELSE updated_at END
+         WHERE id = $1
+         RETURNING share_token`,
+        [id, token]
+      );
+      if (result.rowCount === 0) throw new Error("Review not found");
+      return result.rows[0].share_token as string;
+    } catch (err: unknown) {
+      const pgErr = err as { code?: string };
+      if (pgErr.code === "23505" && attempt < MAX_RETRIES - 1) continue; // unique violation — retry
+      throw err;
+    }
+  }
+  throw new Error("Failed to generate unique share token");
+}
+
+/** Remove the share token from a review, revoking shared access. */
+export async function unshareReview(id: string): Promise<void> {
+  if (!pool) return;
+  await ensureSchema();
+  await pool.query(
+    "UPDATE reviews SET share_token = NULL, updated_at = NOW() WHERE id = $1",
+    [id]
+  );
+}
+
+/** Look up a review by its share token (public access path). */
+export async function getReviewByShareToken(token: string): Promise<ReviewRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM reviews WHERE share_token = $1",
+    [token]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToReview(result.rows[0]);
 }
 
 // ---------------------------------------------------------------------------

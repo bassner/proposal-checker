@@ -177,6 +177,7 @@ export interface CompletedReview {
   completedAt: string | null;
   feedback: MergedFeedback | null;
   errorMessage: string | null;
+  shareToken: string | null;
   isStale?: boolean; // Computed when fetched for running reviews
 }
 

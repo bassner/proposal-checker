@@ -53,5 +53,6 @@ export async function GET(
     completedAt: review.completedAt,
     feedback: review.feedback,
     errorMessage: review.errorMessage,
+    shareToken: review.shareToken,
   });
 }
