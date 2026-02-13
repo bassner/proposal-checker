@@ -738,6 +738,86 @@ export async function updateRoleProviders(
 }
 
 // ---------------------------------------------------------------------------
+// Failed reviews
+// ---------------------------------------------------------------------------
+
+export interface FailedReviewRow {
+  id: string;
+  userName: string;
+  userEmail: string;
+  fileName: string | null;
+  provider: string;
+  errorMessage: string | null;
+  retryCount: number;
+  createdAt: string;
+}
+
+export interface FailedReviewsData {
+  reviews: FailedReviewRow[];
+  totalFailed: number;
+  totalReviews: number;
+  failureRate: number;
+  commonErrors: { error: string; count: number }[];
+}
+
+/**
+ * Fetch recent failed reviews with summary statistics.
+ * Returns null if the pool is absent.
+ */
+export async function getFailedReviews(): Promise<FailedReviewsData | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // Run all queries in parallel
+  const [failedResult, countsResult, errorsResult] = await Promise.all([
+    pool.query(
+      `SELECT id, user_name, user_email, file_name, provider, error_message, retry_count, created_at
+       FROM reviews
+       WHERE status = 'error'
+       ORDER BY created_at DESC
+       LIMIT 50`
+    ),
+    pool.query(
+      `SELECT
+         COUNT(*) AS total,
+         COUNT(*) FILTER (WHERE status = 'error') AS failed
+       FROM reviews`
+    ),
+    pool.query(
+      `SELECT error_message, COUNT(*) AS cnt
+       FROM reviews
+       WHERE status = 'error' AND error_message IS NOT NULL
+       GROUP BY error_message
+       ORDER BY cnt DESC
+       LIMIT 5`
+    ),
+  ]);
+
+  const total = Number(countsResult.rows[0].total);
+  const failed = Number(countsResult.rows[0].failed);
+
+  return {
+    reviews: failedResult.rows.map((row) => ({
+      id: row.id as string,
+      userName: row.user_name as string,
+      userEmail: row.user_email as string,
+      fileName: (row.file_name as string) ?? null,
+      provider: row.provider as string,
+      errorMessage: (row.error_message as string) ?? null,
+      retryCount: Number(row.retry_count ?? 0),
+      createdAt: (row.created_at as Date).toISOString(),
+    })),
+    totalFailed: failed,
+    totalReviews: total,
+    failureRate: total > 0 ? Math.round((failed / total) * 1000) / 10 : 0,
+    commonErrors: errorsResult.rows.map((row) => ({
+      error: row.error_message as string,
+      count: Number(row.cnt),
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Analytics
 // ---------------------------------------------------------------------------
 
