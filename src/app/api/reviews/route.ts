@@ -60,9 +60,9 @@ export async function GET(request: NextRequest) {
     getReviewCount(userId, search),
   ]);
 
-  // Strip shareToken and annotations from list responses (not needed, potentially large)
+  // Strip sensitive/heavy fields from list responses
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const sanitized = reviews.map(({ shareToken, annotations, ...rest }) => rest);
+  const sanitized = reviews.map(({ shareToken, sharePasswordHash, annotations, ...rest }) => rest);
 
   return Response.json({ reviews: sanitized, total, page, limit });
 }

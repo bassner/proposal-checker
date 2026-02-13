@@ -508,7 +508,7 @@ export async function unshareReview(id: string): Promise<void> {
   );
 }
 
-/** Look up a review by its share token (public access path). */
+/** Look up a review by its share token (internal use — includes password hash). */
 export async function getReviewByShareToken(token: string): Promise<ReviewRow | null> {
   if (!pool) return null;
   await ensureSchema();
@@ -518,6 +518,78 @@ export async function getReviewByShareToken(token: string): Promise<ReviewRow | 
   );
   if (result.rows.length === 0) return null;
   return rowToReview(result.rows[0]);
+}
+
+/** Lightweight share link metadata (never exposes password hash or feedback). */
+export interface SharedReviewMeta {
+  hasPassword: boolean;
+  expired: boolean;
+}
+
+/**
+ * Check if a share token exists and get its metadata.
+ * Uses a narrow SELECT to avoid returning the password hash or heavy columns.
+ */
+export async function getSharedReviewMeta(token: string): Promise<SharedReviewMeta | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT
+       share_password_hash IS NOT NULL AS has_password,
+       CASE WHEN share_expires_at IS NOT NULL AND share_expires_at < NOW() THEN TRUE ELSE FALSE END AS expired
+     FROM reviews
+     WHERE share_token = $1`,
+    [token]
+  );
+  if (result.rows.length === 0) return null;
+  return {
+    hasPassword: result.rows[0].has_password as boolean,
+    expired: result.rows[0].expired as boolean,
+  };
+}
+
+/** Safe shared review projection (no password hash, no internal fields). */
+export interface SharedReviewData {
+  id: string;
+  status: string;
+  provider: string;
+  reviewMode: string;
+  fileName: string | null;
+  createdAt: string;
+  feedback: unknown | null;
+  userName: string;
+  annotations: Annotations;
+}
+
+/**
+ * Fetch full review data for a shared link — excludes password hash and other
+ * sensitive/internal columns. Enforces active (non-expired) token in the query.
+ */
+export async function getSharedReviewFull(token: string): Promise<SharedReviewData | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT id, status, provider, review_mode, file_name, created_at,
+            feedback, user_name, annotations
+     FROM reviews
+     WHERE share_token = $1
+       AND (share_expires_at IS NULL OR share_expires_at > NOW())`,
+    [token]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const rawMode = row.review_mode as string | null;
+  return {
+    id: row.id as string,
+    status: row.status as string,
+    provider: row.provider as string,
+    reviewMode: rawMode === "thesis" ? "thesis" : "proposal",
+    fileName: (row.file_name as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+    feedback: row.feedback ?? null,
+    userName: row.user_name as string,
+    annotations: (row.annotations as Annotations) ?? {},
+  };
 }
 
 // ---------------------------------------------------------------------------
