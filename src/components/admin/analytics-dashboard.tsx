@@ -9,7 +9,11 @@ import {
   CheckCircle,
   XCircle,
   Clock,
+  AlertOctagon,
+  AlertTriangle,
+  Lightbulb,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 interface Props {
   initialData: AnalyticsData | null;
@@ -68,6 +72,12 @@ export function AnalyticsDashboard({ initialData }: Props) {
     major: "bg-orange-500",
     minor: "bg-yellow-500",
     suggestion: "bg-blue-500",
+  };
+  const severityIcons: Record<string, LucideIcon> = {
+    critical: AlertOctagon,
+    major: AlertTriangle,
+    minor: AlertCircle,
+    suggestion: Lightbulb,
   };
   const sortedSeverity = severityOrder
     .map((s) => data.severityAvg.find((r) => r.severity === s))
@@ -166,9 +176,14 @@ export function AnalyticsDashboard({ initialData }: Props) {
         <div>
           <h3 className="mb-2 text-xs font-medium text-white/40">Avg Findings per Review</h3>
           <div className="space-y-1.5">
-            {sortedSeverity.map((s) => (
+            {sortedSeverity.map((s) => {
+              const SevIcon = severityIcons[s.severity];
+              return (
               <div key={s.severity} className="flex items-center gap-2">
-                <span className="w-16 text-xs text-white/60 capitalize">{s.severity}</span>
+                <span className="flex w-20 items-center gap-1 text-xs text-white/60 capitalize">
+                  {SevIcon && <SevIcon className="h-3 w-3 shrink-0" aria-hidden="true" />}
+                  {s.severity}
+                </span>
                 <div className="flex-1 overflow-hidden rounded-full bg-white/5 h-2">
                   <div
                     className={`h-full rounded-full ${severityColors[s.severity]}`}
@@ -177,7 +192,8 @@ export function AnalyticsDashboard({ initialData }: Props) {
                 </div>
                 <span className="w-8 text-right text-xs text-white/50">{s.avgCount}</span>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
