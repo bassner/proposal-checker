@@ -25,6 +25,10 @@ export const findingSchema = z.object({
   locations: z
     .array(sourceLocationSchema)
     .describe("Source locations in the proposal where this issue occurs. Empty array for structural absences."),
+  previouslyFlagged: z
+    .boolean()
+    .optional()
+    .describe("Set to true if this issue was also present in the previous version of the document. Only set when reviewing a revised document."),
 });
 
 export const checkGroupOutputSchema = z.object({

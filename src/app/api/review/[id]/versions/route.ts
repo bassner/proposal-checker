@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/auth/helpers";
+import { requireAuth, requireRole, canAccessReview } from "@/lib/auth/helpers";
 import {
   isAvailable,
   getReviewById,
@@ -41,9 +41,8 @@ export async function GET(
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
-  // Access check: owner, admin, or phd
-  const role = session.user.role;
-  if (review.userId !== session.user.id && role !== "admin" && role !== "phd") {
+  // Access check via canAccessReview: admin, owner, assigned student, or assigned supervisor
+  if (!canAccessReview(session, review)) {
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
@@ -52,17 +51,18 @@ export async function GET(
     return Response.json({ groupId: null, versions: [] });
   }
 
-  // Enrich versions with review metadata
+  // Enrich versions with review metadata (use reviews.created_at for accurate dates)
   const enriched = await Promise.all(
     group.versions.map(async (v) => {
       const r = await getReviewById(v.reviewId);
       return {
         reviewId: v.reviewId,
         versionNumber: v.versionNumber,
-        createdAt: v.createdAt,
+        createdAt: r?.createdAt ?? v.createdAt,
         fileName: r?.fileName ?? null,
         status: r?.status ?? "unknown",
         findingCount: countFindings(r),
+        overallAssessment: getAssessment(r),
       };
     })
   );
@@ -84,7 +84,7 @@ export async function POST(
 
   let session;
   try {
-    session = await requireAuth();
+    session = await requireRole("admin");
   } catch (response) {
     return response as Response;
   }
@@ -102,9 +102,8 @@ export async function POST(
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
-  // Access check: owner, admin, or phd
-  const role = session.user.role;
-  if (review.userId !== session.user.id && role !== "admin" && role !== "phd") {
+  // Access check (admin already required above, but canAccessReview covers edge cases)
+  if (!canAccessReview(session, review)) {
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
@@ -129,7 +128,7 @@ export async function POST(
   if (!linkedReview) {
     return Response.json({ error: "Linked review not found" }, { status: 404 });
   }
-  if (linkedReview.userId !== session.user.id && role !== "admin" && role !== "phd") {
+  if (!canAccessReview(session, linkedReview)) {
     return Response.json({ error: "Linked review not found" }, { status: 404 });
   }
 
@@ -167,10 +166,11 @@ export async function POST(
       return {
         reviewId: v.reviewId,
         versionNumber: v.versionNumber,
-        createdAt: v.createdAt,
+        createdAt: r?.createdAt ?? v.createdAt,
         fileName: r?.fileName ?? null,
         status: r?.status ?? "unknown",
         findingCount: countFindings(r),
+        overallAssessment: getAssessment(r),
       };
     })
   );
@@ -207,9 +207,8 @@ export async function DELETE(
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
-  // Access check: owner, admin, or phd
-  const role = session.user.role;
-  if (review.userId !== session.user.id && role !== "admin" && role !== "phd") {
+  // Access check via canAccessReview: admin, owner, assigned student, or assigned supervisor
+  if (!canAccessReview(session, review)) {
     return Response.json({ error: "Review not found" }, { status: 404 });
   }
 
@@ -222,4 +221,11 @@ function countFindings(review: ReviewRow | null): number {
   if (!review?.feedback) return 0;
   const fb = review.feedback as { findings?: unknown[] };
   return Array.isArray(fb.findings) ? fb.findings.length : 0;
+}
+
+/** Extract overall assessment from a review's feedback JSON. */
+function getAssessment(review: ReviewRow | null): string | null {
+  if (!review?.feedback) return null;
+  const fb = review.feedback as { overallAssessment?: string };
+  return fb.overallAssessment ?? null;
 }

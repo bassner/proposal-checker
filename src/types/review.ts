@@ -176,6 +176,8 @@ export interface Finding {
   manual?: boolean;
   /** Display name of the supervisor who added this finding. */
   addedBy?: string;
+  /** When true, this finding was also present in the previous version of the document. */
+  previouslyFlagged?: boolean;
 }
 
 export interface CheckGroupResult {

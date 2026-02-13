@@ -95,9 +95,9 @@ export function useReview() {
           return null;
         }
 
-        const { id } = await response.json();
+        const { id, duplicate } = await response.json();
         // Don't reset isUploading on success — page navigates away
-        return id as string;
+        return (duplicate ? `${id}|duplicate` : id) as string;
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "An unknown error occurred"

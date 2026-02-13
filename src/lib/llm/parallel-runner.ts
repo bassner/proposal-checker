@@ -1,7 +1,8 @@
 import pLimit from "p-limit";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { CheckGroupId, CheckGroupMeta, LLMPhase } from "@/types/review";
+import type { CheckGroupId, CheckGroupMeta, Finding, LLMPhase } from "@/types/review";
 import type { CheckGroupResult } from "@/types/review";
+import { normalizeFindingCategory } from "@/types/review";
 import { runCheckGroup } from "./check-runner";
 import type { TokenUsage } from "./structured-invoke";
 import type { RenderedPage } from "@/lib/pdf/render";
@@ -10,6 +11,24 @@ import { insertCheckPerformance } from "@/lib/db";
 const CHECK_TIMEOUT_MS = 600_000;
 const MAX_RETRIES = 2;
 const RETRY_BACKOFF_MS = 2_000;
+/** Max previous findings to pass to each check group. */
+const MAX_PREV_FINDINGS_PER_GROUP = 20;
+
+/** Map check group IDs to the finding categories they are responsible for. */
+const CHECK_GROUP_CATEGORIES: Record<string, string[]> = {
+  "structure": ["structure", "completeness"],
+  "problem-motivation-objectives": ["logic", "completeness"],
+  "bibliography": ["citation"],
+  "figures": ["figures"],
+  "writing-style": ["writing"],
+  "writing-structure": ["writing", "structure"],
+  "writing-formatting": ["formatting"],
+  "ai-transparency": ["completeness", "other"],
+  "schedule": ["completeness", "other"],
+  "related-work": ["citation", "completeness"],
+  "methodology": ["methodology"],
+  "evaluation": ["methodology", "completeness"],
+};
 
 interface ParallelRunnerOptions {
   model: BaseChatModel;
@@ -19,6 +38,8 @@ interface ParallelRunnerOptions {
   checkGroups: CheckGroupMeta[];
   /** Pre-built prompts with guidelines appended. If not provided, check-runner uses static prompts. */
   prompts?: Record<string, string>;
+  /** Findings from the previous version of this document. Filtered by category per check group. */
+  previousFindings?: Finding[];
   maxConcurrency?: number;
   /** Review ID for persisting per-check performance metrics. */
   reviewId?: string;
@@ -57,6 +78,7 @@ export async function runAllChecks(
     pageImages,
     checkGroups,
     prompts,
+    previousFindings,
     maxConcurrency,
     reviewId,
     onCheckStart,
@@ -94,12 +116,30 @@ export async function runAllChecks(
         pipelineSignal?.addEventListener("abort", onPipelineAbort, { once: true });
 
         try {
+          // Filter previous findings by category for this check group
+          let groupPrevFindings: Finding[] | undefined;
+          if (previousFindings && previousFindings.length > 0) {
+            const relevantCategories = new Set(CHECK_GROUP_CATEGORIES[group.id] ?? []);
+            const filtered = previousFindings.filter((f) =>
+              relevantCategories.has(normalizeFindingCategory(f.category))
+            );
+            // If no category-specific findings, pass nothing (avoid noisy irrelevant context)
+            const candidates = filtered;
+            // Truncate by severity (most severe first): critical > major > minor > suggestion
+            const severityOrder = { critical: 0, major: 1, minor: 2, suggestion: 3 };
+            const sorted = [...candidates].sort((a, b) =>
+              (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4)
+            );
+            groupPrevFindings = sorted.slice(0, MAX_PREV_FINDINGS_PER_GROUP);
+          }
+
           const result = await runCheckGroup({
             groupId: group.id,
             model,
             proposalText,
             pageImages,
             systemPrompt: prompts?.[group.id],
+            previousFindings: groupPrevFindings,
             signal: controller.signal,
             onToken: onCheckTokens
               ? (count, phase) => onCheckTokens(group.id, count, phase)

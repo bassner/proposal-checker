@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, getPreviousReviewsForFile } from "@/lib/db";
+import { isAvailable, getReviewById, getPreviousReviewsForFile, getPreviousVersionReviewId } from "@/lib/db";
 import { compareReviews } from "@/lib/review-improvement";
 import type { MergedFeedback } from "@/types/review";
 
@@ -45,7 +45,7 @@ export async function GET(
   }
 
   // Must be a completed review with feedback
-  if (review.status !== "done" || !review.feedback || !review.fileName) {
+  if (review.status !== "done" || !review.feedback) {
     return Response.json({ available: false });
   }
 
@@ -54,7 +54,29 @@ export async function GET(
     return Response.json({ available: false });
   }
 
-  // Find previous reviews of the same file by the same user
+  // Priority 1: Version chain lookup (more reliable than filename matching)
+  const prevVersionId = await getPreviousVersionReviewId(id);
+  if (prevVersionId) {
+    const prevReview = await getReviewById(prevVersionId);
+    if (prevReview) {
+      const prevFeedback = prevReview.feedback as MergedFeedback;
+      if (prevFeedback?.findings) {
+        const summary = compareReviews(
+          prevFeedback,
+          currentFeedback,
+          prevReview.createdAt,
+          prevReview.id
+        );
+        return Response.json({ available: true, ...summary });
+      }
+    }
+  }
+
+  // Priority 2: Fall back to filename matching (legacy compat for unlinked reviews)
+  if (!review.fileName) {
+    return Response.json({ available: false });
+  }
+
   const previousReviews = await getPreviousReviewsForFile(
     review.userId,
     review.fileName,

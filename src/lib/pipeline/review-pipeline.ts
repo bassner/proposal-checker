@@ -1,4 +1,4 @@
-import type { ProviderType, ReviewMode } from "@/types/review";
+import type { ProviderType, ReviewMode, Finding } from "@/types/review";
 import type { CheckGroupId, CheckGroupMeta, LLMPhase, MergedFeedback, FailedGroupInfo } from "@/types/review";
 import { getCheckGroups, ALL_CHECK_GROUP_META } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
@@ -52,7 +52,13 @@ export async function runReviewPipeline(
   mode: ReviewMode,
   callbacks: PipelineCallbacks,
   selectedGroups?: CheckGroupId[],
-  reviewId?: string
+  reviewId?: string,
+  options?: {
+    /** Findings from the previous version for diff-aware review. */
+    previousFindings?: Finding[];
+    /** Previous version's overall assessment. */
+    previousAssessment?: string;
+  }
 ): Promise<void> {
   const maxPages = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
 
@@ -120,6 +126,7 @@ export async function runReviewPipeline(
       pageImages,
       checkGroups,
       prompts,
+      previousFindings: options?.previousFindings,
       maxConcurrency,
       reviewId,
       signal: pipelineAbort.signal,
@@ -164,6 +171,8 @@ export async function runReviewPipeline(
       signal: pipelineAbort.signal,
       onToken: callbacks.onMergeTokens,
       onThinking: callbacks.onMergeThinking,
+      previousFindings: options?.previousFindings,
+      previousAssessment: options?.previousAssessment,
     });
 
     if (mergeUsage) {

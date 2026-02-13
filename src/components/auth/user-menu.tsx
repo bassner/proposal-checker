@@ -40,10 +40,10 @@ export function UserMenu({ onReplayTour }: UserMenuProps = {}) {
       <Link
         href="/reviews?mine=true"
         aria-label="My Reviews"
-        className="flex items-center justify-center size-10 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
+        className="flex items-center justify-center size-10 shrink-0 whitespace-nowrap rounded-lg border border-slate-200 bg-white text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
       >
         <ClipboardList className="h-3.5 w-3.5" />
-        <span className="hidden md:inline">My Reviews</span>
+        <span className="hidden md:inline">My&nbsp;Reviews</span>
       </Link>
       {isSupervisor && (
         <Link

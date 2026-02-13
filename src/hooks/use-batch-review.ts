@@ -10,6 +10,8 @@ export interface BatchFileEntry {
   status: BatchFileStatus;
   error?: string;
   reviewId?: string;
+  /** True if the upload matched an existing review (duplicate detection). */
+  duplicate?: boolean;
 }
 
 /**
@@ -94,10 +96,12 @@ export function useBatchReview() {
               )
             );
           } else {
-            const { id } = await response.json();
+            const data = await response.json();
+            const reviewId = data.id as string;
+            const isDuplicate = !!data.duplicate;
             setFiles((prev) =>
               prev.map((entry, idx) =>
-                idx === i ? { ...entry, status: "done", reviewId: id } : entry
+                idx === i ? { ...entry, status: "done", reviewId, ...(isDuplicate ? { duplicate: true } : {}) } : entry
               )
             );
             successCount++;

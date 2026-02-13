@@ -3,7 +3,7 @@ import { getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSessionWithId, emitEvent, setSessionStatus } from "@/lib/sessions";
-import { getReviewById, claimReviewForRetry, completeReview, failReview, logAuditEvent } from "@/lib/db";
+import { getReviewById, claimReviewForRetry, completeReview, failReview, logAuditEvent, generateRevisionSummary, getPreviousVersionReviewId } from "@/lib/db";
 import { readPdf } from "@/lib/uploads";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
@@ -204,6 +204,14 @@ export async function POST(
       send("done", {});
       setSessionStatus(id, "done", retryCount);
       completeReview(id, feedback, dbMeta, retryCount)
+        .then(async () => {
+          // Auto-generate revision summary if in a version group
+          const prevVersionId = await getPreviousVersionReviewId(id).catch(() => null);
+          if (prevVersionId) {
+            generateRevisionSummary(prevVersionId, id)
+              .catch((err) => console.error("[api] Revision summary generation failed:", err));
+          }
+        })
         .catch((err) => console.error("[api] DB complete failed:", err));
     },
     onError: (error) => {

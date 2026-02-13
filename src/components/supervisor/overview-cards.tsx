@@ -114,7 +114,7 @@ export function OverviewCards({ data }: { data: SupervisorOverview }) {
         }
         label="Needs Attention"
         value={data.reviewsNeedingAttention}
-        subtitle="Reviews with unresolved critical findings"
+        subtitle="Negative assessment + unresolved findings"
         accentClass="bg-red-50 dark:bg-red-500/20"
       />
     </div>

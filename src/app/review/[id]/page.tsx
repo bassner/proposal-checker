@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ReviewStepper } from "@/components/review-stepper";
 import { FeedbackList } from "@/components/feedback-list";
@@ -11,9 +11,9 @@ import { useReviewStream, useCompletedReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton, DownloadCsvButton, DownloadJsonButton } from "@/components/export-button";
-import { GraduationCap, RotateCcw, RefreshCw } from "lucide-react";
+import { GraduationCap, RotateCcw, RefreshCw, Upload, ChevronLeft, ChevronRight, Info } from "lucide-react";
 import Link from "next/link";
-import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState } from "@/types/review";
+import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState, ProviderType } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
 import { useComments } from "@/hooks/use-comments";
 import { useConflicts } from "@/hooks/use-conflicts";
@@ -24,6 +24,7 @@ import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
 import { FindingsHeatmap } from "@/components/findings-heatmap";
 import { ReviewTags } from "@/components/review-tags";
+import { UploadVersionModal } from "@/components/upload-version-modal";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -54,7 +55,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} supervisorName={review.supervisorName} studentName={review.studentName} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} supervisorName={review.supervisorName} studentName={review.studentName} provider={review.provider as ProviderType} />;
     }
 
     if (review?.status === "error") {
@@ -93,7 +94,7 @@ export default function ReviewPage() {
 
   // ── Live SSE: results view ──────────────────────────────────────────────
   if (hasResult) {
-    return <ResultsView feedback={state.result!} reviewId={id} reviewMode={state.mode ?? undefined} checkGroups={state.checkGroups} isOwner />;
+    return <ResultsView feedback={state.result!} reviewId={id} reviewMode={state.mode ?? undefined} checkGroups={state.checkGroups} isOwner provider={state.provider ?? undefined} />;
   }
 
   // ── Live SSE: processing / error view ───────────────────────────────────
@@ -126,12 +127,48 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback: initialFeedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner, supervisorName, studentName }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean; supervisorName?: string | null; studentName?: string | null }) {
+function ResultsView({ feedback: initialFeedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner, supervisorName, studentName, provider }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean; supervisorName?: string | null; studentName?: string | null; provider?: ProviderType }) {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const isDuplicate = searchParams.get("duplicate") === "true";
   const role = session?.user?.role;
   const isSupervisor = role === "admin" || role === "phd";
   const canAnnotate = isOwner !== false; // Owner can annotate (toggle status)
   const canComment = isSupervisor; // Admin/PhD can comment on any review
+
+  // Version info
+  const [versionInfo, setVersionInfo] = useState<{
+    groupId: string | null;
+    versions: { reviewId: string; versionNumber: number; createdAt: string; fileName: string | null; status: string; findingCount: number; overallAssessment: string | null }[];
+  } | null>(null);
+  const [uploadVersionOpen, setUploadVersionOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/review/${reviewId}/versions`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (!cancelled && data) setVersionInfo(data);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [reviewId]);
+
+  const currentVersion = versionInfo?.versions.find((v) => v.reviewId === reviewId);
+  const totalVersions = versionInfo?.versions.length ?? 0;
+  const isLatestVersion = currentVersion && totalVersions > 0
+    ? currentVersion.versionNumber === Math.max(...versionInfo!.versions.map((v) => v.versionNumber))
+    : true;
+  const latestDoneVersion = versionInfo?.versions.filter((v) => v.status === "done").sort((a, b) => b.versionNumber - a.versionNumber)[0];
+  const canUploadVersion = isOwner !== false || isSupervisor;
+  // Show button when: user has access AND (not in a version chain yet, OR is the latest version)
+  const showUploadButton = canUploadVersion && (isLatestVersion || !currentVersion);
+
+  // Find prev/next version for navigation (by sorted position, handles gaps from deleted versions)
+  const sortedVersions = [...(versionInfo?.versions ?? [])].sort((a, b) => a.versionNumber - b.versionNumber);
+  const currentIdx = sortedVersions.findIndex((v) => v.reviewId === reviewId);
+  const prevVersion = currentIdx > 0 ? sortedVersions[currentIdx - 1] : null;
+  const nextVersion = currentIdx >= 0 && currentIdx < sortedVersions.length - 1 ? sortedVersions[currentIdx + 1] : null;
 
   // Local feedback state — allows adding manual findings without full page reload
   const [feedback, setFeedback] = useState<MergedFeedback>(initialFeedback);
@@ -248,11 +285,52 @@ function ResultsView({ feedback: initialFeedback, fileName, reviewId, shareToken
               <UserMenu />
             </nav>
           </div>
+          {/* Duplicate banner */}
+          {isDuplicate && (
+            <div className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2">
+              <Info className="h-4 w-4 shrink-0 text-blue-400" />
+              <p className="text-xs text-blue-300">You already have a review of this document.</p>
+            </div>
+          )}
+          {/* Version indicator */}
+          {currentVersion && totalVersions > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-[10px] font-medium text-indigo-400">
+                v{currentVersion.versionNumber} of {totalVersions}
+              </span>
+              {prevVersion && (
+                <Link href={`/review/${prevVersion.reviewId}`} className="inline-flex items-center gap-1 text-[10px] text-white/40 hover:text-white/60 transition-colors">
+                  <ChevronLeft className="h-3 w-3" /> Previous version
+                </Link>
+              )}
+              {nextVersion && (
+                <Link href={`/review/${nextVersion.reviewId}`} className="inline-flex items-center gap-1 text-[10px] text-white/40 hover:text-white/60 transition-colors">
+                  Next version <ChevronRight className="h-3 w-3" />
+                </Link>
+              )}
+              {!isLatestVersion && latestDoneVersion && latestDoneVersion.reviewId !== reviewId && (
+                <Link href={`/review/${latestDoneVersion.reviewId}`} className="text-[10px] text-amber-400/70 hover:text-amber-400 transition-colors">
+                  A newer version exists → View latest
+                </Link>
+              )}
+            </div>
+          )}
           {/* Row 2: Tags */}
           <ReviewTags reviewId={reviewId} editable={isOwner !== false || role === "admin" || role === "phd"} />
           {/* Row 3: Action buttons */}
           <nav aria-label="Review actions" className="flex flex-wrap items-center gap-2">
             <ReviewAnotherButton size="sm" />
+            {showUploadButton && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setUploadVersionOpen(true)}
+                className="gap-1.5 border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 hover:text-indigo-300"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Upload Next Version
+              </Button>
+            )}
             <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
             <PrintButton />
             <CopyMarkdownButton feedback={feedback} fileName={fileName} />
@@ -295,6 +373,15 @@ function ResultsView({ feedback: initialFeedback, fileName, reviewId, shareToken
         )}
         <Footer />
       </div>
+      {/* Upload Version Modal */}
+      {uploadVersionOpen && (
+        <UploadVersionModal
+          open
+          onClose={() => setUploadVersionOpen(false)}
+          parentReviewId={reviewId}
+          parentProvider={provider ?? "azure"}
+        />
+      )}
     </div>
   );
 }

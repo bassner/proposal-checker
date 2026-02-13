@@ -124,6 +124,14 @@ async function ensureSchema(): Promise<void> {
       -- Soft delete support
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
+      -- Content hash for duplicate detection (SHA-256 hex digest)
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS content_hash TEXT;
+
+      CREATE INDEX IF NOT EXISTS idx_reviews_content_hash
+        ON reviews(content_hash) WHERE content_hash IS NOT NULL;
+
+      -- Note: idx_reviews_dup_detect created later (after student_id column exists)
+
       -- Notifications
       CREATE TABLE IF NOT EXISTS notifications (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -543,6 +551,11 @@ async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_reviews_student ON reviews(student_id, created_at DESC) WHERE student_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_reviews_unassigned ON reviews(created_at DESC) WHERE supervisor_id IS NULL AND student_id IS NULL AND deleted_at IS NULL;
 
+      -- Duplicate detection composite index (depends on student_id + content_hash columns above)
+      CREATE INDEX IF NOT EXISTS idx_reviews_dup_detect
+        ON reviews(content_hash, review_mode, COALESCE(student_id, user_id))
+        WHERE status = 'done' AND deleted_at IS NULL;
+
       -- Ensure supervisor_id and student_id are always set together (both null or both non-null)
       DO $$ BEGIN
         ALTER TABLE reviews ADD CONSTRAINT chk_supervisor_student_pair
@@ -659,6 +672,16 @@ async function ensureSchema(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Public helpers
 // ---------------------------------------------------------------------------
+
+/** Expose the raw pool for admin operations (e.g. migration endpoint). */
+export function getPool(): pg.Pool | null {
+  return pool;
+}
+
+/** Public wrapper for ensureSchema (for use in admin endpoints). */
+export async function ensureSchemaPublic(): Promise<void> {
+  return ensureSchema();
+}
 
 /**
  * Returns true if the database pool is available and healthy.
@@ -854,6 +877,7 @@ export interface ReviewRow {
   studentId: string | null;
   supervisorName: string | null;
   studentName: string | null;
+  contentHash: string | null;
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
@@ -885,6 +909,7 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     studentId: (row.student_id as string) ?? null,
     supervisorName: (row.supervisor_name as string) ?? null,
     studentName: (row.student_name as string) ?? null,
+    contentHash: (row.content_hash as string) ?? null,
   };
 }
 
@@ -904,14 +929,15 @@ export async function insertReview(review: {
   selectedGroups?: CheckGroupId[];
   supervisorId?: string;
   studentId?: string;
+  contentHash?: string;
 }): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id, content_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (id) DO NOTHING`,
-    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName, review.pdfPath ?? null, review.selectedGroups ? JSON.stringify(review.selectedGroups) : null, review.supervisorId ?? null, review.studentId ?? null]
+    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName, review.pdfPath ?? null, review.selectedGroups ? JSON.stringify(review.selectedGroups) : null, review.supervisorId ?? null, review.studentId ?? null, review.contentHash ?? null]
   );
 }
 
@@ -2613,28 +2639,27 @@ export async function getSupervisorOverview(supervisorId?: string): Promise<Supe
       FROM finding_rows
       GROUP BY review_id
     ),
-    reviews_with_critical AS (
-      SELECT DISTINCT fr.review_id
-      FROM finding_rows fr
-      LEFT JOIN reviews r ON r.id = fr.review_id
-      WHERE fr.finding->>'severity' = 'critical'
+    reviews_needing_attention AS (
+      SELECT c.id AS review_id
+      FROM completed c
+      JOIN reviews r ON r.id = c.id
+      WHERE r.feedback->>'overallAssessment' IN ('needs-work', 'acceptable')
         AND (
-          r.annotations IS NULL
-          OR NOT EXISTS (
-            SELECT 1 FROM jsonb_each(r.annotations) AS a(key, val)
-            WHERE a.val->>'status' IN ('dismissed', 'fixed')
-              AND EXISTS (
-                SELECT 1 FROM jsonb_array_elements(r.feedback->'findings') WITH ORDINALITY AS f(val, idx)
-                WHERE (idx - 1)::text = a.key
-                  AND f.val->>'severity' = 'critical'
-              )
-          )
+          -- Count total findings
+          jsonb_array_length(c.feedback->'findings') > 0
+          -- And not ALL findings are resolved (dismissed or fixed)
+          AND jsonb_array_length(c.feedback->'findings') > COALESCE(
+            (SELECT COUNT(*)
+             FROM jsonb_each(r.annotations) AS a(key, val)
+             WHERE a.val->>'status' IN ('dismissed', 'fixed')
+               AND a.key::int < jsonb_array_length(c.feedback->'findings')
+            ), 0)
         )
     )
     SELECT json_build_object(
       'totalReviews', (SELECT COUNT(*) FROM reviews WHERE deleted_at IS NULL ${supervisorFilter}),
       'avgFindings', (SELECT COALESCE(ROUND(AVG(finding_count), 1), 0) FROM review_finding_counts),
-      'reviewsNeedingAttention', (SELECT COUNT(*) FROM reviews_with_critical),
+      'reviewsNeedingAttention', (SELECT COUNT(*) FROM reviews_needing_attention),
       'severityDistribution', COALESCE(
         (SELECT json_agg(json_build_object('severity', severity, 'count', cnt) ORDER BY cnt DESC)
          FROM severity_counts),
@@ -3999,12 +4024,20 @@ export async function linkReviewVersion(
   const result = await pool.query(
     `INSERT INTO review_versions (group_id, review_id, version_number)
      VALUES ($1, $2, $3)
-     ON CONFLICT (review_id) DO UPDATE SET
-       group_id = $1,
-       version_number = $3
+     ON CONFLICT (review_id) DO NOTHING
      RETURNING *`,
     [gid, reviewId, nextVersion]
   );
+
+  // If RETURNING returned no rows, the review is already in a version group — fetch existing
+  if (result.rows.length === 0) {
+    const existing = await pool.query(
+      "SELECT * FROM review_versions WHERE review_id = $1",
+      [reviewId]
+    );
+    if (existing.rows.length === 0) throw new Error("Failed to link review version");
+    return rowToVersion(existing.rows[0]);
+  }
 
   return rowToVersion(result.rows[0]);
 }
@@ -4071,6 +4104,177 @@ export async function unlinkReviewVersion(reviewId: string): Promise<boolean> {
     [reviewId]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Find an existing completed review with the same content hash, review mode, and document owner.
+ * Used for duplicate detection — if found, we redirect to the existing review.
+ */
+export async function findDuplicateReview(
+  contentHash: string,
+  reviewMode: string,
+  documentOwnerId: string,
+): Promise<ReviewRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT r.*, su.name AS supervisor_name, st.name AS student_name
+     FROM reviews r
+     LEFT JOIN users su ON su.id = r.supervisor_id
+     LEFT JOIN users st ON st.id = r.student_id
+     WHERE r.content_hash = $1
+       AND r.review_mode = $2
+       AND COALESCE(r.student_id, r.user_id) = $3
+       AND r.status = 'done'
+       AND r.deleted_at IS NULL
+     ORDER BY r.created_at DESC
+     LIMIT 1`,
+    [contentHash, reviewMode, documentOwnerId]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToReview(result.rows[0]);
+}
+
+/**
+ * Create a new review that is linked as the next version in a parent review's version group.
+ * Uses row-level locking on the parent review to serialize concurrent version uploads.
+ * Strict INSERT-only (no reparenting via ON CONFLICT DO UPDATE).
+ */
+export async function createVersionedReview(
+  parentReviewId: string,
+  newReview: {
+    id: string;
+    userId: string;
+    userEmail: string;
+    userName: string;
+    provider: string;
+    reviewMode: ReviewMode;
+    fileName: string | null;
+    pdfPath: string | null;
+    selectedGroups: CheckGroupId[] | null;
+    supervisorId: string | null;
+    studentId: string | null;
+    contentHash: string | null;
+  }
+): Promise<{ versionNumber: number; groupId: string }> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Lock parent review row to serialize concurrent version uploads
+    const lockResult = await client.query(
+      "SELECT id, status FROM reviews WHERE id = $1 FOR UPDATE",
+      [parentReviewId]
+    );
+    if (lockResult.rows.length === 0) {
+      throw new Error("Parent review not found");
+    }
+    if (lockResult.rows[0].status !== "done") {
+      throw new Error("Parent review is not completed");
+    }
+
+    // Ensure parent is in a version group (create if needed)
+    let parentVersionResult = await client.query(
+      "SELECT group_id, version_number FROM review_versions WHERE review_id = $1",
+      [parentReviewId]
+    );
+
+    let groupId: string;
+    if (parentVersionResult.rows.length === 0) {
+      // Create new group with parent as v1
+      const uuidResult = await client.query("SELECT gen_random_uuid() AS id");
+      groupId = uuidResult.rows[0].id as string;
+      await client.query(
+        "INSERT INTO review_versions (group_id, review_id, version_number) VALUES ($1, $2, 1)",
+        [groupId, parentReviewId]
+      );
+      parentVersionResult = { rows: [{ group_id: groupId, version_number: 1 }] } as typeof parentVersionResult;
+    } else {
+      groupId = parentVersionResult.rows[0].group_id as string;
+    }
+
+    // Find max version number in group
+    const maxResult = await client.query(
+      "SELECT COALESCE(MAX(version_number), 0) AS max_ver FROM review_versions WHERE group_id = $1",
+      [groupId]
+    );
+    const maxVersion = Number(maxResult.rows[0].max_ver);
+
+    // Validate parent IS the latest version (reject if not)
+    const parentVersion = Number(parentVersionResult.rows[0].version_number);
+    if (parentVersion !== maxVersion) {
+      throw new Error("Can only upload a new version from the latest version in the group");
+    }
+
+    const nextVersion = maxVersion + 1;
+
+    // INSERT new review
+    await client.query(
+      `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id, content_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        newReview.id, newReview.userId, newReview.userEmail, newReview.userName,
+        newReview.provider, newReview.reviewMode, newReview.fileName, newReview.pdfPath,
+        newReview.selectedGroups ? JSON.stringify(newReview.selectedGroups) : null,
+        newReview.supervisorId, newReview.studentId, newReview.contentHash,
+      ]
+    );
+
+    // INSERT into review_versions (plain INSERT, no ON CONFLICT)
+    await client.query(
+      "INSERT INTO review_versions (group_id, review_id, version_number) VALUES ($1, $2, $3)",
+      [groupId, newReview.id, nextVersion]
+    );
+
+    await client.query("COMMIT");
+    return { versionNumber: nextVersion, groupId };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get the previous version's review ID in a version group.
+ * Returns the review ID with the highest version_number less than the current version,
+ * where the review is not deleted. Returns null if no previous version exists.
+ */
+export async function getPreviousVersionReviewId(
+  reviewId: string
+): Promise<string | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // Find current review's version info
+  const currentResult = await pool.query(
+    "SELECT group_id, version_number FROM review_versions WHERE review_id = $1",
+    [reviewId]
+  );
+  if (currentResult.rows.length === 0) return null;
+
+  const groupId = currentResult.rows[0].group_id as string;
+  const currentVersion = Number(currentResult.rows[0].version_number);
+
+  // Find the previous version (highest version_number < current, not deleted)
+  const prevResult = await pool.query(
+    `SELECT rv.review_id
+     FROM review_versions rv
+     JOIN reviews r ON r.id = rv.review_id
+     WHERE rv.group_id = $1
+       AND rv.version_number < $2
+       AND r.deleted_at IS NULL
+     ORDER BY rv.version_number DESC
+     LIMIT 1`,
+    [groupId, currentVersion]
+  );
+
+  if (prevResult.rows.length === 0) return null;
+  return prevResult.rows[0].review_id as string;
 }
 
 // ---------------------------------------------------------------------------

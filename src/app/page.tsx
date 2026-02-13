@@ -413,9 +413,11 @@ function UploadPage() {
       // Single-file mode
       if (!file || noneSelected) return;
       const groupsToSend = allSelected ? undefined : [...selectedGroups];
-      const id = await startReview(file, provider, mode, groupsToSend, assignmentOpts);
-      if (id) {
-        router.push(`/review/${id}`);
+      const result = await startReview(file, provider, mode, groupsToSend, assignmentOpts);
+      if (result) {
+        const [reviewId, flag] = result.split("|");
+        const dupParam = flag === "duplicate" ? "?duplicate=true" : "";
+        router.push(`/review/${reviewId}${dupParam}`);
       }
     }
   };

@@ -4,13 +4,14 @@ import { REVIEW_MODES, getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
-import { insertReview, completeReview, failReview, logAuditEvent, getUserById } from "@/lib/db";
+import { insertReview, completeReview, failReview, logAuditEvent, getUserById, findDuplicateReview, generateRevisionSummary, getPreviousVersionReviewId } from "@/lib/db";
 import { savePdf } from "@/lib/uploads";
-import { requireAuth } from "@/lib/auth/helpers";
+import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
 import { sendReviewCompleteEmail, sendReviewErrorEmail } from "@/lib/email/send";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { hashPDFContent } from "@/lib/pdf/hash";
 
 /**
  * Sanitize error for client/DB to avoid leaking internal details.
@@ -189,6 +190,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const pdfBuffer = await file.arrayBuffer();
+
+  // Compute content hash for duplicate detection
+  const contentHash = hashPDFContent(pdfBuffer);
+
+  // Duplicate detection: same PDF + same mode + same document owner → redirect
+  const documentOwnerId = studentId ?? session.user.id;
+  const existingReview = await findDuplicateReview(contentHash, mode, documentOwnerId);
+  if (existingReview && canAccessReview(session, existingReview)) {
+    console.log(`[api] Duplicate detected: redirecting to existing review ${existingReview.id}`);
+    return new Response(
+      JSON.stringify({ id: existingReview.id, duplicate: true }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const dbMeta = {
     userId: session.user.id,
     userEmail: session.user.email ?? "",
@@ -200,12 +217,11 @@ export async function POST(request: NextRequest) {
     fileName: file.name,
     supervisorId,
     studentId,
+    contentHash,
   };
 
   const sessionId = createSession(dbMeta);
   console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, mode: ${mode}, groups: ${resolvedGroups.length}/${modeGroupIds.size}`);
-
-  const pdfBuffer = await file.arrayBuffer();
 
   // Save PDF to disk for retry support (fire-and-forget — don't block the response)
   let pdfPath: string | null = null;
@@ -216,7 +232,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Persist to DB (fire-and-forget — don't block the response)
-  insertReview({ id: sessionId, ...dbMeta, pdfPath, selectedGroups: resolvedGroups, supervisorId, studentId })
+  insertReview({ id: sessionId, ...dbMeta, pdfPath, selectedGroups: resolvedGroups, supervisorId, studentId, contentHash })
     .catch((err) => console.error("[api] DB insert failed:", err));
 
   // Audit log (fire-and-forget)
@@ -272,6 +288,12 @@ export async function POST(request: NextRequest) {
       setSessionStatus(sessionId, "done");
       completeReview(sessionId, feedback, dbMeta)
         .then(async () => {
+          // Auto-generate revision summary if this review is in a version group
+          const prevVersionId = await getPreviousVersionReviewId(sessionId).catch(() => null);
+          if (prevVersionId) {
+            generateRevisionSummary(prevVersionId, sessionId)
+              .catch((err) => console.error("[api] Revision summary generation failed:", err));
+          }
           sendReviewCompleteEmail({
             to: dbMeta.userEmail,
             userName: dbMeta.userName,

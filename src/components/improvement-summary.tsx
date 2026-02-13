@@ -285,6 +285,8 @@ export function ImprovementSummaryCard({ reviewId }: { reviewId: string }) {
       ? "text-red-400"
       : "text-white/40";
 
+  const previousDateStr = new Date(data.previousDate).toLocaleDateString();
+
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm">
       {/* Header */}
@@ -296,8 +298,15 @@ export function ImprovementSummaryCard({ reviewId }: { reviewId: string }) {
         aria-controls="improvement-summary-content"
       >
         <History className="h-4 w-4 shrink-0 text-white/40" />
-        <span className="flex-1 text-sm font-medium text-white/70">Improvement Tracking</span>
-        <span className="flex items-center gap-1.5 text-xs text-white/30">
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium text-white/70">
+            Compared to previous review
+          </span>
+          <span className="ml-1.5 text-xs text-white/30">
+            ({previousDateStr})
+          </span>
+        </div>
+        <span className="flex shrink-0 items-center gap-1.5 text-xs text-white/30">
           <TrendIcon className={cn("h-3.5 w-3.5", trendColor)} />
           {totalDelta === 0
             ? "No change"
@@ -316,6 +325,17 @@ export function ImprovementSummaryCard({ reviewId }: { reviewId: string }) {
       {/* Content */}
       {expanded && (
         <div id="improvement-summary-content" className="border-t border-white/5 px-4 pb-4 pt-3">
+          {/* Explanation */}
+          <p className="mb-3 text-[11px] text-white/30">
+            Findings from this review are matched against the{" "}
+            <Link
+              href={`/review/${data.previousReviewId}`}
+              className="text-blue-400/60 hover:text-blue-400 transition-colors underline underline-offset-2"
+            >
+              previous review of the same file ({previousDateStr})
+            </Link>
+            {" "}using similarity matching. Fixed = gone, Persistent = still present, New = introduced.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {/* 1. Improvement score */}
             <div className="space-y-2">
@@ -331,15 +351,7 @@ export function ImprovementSummaryCard({ reviewId }: { reviewId: string }) {
                 </div>
                 <div className="text-[10px] text-white/30">
                   <p>{data.previousTotal} → {data.currentTotal} findings</p>
-                  <p className="mt-0.5">
-                    vs{" "}
-                    <Link
-                      href={`/review/${data.previousReviewId}`}
-                      className="text-blue-400/60 hover:text-blue-400 transition-colors"
-                    >
-                      {new Date(data.previousDate).toLocaleDateString()}
-                    </Link>
-                  </p>
+                  <p className="mt-0.5">Weighted by severity</p>
                 </div>
               </div>
             </div>
