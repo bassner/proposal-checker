@@ -1,7 +1,8 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus, FindingCategory } from "@/types/review";
+import { FINDING_CATEGORY_VALUES } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -475,6 +476,21 @@ async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_deadlines_date ON submission_deadlines(deadline);
+
+      -- Peer review pairings (complementary strength matching)
+      CREATE TABLE IF NOT EXISTS peer_pairings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        student_a_id TEXT NOT NULL,
+        student_b_id TEXT NOT NULL,
+        rationale TEXT NOT NULL,
+        strength_area TEXT NOT NULL,
+        weakness_area TEXT NOT NULL,
+        score NUMERIC(5,2) NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'suggested' CHECK (status IN ('suggested', 'accepted', 'rejected')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(student_a_id, student_b_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_peer_pairings_students ON peer_pairings(student_a_id, student_b_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -5204,4 +5220,316 @@ export async function getDeadlineAnalytics(): Promise<DeadlineAnalytics | null> 
     overallLateAvgFindings: lateCount > 0 ? Number((lateFindingsSum / lateCount).toFixed(1)) : 0,
     last48hWarningCount: totalLate48h,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Peer Pairings (complementary strength matching)
+// ---------------------------------------------------------------------------
+
+export interface StrengthProfile {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  reviewCount: number;
+  /** Average finding count per category (lower = stronger). */
+  categoryScores: Record<FindingCategory, number>;
+}
+
+export interface PeerPairingRow {
+  id: string;
+  studentAId: string;
+  studentBId: string;
+  studentAName: string | null;
+  studentBName: string | null;
+  rationale: string;
+  strengthArea: string;
+  weaknessArea: string;
+  score: number;
+  status: "suggested" | "accepted" | "rejected";
+  createdAt: string;
+}
+
+function rowToPairing(row: Record<string, unknown>): PeerPairingRow {
+  return {
+    id: row.id as string,
+    studentAId: row.student_a_id as string,
+    studentBId: row.student_b_id as string,
+    studentAName: (row.student_a_name as string) ?? null,
+    studentBName: (row.student_b_name as string) ?? null,
+    rationale: row.rationale as string,
+    strengthArea: row.strength_area as string,
+    weaknessArea: row.weakness_area as string,
+    score: Number(row.score),
+    status: row.status as "suggested" | "accepted" | "rejected",
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Compute the strength profile for a single student.
+ * Returns average finding count per finding category across all their completed reviews.
+ * Lower count = stronger in that area.
+ */
+export async function getStudentStrengthProfile(userId: string): Promise<StrengthProfile | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(
+    `SELECT
+       r.user_id,
+       r.user_name,
+       r.user_email,
+       r.feedback->'findings' AS findings_json
+     FROM reviews r
+     WHERE r.user_id = $1
+       AND r.status = 'done'
+       AND r.deleted_at IS NULL
+       AND r.feedback IS NOT NULL
+       AND jsonb_typeof(r.feedback->'findings') = 'array'
+     ORDER BY r.created_at DESC`,
+    [userId]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const firstRow = result.rows[0];
+  const categoryTotals: Record<string, number> = {};
+  for (const cat of FINDING_CATEGORY_VALUES) {
+    categoryTotals[cat] = 0;
+  }
+
+  for (const row of result.rows) {
+    const findings = (row.findings_json as { category?: string }[]) ?? [];
+    for (const f of findings) {
+      const cat = normalizeFindingCat(f.category);
+      categoryTotals[cat] = (categoryTotals[cat] ?? 0) + 1;
+    }
+  }
+
+  const reviewCount = result.rows.length;
+  const categoryScores = {} as Record<FindingCategory, number>;
+  for (const cat of FINDING_CATEGORY_VALUES) {
+    categoryScores[cat] = Math.round(((categoryTotals[cat] ?? 0) / reviewCount) * 100) / 100;
+  }
+
+  return {
+    userId,
+    userName: firstRow.user_name as string,
+    userEmail: firstRow.user_email as string,
+    reviewCount,
+    categoryScores,
+  };
+}
+
+/** Simple category normalization (mirrors normalizeFindingCategory from types but avoids circular import). */
+function normalizeFindingCat(raw: string | undefined): FindingCategory {
+  if (!raw) return "other";
+  const lower = raw.toLowerCase().trim();
+  if (FINDING_CATEGORY_VALUES.includes(lower as FindingCategory)) return lower as FindingCategory;
+  if (/format|terminol|title\s*case|heading/i.test(lower)) return "formatting";
+  if (/structur|section|length|missing/i.test(lower)) return "structure";
+  if (/citat|bibliograph|reference|footnote/i.test(lower)) return "citation";
+  if (/method|approach|design/i.test(lower)) return "methodology";
+  if (/writ|style|voice|grammar|paragraph|contraction|filler|sentence/i.test(lower)) return "writing";
+  if (/figur|diagram|image|caption|uml/i.test(lower)) return "figures";
+  if (/logic|argument|reasoning|coherence/i.test(lower)) return "logic";
+  if (/complet|missing|absent|lack|schedul|transparen/i.test(lower)) return "completeness";
+  return "other";
+}
+
+/**
+ * Compute strength profiles for all students with completed reviews,
+ * then generate complementary pairings. Clears existing 'suggested' pairings
+ * before inserting new ones (accepted/rejected are preserved).
+ */
+export async function generatePeerPairings(): Promise<PeerPairingRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  // 1. Build strength profiles for all students
+  const studentsResult = await pool.query(
+    `SELECT DISTINCT r.user_id, r.user_name, r.user_email
+     FROM reviews r
+     WHERE r.status = 'done'
+       AND r.deleted_at IS NULL
+       AND r.feedback IS NOT NULL
+       AND jsonb_typeof(r.feedback->'findings') = 'array'
+     ORDER BY r.user_name`
+  );
+
+  if (studentsResult.rows.length < 2) return [];
+
+  const profiles: StrengthProfile[] = [];
+  for (const row of studentsResult.rows) {
+    const profile = await getStudentStrengthProfile(row.user_id as string);
+    if (profile && profile.reviewCount > 0) {
+      profiles.push(profile);
+    }
+  }
+
+  if (profiles.length < 2) return [];
+
+  // 2. Generate pairings: for each pair, find best complementary match
+  interface CandidatePairing {
+    a: StrengthProfile;
+    b: StrengthProfile;
+    score: number;
+    strengthArea: string; // A's strength (low findings) that matches B's weakness (high findings)
+    weaknessArea: string; // B's strength that matches A's weakness
+    rationale: string;
+  }
+
+  const candidates: CandidatePairing[] = [];
+  const categories = FINDING_CATEGORY_VALUES.filter((c) => c !== "other");
+
+  for (let i = 0; i < profiles.length; i++) {
+    for (let j = i + 1; j < profiles.length; j++) {
+      const a = profiles[i];
+      const b = profiles[j];
+
+      // Compute complementary score: sum of absolute differences across categories
+      // Higher difference = more complementary
+      let totalComplementarity = 0;
+      let bestAStrength = { area: categories[0], diff: 0 };
+      let bestBStrength = { area: categories[0], diff: 0 };
+
+      for (const cat of categories) {
+        const diff = a.categoryScores[cat] - b.categoryScores[cat];
+        totalComplementarity += Math.abs(diff);
+
+        // A is stronger (fewer findings) in this area, B is weaker
+        if (diff < bestAStrength.diff) {
+          bestAStrength = { area: cat, diff };
+        }
+        // B is stronger, A is weaker
+        if (diff > bestBStrength.diff) {
+          bestBStrength = { area: cat, diff };
+        }
+      }
+
+      if (totalComplementarity > 0) {
+        const strengthArea = bestAStrength.area;
+        const weaknessArea = bestBStrength.area;
+        const rationale =
+          `${a.userName} is strong in ${strengthArea} (avg ${a.categoryScores[strengthArea as FindingCategory]} findings) ` +
+          `while ${b.userName} needs improvement (avg ${b.categoryScores[strengthArea as FindingCategory]}). ` +
+          `Conversely, ${b.userName} is strong in ${weaknessArea} (avg ${b.categoryScores[weaknessArea as FindingCategory]}) ` +
+          `which can help ${a.userName} (avg ${a.categoryScores[weaknessArea as FindingCategory]}).`;
+
+        candidates.push({
+          a, b,
+          score: Math.round(totalComplementarity * 100) / 100,
+          strengthArea,
+          weaknessArea,
+          rationale,
+        });
+      }
+    }
+  }
+
+  // Sort by score descending (most complementary first)
+  candidates.sort((x, y) => y.score - x.score);
+
+  // 3. Clear old suggested pairings and insert new ones
+  await pool.query("DELETE FROM peer_pairings WHERE status = 'suggested'");
+
+  const inserted: PeerPairingRow[] = [];
+  for (const c of candidates) {
+    try {
+      const res = await pool.query(
+        `INSERT INTO peer_pairings (student_a_id, student_b_id, rationale, strength_area, weakness_area, score, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'suggested')
+         ON CONFLICT (student_a_id, student_b_id) DO UPDATE SET
+           rationale = EXCLUDED.rationale,
+           strength_area = EXCLUDED.strength_area,
+           weakness_area = EXCLUDED.weakness_area,
+           score = EXCLUDED.score,
+           status = 'suggested',
+           created_at = NOW()
+         RETURNING *`,
+        [c.a.userId, c.b.userId, c.rationale, c.strengthArea, c.weaknessArea, c.score]
+      );
+      if (res.rows.length > 0) {
+        // Attach names for the returned row
+        const row = res.rows[0];
+        row.student_a_name = c.a.userName;
+        row.student_b_name = c.b.userName;
+        inserted.push(rowToPairing(row));
+      }
+    } catch (err) {
+      console.error("[db] Failed to insert peer pairing:", err);
+    }
+  }
+
+  return inserted;
+}
+
+/**
+ * List all peer pairings, ordered by score descending.
+ * Optionally filter by status.
+ */
+export async function listPeerPairings(statusFilter?: string): Promise<PeerPairingRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  let query = `
+    SELECT
+      pp.*,
+      ra.user_name AS student_a_name,
+      rb.user_name AS student_b_name
+    FROM peer_pairings pp
+    LEFT JOIN (SELECT DISTINCT ON (user_id) user_id, user_name FROM reviews ORDER BY user_id, created_at DESC) ra
+      ON ra.user_id = pp.student_a_id
+    LEFT JOIN (SELECT DISTINCT ON (user_id) user_id, user_name FROM reviews ORDER BY user_id, created_at DESC) rb
+      ON rb.user_id = pp.student_b_id
+  `;
+  const params: unknown[] = [];
+
+  if (statusFilter && ["suggested", "accepted", "rejected"].includes(statusFilter)) {
+    query += " WHERE pp.status = $1";
+    params.push(statusFilter);
+  }
+
+  query += " ORDER BY pp.score DESC, pp.created_at DESC";
+
+  const result = await pool.query(query, params);
+  return result.rows.map(rowToPairing);
+}
+
+/**
+ * Accept or reject a peer pairing.
+ */
+export async function updatePairingStatus(
+  pairingId: string,
+  status: "accepted" | "rejected"
+): Promise<PeerPairingRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(
+    `UPDATE peer_pairings SET status = $2
+     WHERE id = $1
+     RETURNING *`,
+    [pairingId, status]
+  );
+
+  if (result.rows.length === 0) return null;
+
+  // Re-query to get names
+  const fullResult = await pool.query(
+    `SELECT
+       pp.*,
+       ra.user_name AS student_a_name,
+       rb.user_name AS student_b_name
+     FROM peer_pairings pp
+     LEFT JOIN (SELECT DISTINCT ON (user_id) user_id, user_name FROM reviews ORDER BY user_id, created_at DESC) ra
+       ON ra.user_id = pp.student_a_id
+     LEFT JOIN (SELECT DISTINCT ON (user_id) user_id, user_name FROM reviews ORDER BY user_id, created_at DESC) rb
+       ON rb.user_id = pp.student_b_id
+     WHERE pp.id = $1`,
+    [pairingId]
+  );
+
+  if (fullResult.rows.length === 0) return null;
+  return rowToPairing(fullResult.rows[0]);
 }
