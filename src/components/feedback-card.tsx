@@ -48,7 +48,7 @@ export function FeedbackCard({ finding }: FeedbackCardProps) {
   return (
     <div
       className={cn(
-        "rounded-lg border border-white/10 border-l-4 bg-white/5 p-3 backdrop-blur-sm transition-all hover:bg-white/[0.07]",
+        "print-card rounded-lg border border-white/10 border-l-4 bg-white/5 p-3 backdrop-blur-sm transition-all hover:bg-white/[0.07]",
         config.borderColor
       )}
     >

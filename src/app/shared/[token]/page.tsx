@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { FeedbackList } from "@/components/feedback-list";
 import { ThinkingBubble } from "@/components/thinking-bubble";
 import { Button } from "@/components/ui/button";
+import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
 import { GraduationCap, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback } from "@/types/review";
@@ -99,10 +100,16 @@ export default function SharedReviewPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
       <div className="relative mx-auto w-full px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="print-header">
+          <h1 className="text-base font-semibold">Shared Review</h1>
+          {review.fileName && <p className="text-sm text-gray-600">{review.fileName}</p>}
+          <p className="text-xs text-gray-400">by {review.userName}</p>
+          <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
+        </div>
+        <div className="no-print mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <GraduationCap className="h-5 w-5 text-blue-400" />
@@ -113,12 +120,16 @@ export default function SharedReviewPage() {
               <p className="text-xs text-white/30">by {review.userName}</p>
             </div>
           </div>
-          <Link href="/">
-            <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Home
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <PrintButton />
+            <CopyMarkdownButton feedback={review.feedback} fileName={review.fileName} />
+            <Link href="/">
+              <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Home
+              </Button>
+            </Link>
+          </div>
         </div>
         <FeedbackList feedback={review.feedback} />
         <footer className="mt-12 pb-4 text-center text-xs text-white/20">
@@ -151,7 +162,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
 
 function BackgroundOrbs() {
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="background-orbs pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
       <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
     </div>
