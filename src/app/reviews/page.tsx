@@ -150,11 +150,11 @@ export default function ReviewsPage() {
         <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-[1200px] px-6 py-8">
+      <div className="relative mx-auto w-full max-w-[1200px] px-3 py-4 sm:px-6 sm:py-8">
         {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <ClipboardList className="h-5 w-5 text-blue-400" />
             </div>
             <div>
@@ -167,10 +167,10 @@ export default function ReviewsPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/">
+            <Link href="/" aria-label="Back to Home">
               <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Home
+                <ArrowLeft className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Back to Home</span>
               </Button>
             </Link>
             <UserMenu />
@@ -178,7 +178,7 @@ export default function ReviewsPage() {
         </div>
 
         {/* Content */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           {/* Search bar */}
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
@@ -225,14 +225,14 @@ export default function ReviewsPage() {
                       <th className={sortableThClass} onClick={() => handleSort("file_name")}>
                         File <SortIcon column="file_name" activeSort={sort} activeDir={dir} />
                       </th>
-                      <th className={sortableThClass} onClick={() => handleSort("provider")}>
+                      <th className={`${sortableThClass} hidden md:table-cell`} onClick={() => handleSort("provider")}>
                         Provider <SortIcon column="provider" activeSort={sort} activeDir={dir} />
                       </th>
                       <th className={sortableThClass} onClick={() => handleSort("status")}>
                         Status <SortIcon column="status" activeSort={sort} activeDir={dir} />
                       </th>
                       {isAdmin && (
-                        <th className={sortableThClass} onClick={() => handleSort("user_name")}>
+                        <th className={`${sortableThClass} hidden lg:table-cell`} onClick={() => handleSort("user_name")}>
                           User <SortIcon column="user_name" activeSort={sort} activeDir={dir} />
                         </th>
                       )}
@@ -252,12 +252,12 @@ export default function ReviewsPage() {
                         <td className="py-2.5 pr-4 text-white/70">
                           {r.fileName ?? "\u2014"}
                         </td>
-                        <td className="py-2.5 pr-4 text-white/50">{r.provider}</td>
+                        <td className="hidden py-2.5 pr-4 text-white/50 md:table-cell">{r.provider}</td>
                         <td className="py-2.5 pr-4">
                           {statusBadge(r.status, r.createdAt)}
                         </td>
                         {isAdmin && (
-                          <td className="py-2.5 pr-4 text-white/50">
+                          <td className="hidden py-2.5 pr-4 text-white/50 lg:table-cell">
                             {r.userName || r.userEmail || r.userId}
                           </td>
                         )}

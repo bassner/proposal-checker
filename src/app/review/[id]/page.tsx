@@ -90,7 +90,7 @@ export default function ReviewPage() {
       )}
 
       {state.status !== "idle" && (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           <h2 className="mb-4 text-sm font-medium text-white/60">Progress</h2>
           <ReviewStepper state={state} />
         </div>
@@ -110,8 +110,8 @@ function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: M
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
-      <div className="relative mx-auto w-full px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
+      <div className="relative mx-auto w-full px-3 py-4 sm:px-6 sm:py-8">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <IconBadge />
             <div>
@@ -135,8 +135,8 @@ function PageShell({ title, subtitle, children }: { title: string; subtitle?: st
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
-      <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
+      <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <IconBadge />
             <div>

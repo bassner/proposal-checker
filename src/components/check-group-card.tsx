@@ -105,7 +105,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
 
         {((group.tokenCount !== undefined && group.tokenCount > 0) || group.status === "active") && group.startTime && (
           <span className={cn(
-            "min-w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
+            "hidden min-w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs sm:inline",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
             {hasNoTokensYet ? "–" : formatTokensK((group.tokenCount ?? 0) + (group.reasoningTokens ?? 0))}
@@ -114,7 +114,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
 
         {((group.tokenCount !== undefined && group.tokenCount > 0) || group.status === "active") && group.startTime && (
           <span className={cn(
-            "w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs",
+            "hidden w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs sm:inline",
             group.status === "active" ? "text-blue-400/60" : "text-white/30"
           )}>
             {hasNoTokensYet

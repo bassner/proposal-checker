@@ -40,11 +40,11 @@ export default async function AdminPage() {
         <div className="absolute -bottom-40 -right-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto w-full max-w-[1200px] px-6 py-8">
+      <div className="relative mx-auto w-full max-w-[1200px] px-3 py-4 sm:px-6 sm:py-8">
         {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <Shield className="h-5 w-5 text-blue-400" />
             </div>
             <div>
@@ -54,10 +54,11 @@ export default async function AdminPage() {
           </div>
           <Link
             href="/"
+            aria-label="Back to Home"
             className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Home
+            <span className="hidden sm:inline">Back to Home</span>
           </Link>
         </div>
 

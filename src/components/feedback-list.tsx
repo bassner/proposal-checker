@@ -38,6 +38,15 @@ const assessmentConfig = {
 
 const SEVERITY_ORDER: Severity[] = ["critical", "major", "minor", "suggestion"];
 
+/** Responsive grid classes keyed by number of visible severity columns.
+ *  On mobile all columns stack; at lg+ layout matches the original N-column grid exactly. */
+const GRID_COLS: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-1 md:grid-cols-2",
+  3: "grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
+  4: "grid-cols-1 md:grid-cols-2 lg:grid-cols-4",
+};
+
 const severityColumnConfig: Record<
   Severity,
   { label: string; headerBg: string; headerText: string; countColor: string }
@@ -112,11 +121,11 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
         <div className="flex items-center gap-3">
           <Icon className={cn("h-6 w-6 shrink-0", config.iconColor)} />
           <div className="flex-1">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <p className={cn("text-sm font-semibold", config.textColor)}>
                 {config.label}
               </p>
-              <div className="flex gap-3 text-xs text-white/40">
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/40">
                 {SEVERITY_ORDER.map((s) => {
                   const count = grouped[s]?.length || 0;
                   if (count === 0) return null;
@@ -146,10 +155,7 @@ export function FeedbackList({ feedback }: FeedbackListProps) {
 
       {/* Severity columns */}
       <div
-        className="grid gap-4"
-        style={{
-          gridTemplateColumns: `repeat(${presentSeverities.length}, minmax(0, 1fr))`,
-        }}
+        className={cn("grid gap-4", GRID_COLS[presentSeverities.length] ?? "grid-cols-1")}
       >
         {presentSeverities.map((severity) => {
           const findings = grouped[severity]!;
