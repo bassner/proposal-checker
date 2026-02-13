@@ -449,6 +449,21 @@ async function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_readiness_user ON readiness_checklists(user_id);
+
+      -- Finding approvals (advisor approval workflow for individual findings)
+      CREATE TABLE IF NOT EXISTS finding_approvals (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        finding_index INT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('approved', 'disputed', 'needs_action')),
+        advisor_comment TEXT,
+        approved_by TEXT NOT NULL,
+        approved_by_name TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_finding_approvals_review ON finding_approvals(review_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_finding_approvals_unique ON finding_approvals(review_id, finding_index);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -4766,4 +4781,200 @@ export async function getChecklistsByUser(
     [userId, limit]
   );
   return result.rows.map(rowToReadinessChecklist);
+}
+
+// ---------------------------------------------------------------------------
+// Finding approvals (advisor approval workflow)
+// ---------------------------------------------------------------------------
+
+export type FindingApprovalStatus = "approved" | "disputed" | "needs_action";
+
+export const FINDING_APPROVAL_STATUSES: readonly FindingApprovalStatus[] = [
+  "approved",
+  "disputed",
+  "needs_action",
+] as const;
+
+export interface FindingApprovalRow {
+  id: string;
+  reviewId: string;
+  findingIndex: number;
+  status: FindingApprovalStatus;
+  advisorComment: string | null;
+  approvedBy: string;
+  approvedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToApproval(row: Record<string, unknown>): FindingApprovalRow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    findingIndex: row.finding_index as number,
+    status: row.status as FindingApprovalStatus,
+    advisorComment: (row.advisor_comment as string) ?? null,
+    approvedBy: row.approved_by as string,
+    approvedByName: (row.approved_by_name as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Upsert an approval decision for a specific finding in a review.
+ * Uses ON CONFLICT on (review_id, finding_index) for idempotent writes.
+ */
+export async function setFindingApproval(
+  reviewId: string,
+  findingIndex: number,
+  status: FindingApprovalStatus,
+  approvedBy: string,
+  approvedByName: string | null,
+  advisorComment?: string
+): Promise<FindingApprovalRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+
+  const result = await pool.query(
+    `INSERT INTO finding_approvals (review_id, finding_index, status, advisor_comment, approved_by, approved_by_name)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (review_id, finding_index) DO UPDATE SET
+       status = EXCLUDED.status,
+       advisor_comment = EXCLUDED.advisor_comment,
+       approved_by = EXCLUDED.approved_by,
+       approved_by_name = EXCLUDED.approved_by_name,
+       updated_at = NOW()
+     RETURNING *`,
+    [reviewId, findingIndex, status, advisorComment ?? null, approvedBy, approvedByName]
+  );
+
+  return rowToApproval(result.rows[0]);
+}
+
+/**
+ * Get all approvals for a given review, keyed by finding index.
+ */
+export async function getApprovalsForReview(
+  reviewId: string
+): Promise<Record<string, FindingApprovalRow>> {
+  if (!pool) return {};
+  await ensureSchema();
+
+  const result = await pool.query(
+    `SELECT * FROM finding_approvals WHERE review_id = $1 ORDER BY finding_index ASC`,
+    [reviewId]
+  );
+
+  const map: Record<string, FindingApprovalRow> = {};
+  for (const raw of result.rows) {
+    const row = rowToApproval(raw);
+    map[String(row.findingIndex)] = row;
+  }
+  return map;
+}
+
+/**
+ * Aggregate approval statistics across all reviews.
+ * Returns total counts per status and breakdown by check group category.
+ */
+export interface ApprovalStats {
+  totals: {
+    total: number;
+    approved: number;
+    disputed: number;
+    needsAction: number;
+  };
+  /** Approval status counts broken down by finding category (from review feedback). */
+  byCategory: {
+    category: string;
+    approved: number;
+    disputed: number;
+    needsAction: number;
+    total: number;
+  }[];
+  /** Approval rate broken down by check group. */
+  byCheckGroup: {
+    checkGroup: string;
+    approved: number;
+    disputed: number;
+    needsAction: number;
+    total: number;
+  }[];
+}
+
+export async function getApprovalStats(): Promise<ApprovalStats | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // Aggregate totals
+  const totalsResult = await pool.query(`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE status = 'approved')::int AS approved,
+      COUNT(*) FILTER (WHERE status = 'disputed')::int AS disputed,
+      COUNT(*) FILTER (WHERE status = 'needs_action')::int AS needs_action
+    FROM finding_approvals
+  `);
+
+  const totalsRow = totalsResult.rows[0];
+
+  // To get per-category and per-check-group stats, we need to join with review feedback.
+  // Since findings are stored as JSONB in the reviews table, we extract them with jsonb_array_elements.
+  const categoryResult = await pool.query(`
+    SELECT
+      COALESCE(f->>'category', 'other') AS category,
+      COUNT(*) FILTER (WHERE fa.status = 'approved')::int AS approved,
+      COUNT(*) FILTER (WHERE fa.status = 'disputed')::int AS disputed,
+      COUNT(*) FILTER (WHERE fa.status = 'needs_action')::int AS needs_action,
+      COUNT(*)::int AS total
+    FROM finding_approvals fa
+    JOIN reviews r ON r.id = fa.review_id
+    CROSS JOIN LATERAL jsonb_array_elements(r.feedback->'findings') WITH ORDINALITY AS elems(f, idx)
+    WHERE (elems.idx - 1) = fa.finding_index
+    GROUP BY COALESCE(f->>'category', 'other')
+    ORDER BY total DESC
+  `);
+
+  // For check group breakdown, we use the check group from the finding's source info.
+  // Since findings don't directly store check_group, we approximate using the category.
+  // A more accurate approach: if findings had a checkGroup field, we'd use it.
+  // For now, we report the same category-based breakdown.
+  const checkGroupResult = await pool.query(`
+    SELECT
+      COALESCE(f->>'category', 'other') AS check_group,
+      COUNT(*) FILTER (WHERE fa.status = 'approved')::int AS approved,
+      COUNT(*) FILTER (WHERE fa.status = 'disputed')::int AS disputed,
+      COUNT(*) FILTER (WHERE fa.status = 'needs_action')::int AS needs_action,
+      COUNT(*)::int AS total
+    FROM finding_approvals fa
+    JOIN reviews r ON r.id = fa.review_id
+    CROSS JOIN LATERAL jsonb_array_elements(r.feedback->'findings') WITH ORDINALITY AS elems(f, idx)
+    WHERE (elems.idx - 1) = fa.finding_index
+    GROUP BY COALESCE(f->>'category', 'other')
+    ORDER BY total DESC
+  `);
+
+  return {
+    totals: {
+      total: Number(totalsRow.total),
+      approved: Number(totalsRow.approved),
+      disputed: Number(totalsRow.disputed),
+      needsAction: Number(totalsRow.needs_action),
+    },
+    byCategory: categoryResult.rows.map((r) => ({
+      category: r.category as string,
+      approved: Number(r.approved),
+      disputed: Number(r.disputed),
+      needsAction: Number(r.needs_action),
+      total: Number(r.total),
+    })),
+    byCheckGroup: checkGroupResult.rows.map((r) => ({
+      checkGroup: r.check_group as string,
+      approved: Number(r.approved),
+      disputed: Number(r.disputed),
+      needsAction: Number(r.needs_action),
+      total: Number(r.total),
+    })),
+  };
 }
