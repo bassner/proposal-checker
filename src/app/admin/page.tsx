@@ -5,7 +5,7 @@ import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplate
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
-import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Download } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
@@ -14,6 +14,7 @@ import { ReviewTemplatesEditor } from "@/components/admin/review-templates-edito
 import { WebhooksManager } from "@/components/admin/webhooks-manager";
 import { CheckMetricsDashboard } from "@/components/admin/check-metrics-dashboard";
 import { SeverityConfigEditor } from "@/components/admin/severity-config-editor";
+import { AnalyticsExport } from "@/components/admin/analytics-export";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -102,6 +103,15 @@ export default async function AdminPage() {
         <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
           <h2 className="mb-4 text-sm font-medium text-white/60">Review Analytics</h2>
           <AnalyticsDashboard initialData={analyticsData} />
+
+          {/* Export panel */}
+          <div className="mt-5 border-t border-white/10 pt-5">
+            <div className="mb-3 flex items-center gap-2">
+              <Download className="h-4 w-4 text-blue-400" />
+              <h3 className="text-xs font-medium text-white/40">Export Analytics Data</h3>
+            </div>
+            <AnalyticsExport />
+          </div>
         </div>
 
         {/* Failed Reviews */}
