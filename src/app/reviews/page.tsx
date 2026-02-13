@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { UserMenu } from "@/components/auth/user-menu";
@@ -9,6 +9,8 @@ import {
   ClipboardList,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ArrowLeft,
   ArrowUpDown,
   ArrowUp,
@@ -16,6 +18,10 @@ import {
   Search,
   X,
   GitCompareArrows,
+  Layers,
+  TrendingDown,
+  TrendingUp,
+  Minus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -40,7 +46,77 @@ interface ReviewsResponse {
   limit: number;
 }
 
+interface GroupedReviewItem {
+  id: string;
+  fileName: string | null;
+  userId: string;
+  userName: string;
+  createdAt: string;
+  status: string;
+  findingCount: number;
+}
+
+interface GroupedReviewsResponse {
+  reviews: GroupedReviewItem[];
+  total: number;
+  truncated: boolean;
+  grouped: true;
+}
+
 type SortColumn = "created_at" | "file_name" | "provider" | "status" | "user_name";
+
+// ---------------------------------------------------------------------------
+// File name normalization for grouping
+// ---------------------------------------------------------------------------
+
+/** Strip common revision suffixes to group related files together. */
+function normalizeFileName(name: string): string {
+  let base = name
+    .replace(/\.pdf$/i, "")
+    .trim();
+
+  // Iteratively strip end-anchored revision patterns
+  let changed = true;
+  while (changed) {
+    const before = base;
+    base = base
+      .replace(/[_\- ]v\d+$/i, "")
+      .replace(/[_\- ](final|revised|draft|rev\d*)$/i, "")
+      .replace(/\s*\(\d+\)$/, "")
+      .trim();
+    changed = base !== before;
+  }
+
+  return base.toLowerCase();
+}
+
+/** Compute trend: "improving" if finding count decreased, "worsening" if increased, "stable" otherwise. */
+function computeTrend(reviews: GroupedReviewItem[]): "improving" | "worsening" | "stable" {
+  // Only consider completed reviews for trend
+  const done = reviews
+    .filter((r) => r.status === "done")
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  if (done.length < 2) return "stable";
+
+  const first = done[0].findingCount;
+  const last = done[done.length - 1].findingCount;
+  if (last < first) return "improving";
+  if (last > first) return "worsening";
+  return "stable";
+}
+
+interface FileGroup {
+  key: string;
+  displayName: string;
+  userName: string | null; // shown for admin
+  reviews: GroupedReviewItem[];
+  trend: "improving" | "worsening" | "stable";
+}
+
+// ---------------------------------------------------------------------------
+// Presentational helpers
+// ---------------------------------------------------------------------------
 
 function statusBadge(status: string, createdAt: string) {
   const isStale = status === "running" && Date.now() - new Date(createdAt).getTime() > STALE_RUNNING_MS;
@@ -76,6 +152,160 @@ function SortIcon({ column, activeSort, activeDir }: { column: string; activeSor
     : <ArrowDown className="ml-1 inline h-3 w-3" />;
 }
 
+function TrendIcon({ trend }: { trend: "improving" | "worsening" | "stable" }) {
+  switch (trend) {
+    case "improving":
+      return <TrendingDown className="inline h-3.5 w-3.5 text-green-400" />;
+    case "worsening":
+      return <TrendingUp className="inline h-3.5 w-3.5 text-red-400" />;
+    default:
+      return <Minus className="inline h-3.5 w-3.5 text-white/30" />;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Grouped view component
+// ---------------------------------------------------------------------------
+
+function GroupedView({
+  groups,
+  truncated,
+  total,
+  isAdmin,
+}: {
+  groups: FileGroup[];
+  truncated: boolean;
+  total: number;
+  isAdmin: boolean;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const router = useRouter();
+
+  function toggleGroup(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  return (
+    <div className="space-y-2">
+      {truncated && (
+        <p className="mb-3 text-xs text-yellow-400/70">
+          Showing 500 of {total} reviews. Use search to narrow results.
+        </p>
+      )}
+      {groups.map((group) => {
+        const isOpen = expanded.has(group.key);
+        const doneReviews = group.reviews.filter((r) => r.status === "done");
+        const sortedByDate = [...group.reviews].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+
+        return (
+          <div
+            key={group.key}
+            className="rounded-lg border border-white/10 bg-white/[0.03]"
+          >
+            {/* Group header */}
+            <button
+              className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/5"
+              onClick={() => toggleGroup(group.key)}
+            >
+              {isOpen ? (
+                <ChevronUp className="h-4 w-4 shrink-0 text-white/40" />
+              ) : (
+                <ChevronDown className="h-4 w-4 shrink-0 text-white/40" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium text-white/80">
+                    {group.displayName}
+                  </span>
+                  {isAdmin && group.userName && (
+                    <span className="shrink-0 text-xs text-white/30">
+                      by {group.userName}
+                    </span>
+                  )}
+                </div>
+                {/* Mini timeline */}
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-white/40">
+                  {sortedByDate.map((r, i) => (
+                    <span key={r.id} className="flex items-center gap-1">
+                      {i > 0 && <span className="text-white/20">{"\u2192"}</span>}
+                      <span className={r.status === "done" ? "text-white/50" : "text-white/25"}>
+                        {r.status === "done" ? `${r.findingCount} findings` : r.status}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <TrendIcon trend={group.trend} />
+                <span className="text-xs text-white/40">
+                  {group.reviews.length} revision{group.reviews.length !== 1 ? "s" : ""}
+                  {doneReviews.length > 0 && doneReviews.length !== group.reviews.length && (
+                    <>, {doneReviews.length} done</>
+                  )}
+                </span>
+              </div>
+            </button>
+
+            {/* Expanded detail rows */}
+            {isOpen && (
+              <div className="border-t border-white/5 px-4 pb-2">
+                <table className="w-full text-left text-sm">
+                  <tbody>
+                    {sortedByDate.map((r) => (
+                      <tr
+                        key={r.id}
+                        className="cursor-pointer border-b border-white/5 transition-colors last:border-0 hover:bg-white/5"
+                        onClick={() => router.push(`/review/${r.id}`)}
+                      >
+                        <td className="py-2 pr-4 text-xs text-white/50">
+                          {new Date(r.createdAt).toLocaleString()}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {statusBadge(r.status, r.createdAt)}
+                        </td>
+                        <td className="py-2 pr-4 text-xs text-white/50">
+                          {r.status === "done" ? (
+                            <span>
+                              {r.findingCount} finding{r.findingCount !== 1 ? "s" : ""}
+                            </span>
+                          ) : (
+                            <span className="text-white/25">{"\u2014"}</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right">
+                          {r.status === "done" && (
+                            <span className="text-xs text-blue-400 hover:text-blue-300">
+                              View &rarr;
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {groups.length === 0 && (
+        <p className="py-8 text-center text-sm text-white/30">No reviews to group</p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
+
 export default function ReviewsPage() {
   const { data: session } = useSession();
   const router = useRouter();
@@ -91,6 +321,11 @@ export default function ReviewsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [compareMode, setCompareMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Grouped mode
+  const [groupByFile, setGroupByFile] = useState(false);
+  const [groupedData, setGroupedData] = useState<GroupedReviewsResponse | null>(null);
+  const [groupedLoading, setGroupedLoading] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
 
@@ -128,16 +363,96 @@ export default function ReviewsPage() {
     }
   }, []);
 
+  const fetchGrouped = useCallback(async (q: string) => {
+    setGroupedLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ grouped: "true" });
+      if (q) params.set("search", q);
+      const res = await fetch(`/api/reviews?${params}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || "Failed to load reviews");
+        return;
+      }
+      setGroupedData(await res.json());
+    } catch {
+      setError("Failed to load reviews");
+    } finally {
+      setGroupedLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    fetchReviews(page, sort, dir, debouncedSearch);
-  }, [page, sort, dir, debouncedSearch, fetchReviews]);
+    if (groupByFile) {
+      fetchGrouped(debouncedSearch);
+    } else {
+      fetchReviews(page, sort, dir, debouncedSearch);
+    }
+  }, [page, sort, dir, debouncedSearch, groupByFile, fetchReviews, fetchGrouped]);
 
   // Clear selection when table data changes
   useEffect(() => {
     setSelectedIds([]);
   }, [page, sort, dir, debouncedSearch]);
 
+  // Build file groups from grouped data
+  const fileGroups = useMemo((): FileGroup[] => {
+    if (!groupedData) return [];
+
+    const groupMap = new Map<string, GroupedReviewItem[]>();
+    const displayNames = new Map<string, string>();
+
+    for (const r of groupedData.reviews) {
+      // For admin: group by (userId, normalizedFileName) to avoid cross-user merging
+      const rawName = r.fileName ?? "";
+      const normalized = rawName ? normalizeFileName(rawName) : "";
+      const key = isAdmin
+        ? `${r.userId}::${normalized || `__untitled_${r.id}`}`
+        : normalized || `__untitled_${r.id}`;
+
+      if (!groupMap.has(key)) {
+        groupMap.set(key, []);
+        // Use the most recent file name as the display name
+        displayNames.set(key, r.fileName || "Untitled");
+      }
+      groupMap.get(key)!.push(r);
+
+      // Update display name to the most recent review's file name
+      const existing = groupMap.get(key)!;
+      const newest = existing.reduce((a, b) =>
+        new Date(a.createdAt) > new Date(b.createdAt) ? a : b
+      );
+      displayNames.set(key, newest.fileName || "Untitled");
+    }
+
+    const groups: FileGroup[] = [];
+    for (const [key, reviews] of groupMap) {
+      groups.push({
+        key,
+        displayName: displayNames.get(key) || "Untitled",
+        userName: isAdmin ? reviews[0].userName : null,
+        reviews,
+        trend: computeTrend(reviews),
+      });
+    }
+
+    // Sort groups: multi-review groups first, then by most recent review date
+    groups.sort((a, b) => {
+      if (a.reviews.length > 1 && b.reviews.length <= 1) return -1;
+      if (b.reviews.length > 1 && a.reviews.length <= 1) return 1;
+      const aDate = Math.max(...a.reviews.map((r) => new Date(r.createdAt).getTime()));
+      const bDate = Math.max(...b.reviews.map((r) => new Date(r.createdAt).getTime()));
+      return bDate - aDate;
+    });
+
+    return groups;
+  }, [groupedData, isAdmin]);
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / limit)) : 1;
+  const displayTotal = groupByFile
+    ? (groupedData?.total ?? 0)
+    : (data?.total ?? 0);
 
   function handleSort(column: SortColumn) {
     if (sort === column) {
@@ -168,6 +483,12 @@ export default function ReviewsPage() {
   const thClass = "pb-2 pr-4 text-xs font-medium text-white/40";
   const sortableThClass = `${thClass} cursor-pointer select-none hover:text-white/70 transition-colors`;
 
+  const isLoading = groupByFile ? groupedLoading : loading;
+  const hasData = groupByFile ? !!groupedData : !!data;
+  const isEmpty = groupByFile
+    ? groupedData?.reviews.length === 0
+    : data?.reviews.length === 0;
+
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -187,7 +508,9 @@ export default function ReviewsPage() {
                 {isAdmin ? "All Reviews" : "My Reviews"}
               </h1>
               <p className="text-xs text-white/40">
-                {data ? `${data.total} review${data.total !== 1 ? "s" : ""}` : "Loading..."}
+                {isLoading && !hasData
+                  ? "Loading..."
+                  : `${displayTotal} review${displayTotal !== 1 ? "s" : ""}${groupByFile ? ` in ${fileGroups.length} group${fileGroups.length !== 1 ? "s" : ""}` : ""}`}
               </p>
             </div>
           </div>
@@ -195,18 +518,38 @@ export default function ReviewsPage() {
             <Button
               variant="outline"
               className={
-                compareMode
-                  ? "border-purple-500/50 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200"
+                groupByFile
+                  ? "border-blue-500/50 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 hover:text-blue-200"
                   : "border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
               }
               onClick={() => {
-                setCompareMode((m) => !m);
-                setSelectedIds([]);
+                setGroupByFile((g) => !g);
+                if (!groupByFile) {
+                  setCompareMode(false);
+                  setSelectedIds([]);
+                }
               }}
             >
-              <GitCompareArrows className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">{compareMode ? "Exit Compare" : "Compare"}</span>
+              <Layers className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">{groupByFile ? "Exit Grouping" : "Group by File"}</span>
             </Button>
+            {!groupByFile && (
+              <Button
+                variant="outline"
+                className={
+                  compareMode
+                    ? "border-purple-500/50 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200"
+                    : "border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+                }
+                onClick={() => {
+                  setCompareMode((m) => !m);
+                  setSelectedIds([]);
+                }}
+              >
+                <GitCompareArrows className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">{compareMode ? "Exit Compare" : "Compare"}</span>
+              </Button>
+            )}
             <Link href="/" aria-label="Back to Home">
               <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
                 <ArrowLeft className="h-4 w-4 sm:mr-2" />
@@ -239,7 +582,7 @@ export default function ReviewsPage() {
             )}
           </div>
 
-          {loading && !data && (
+          {isLoading && !hasData && (
             <p className="py-8 text-center text-sm text-white/30">Loading reviews...</p>
           )}
 
@@ -247,13 +590,24 @@ export default function ReviewsPage() {
             <p className="py-8 text-center text-sm text-red-400">{error}</p>
           )}
 
-          {data && data.reviews.length === 0 && (
+          {hasData && isEmpty && (
             <p className="py-8 text-center text-sm text-white/30">
               {debouncedSearch ? "No reviews match your search" : "No reviews yet"}
             </p>
           )}
 
-          {data && data.reviews.length > 0 && (
+          {/* Grouped view */}
+          {groupByFile && groupedData && groupedData.reviews.length > 0 && (
+            <GroupedView
+              groups={fileGroups}
+              truncated={groupedData.truncated}
+              total={groupedData.total}
+              isAdmin={isAdmin}
+            />
+          )}
+
+          {/* Table view (default) */}
+          {!groupByFile && data && data.reviews.length > 0 && (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
