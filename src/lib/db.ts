@@ -311,6 +311,22 @@ async function ensureSchema(): Promise<void> {
 
       -- Workflow status for review lifecycle
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS workflow_status TEXT NOT NULL DEFAULT 'draft';
+
+      -- Finding resolutions (state machine for tracking action on each finding)
+      CREATE TABLE IF NOT EXISTS finding_resolutions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        finding_index INT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'addressing', 'resolved', 'dismissed')),
+        changed_by TEXT NOT NULL,
+        changed_by_name TEXT,
+        comment TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(review_id, finding_index, created_at)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_finding_resolutions_review
+        ON finding_resolutions(review_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -2777,4 +2793,112 @@ export async function getReviewsByWorkflowStatus(
     params
   );
   return result.rows.map(rowToReview);
+}
+
+// ---------------------------------------------------------------------------
+// Finding resolutions (state machine for tracking action on findings)
+// ---------------------------------------------------------------------------
+
+export type ResolutionStatus = "open" | "addressing" | "resolved" | "dismissed";
+
+export const RESOLUTION_STATUSES: readonly ResolutionStatus[] = [
+  "open",
+  "addressing",
+  "resolved",
+  "dismissed",
+] as const;
+
+export interface FindingResolutionRow {
+  id: string;
+  reviewId: string;
+  findingIndex: number;
+  status: ResolutionStatus;
+  changedBy: string;
+  changedByName: string | null;
+  comment: string | null;
+  createdAt: string;
+}
+
+function rowToResolution(row: Record<string, unknown>): FindingResolutionRow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    findingIndex: row.finding_index as number,
+    status: row.status as ResolutionStatus,
+    changedBy: row.changed_by as string,
+    changedByName: (row.changed_by_name as string) ?? null,
+    comment: (row.comment as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Get the current resolution status for every finding in a review.
+ * Returns a Map keyed by finding_index, with the latest status and full history.
+ */
+export async function getResolutionsForReview(
+  reviewId: string
+): Promise<Map<number, { status: ResolutionStatus; history: FindingResolutionRow[] }>> {
+  if (!pool) return new Map();
+  await ensureSchema();
+
+  const result = await pool.query(
+    `SELECT * FROM finding_resolutions WHERE review_id = $1 ORDER BY finding_index ASC, created_at ASC`,
+    [reviewId]
+  );
+
+  const map = new Map<number, { status: ResolutionStatus; history: FindingResolutionRow[] }>();
+  for (const raw of result.rows) {
+    const row = rowToResolution(raw);
+    if (!map.has(row.findingIndex)) {
+      map.set(row.findingIndex, { status: row.status, history: [] });
+    }
+    const entry = map.get(row.findingIndex)!;
+    entry.status = row.status; // last row wins (ordered by created_at ASC)
+    entry.history.push(row);
+  }
+
+  return map;
+}
+
+/**
+ * Append a new resolution status for a finding (append-only history).
+ */
+export async function updateFindingResolution(
+  reviewId: string,
+  findingIndex: number,
+  status: ResolutionStatus,
+  userId: string,
+  userName: string | null,
+  comment?: string
+): Promise<FindingResolutionRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+
+  const result = await pool.query(
+    `INSERT INTO finding_resolutions (review_id, finding_index, status, changed_by, changed_by_name, comment)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING *`,
+    [reviewId, findingIndex, status, userId, userName, comment ?? null]
+  );
+
+  return rowToResolution(result.rows[0]);
+}
+
+/**
+ * Get the full resolution history for a single finding.
+ */
+export async function getResolutionHistory(
+  reviewId: string,
+  findingIndex: number
+): Promise<FindingResolutionRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const result = await pool.query(
+    `SELECT * FROM finding_resolutions WHERE review_id = $1 AND finding_index = $2 ORDER BY created_at ASC`,
+    [reviewId, findingIndex]
+  );
+
+  return result.rows.map(rowToResolution);
 }
