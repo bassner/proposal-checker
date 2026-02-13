@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, Annotations } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, Annotations } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -97,6 +97,11 @@ async function ensureSchema(): Promise<void> {
 
       -- Finding annotations (user actions on individual findings)
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS annotations JSONB;
+
+      -- Retry support: PDF storage path, selected check groups, retry counter
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS pdf_path TEXT;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS selected_groups JSONB;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0;
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -143,6 +148,9 @@ export interface ReviewRow {
   errorMessage: string | null;
   shareToken: string | null;
   annotations: Annotations;
+  pdfPath: string | null;
+  selectedGroups: CheckGroupId[] | null;
+  retryCount: number;
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
@@ -163,6 +171,9 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     errorMessage: (row.error_message as string) ?? null,
     shareToken: (row.share_token as string) ?? null,
     annotations: (row.annotations as Annotations) ?? {},
+    pdfPath: (row.pdf_path as string) ?? null,
+    selectedGroups: (row.selected_groups as CheckGroupId[]) ?? null,
+    retryCount: Number(row.retry_count ?? 0),
   };
 }
 
@@ -178,33 +189,41 @@ export async function insertReview(review: {
   provider: string;
   reviewMode?: ReviewMode;
   fileName: string | null;
+  pdfPath?: string | null;
+  selectedGroups?: CheckGroupId[];
 }): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (id) DO NOTHING`,
-    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName]
+    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName, review.pdfPath ?? null, review.selectedGroups ? JSON.stringify(review.selectedGroups) : null]
   );
 }
 
 export async function completeReview(
   id: string,
   feedback: unknown,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string }
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string },
+  expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   // UPSERT: handles the case where the initial INSERT was lost (e.g. DB was down briefly)
-  await pool.query(
+  // When expectedRetryCount is provided, only update if the review is still on that attempt
+  // (prevents stale pipeline callbacks from overwriting a newer retry's state)
+  const retryGuard = expectedRetryCount != null ? ` AND reviews.retry_count = ${Number(expectedRetryCount)}` : "";
+  const result = await pool.query(
     `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, feedback, file_name, completed_at, updated_at)
      VALUES ($1, $3, $4, $5, $6, $8, 'done', $2, $7, NOW(), NOW())
      ON CONFLICT (id) DO UPDATE SET
        status = 'done',
        feedback = $2,
+       error_message = NULL,
        completed_at = NOW(),
-       updated_at = NOW()`,
+       updated_at = NOW()
+     WHERE reviews.id = $1${retryGuard}`,
     [
       id,
       JSON.stringify(feedback),
@@ -216,23 +235,30 @@ export async function completeReview(
       meta?.reviewMode ?? "proposal",
     ]
   );
+  if (expectedRetryCount != null && result.rowCount === 0) {
+    console.warn(`[db] completeReview ${id}: skipped — retry_count mismatch (expected ${expectedRetryCount})`);
+  }
 }
 
 export async function failReview(
   id: string,
   errorMessage: string,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string }
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string },
+  expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
   await ensureSchema();
-  await pool.query(
+  const retryGuard = expectedRetryCount != null ? ` AND reviews.retry_count = ${Number(expectedRetryCount)}` : "";
+  const result = await pool.query(
     `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, error_message, file_name, completed_at, updated_at)
      VALUES ($1, $3, $4, $5, $6, $8, 'error', $2, $7, NOW(), NOW())
      ON CONFLICT (id) DO UPDATE SET
        status = 'error',
        error_message = $2,
+       feedback = NULL,
        completed_at = NOW(),
-       updated_at = NOW()`,
+       updated_at = NOW()
+     WHERE reviews.id = $1${retryGuard}`,
     [
       id,
       errorMessage,
@@ -244,6 +270,9 @@ export async function failReview(
       meta?.reviewMode ?? "proposal",
     ]
   );
+  if (expectedRetryCount != null && result.rowCount === 0) {
+    console.warn(`[db] failReview ${id}: skipped — retry_count mismatch (expected ${expectedRetryCount})`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -415,6 +444,40 @@ export async function saveAnnotations(
      WHERE id = $1`,
     [reviewId, JSON.stringify(annotations)]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Retry operations
+// ---------------------------------------------------------------------------
+
+const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes — matches client-side threshold
+
+/**
+ * Atomically claim a review for retry. Only succeeds if the review is in
+ * 'error' status or is a stale 'running' review (older than 20 minutes).
+ * Resets status to 'running', increments retry_count, clears terminal fields.
+ * Returns the updated row or null if the claim failed (wrong status / race).
+ */
+export async function claimReviewForRetry(id: string): Promise<ReviewRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE reviews
+     SET status = 'running',
+         error_message = NULL,
+         feedback = NULL,
+         completed_at = NULL,
+         annotations = '{}',
+         retry_count = retry_count + 1,
+         updated_at = NOW()
+     WHERE id = $1
+       AND (status = 'error'
+            OR (status = 'running' AND updated_at < NOW() - INTERVAL '${Math.floor(STALE_RUNNING_MS / 1000)} seconds'))
+     RETURNING *`,
+    [id]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToReview(result.rows[0]);
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
 import { insertReview, completeReview, failReview } from "@/lib/db";
+import { savePdf } from "@/lib/uploads";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
@@ -166,11 +167,19 @@ export async function POST(request: NextRequest) {
   const sessionId = createSession(dbMeta);
   console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, mode: ${mode}, groups: ${resolvedGroups.length}/${modeGroupIds.size}`);
 
-  // Persist to DB (fire-and-forget — don't block the response)
-  insertReview({ id: sessionId, ...dbMeta })
-    .catch((err) => console.error("[api] DB insert failed:", err));
-
   const pdfBuffer = await file.arrayBuffer();
+
+  // Save PDF to disk for retry support (fire-and-forget — don't block the response)
+  let pdfPath: string | null = null;
+  try {
+    pdfPath = await savePdf(sessionId, pdfBuffer);
+  } catch (err) {
+    console.error("[api] PDF save failed (retry will not be available):", err);
+  }
+
+  // Persist to DB (fire-and-forget — don't block the response)
+  insertReview({ id: sessionId, ...dbMeta, pdfPath, selectedGroups: resolvedGroups })
+    .catch((err) => console.error("[api] DB insert failed:", err));
 
   // Throttle high-frequency events (token counts, thinking text) to avoid
   // flooding the SSE stream. Each source key gets its own last-send timestamp.

@@ -182,11 +182,14 @@ export interface CompletedReview {
   reviewMode: ReviewMode;
   fileName: string | null;
   createdAt: string;
+  updatedAt: string;
   completedAt: string | null;
   feedback: MergedFeedback | null;
   errorMessage: string | null;
   shareToken: string | null;
   annotations: Annotations;
+  retryCount: number;
+  canRetry: boolean;
   isStale?: boolean; // Computed when fetched for running reviews
 }
 
@@ -225,9 +228,11 @@ export function useCompletedReview(id: string, enabled: boolean) {
         }
         const data = await res.json();
         // Compute staleness at fetch time (not render time) to satisfy linter
+        // Use updatedAt (reset on retry) instead of createdAt to avoid false positives
         if (data.status === "running") {
           const STALE_RUNNING_MS = 20 * 60 * 1000;
-          data.isStale = Date.now() - new Date(data.createdAt).getTime() > STALE_RUNNING_MS;
+          const referenceTime = data.updatedAt ?? data.createdAt;
+          data.isStale = Date.now() - new Date(referenceTime).getTime() > STALE_RUNNING_MS;
         }
         setReview(data);
       })

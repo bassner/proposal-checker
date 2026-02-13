@@ -24,6 +24,9 @@ services:
       - ../.env.local
     environment:
       DATABASE_URL: postgres://proposal_checker:proposal_checker@postgres:5432/proposal_checker
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,3 +34,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:
