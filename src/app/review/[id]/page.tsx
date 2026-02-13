@@ -11,26 +11,18 @@ import { useReviewStream, useCompletedReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton, DownloadCsvButton, DownloadJsonButton } from "@/components/export-button";
-import { GraduationCap, RotateCcw, RefreshCw, FileText } from "lucide-react";
-import { PdfViewer } from "@/components/pdf-viewer";
+import { GraduationCap, RotateCcw, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState, WorkflowStatus } from "@/types/review";
+import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
-import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
-import { getNavigationOrder } from "@/lib/finding-nav-order";
-import { useMemo } from "react";
 import { useComments } from "@/hooks/use-comments";
 import { useConflicts } from "@/hooks/use-conflicts";
 import { TimeEstimate } from "@/components/time-estimate";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { ReviewStats } from "@/components/review-stats";
-import { QualityScore } from "@/components/quality-score";
 import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
-import { ReviewNotes } from "@/components/review-notes";
 import { FindingsHeatmap } from "@/components/findings-heatmap";
-import { ReviewAssignments } from "@/components/review-assignments";
-import { WorkflowStatusBadge } from "@/components/workflow-status-badge";
 import { ReviewTags } from "@/components/review-tags";
 
 /**
@@ -62,7 +54,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} workflowStatus={review.workflowStatus} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} shareExpiresAt={review.shareExpiresAt} shareHasPassword={review.shareHasPassword} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} />;
     }
 
     if (review?.status === "error") {
@@ -134,47 +126,23 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner, workflowStatus }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean; workflowStatus?: WorkflowStatus }) {
+function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt, shareHasPassword, reviewMode, checkGroups, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; shareExpiresAt?: string | null; shareHasPassword?: boolean; reviewMode?: ReviewMode; checkGroups?: CheckGroupState[]; initialAnnotations?: Annotations; isOwner?: boolean }) {
   const { data: session } = useSession();
   const role = session?.user?.role;
   const isSupervisor = role === "admin" || role === "phd";
   const canAnnotate = isOwner !== false; // Owner can annotate (toggle status)
   const canComment = isSupervisor; // Admin/PhD can comment on any review
 
-  const { annotations, toggleAnnotation, bulkAnnotate, clearAllAnnotations } = useAnnotations(reviewId, initialAnnotations);
+  const { annotations, toggleAnnotation } = useAnnotations(reviewId, initialAnnotations);
   const { annotations: commentAnnotations, addComment, replyComment, resolveThread, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
   const { conflicts } = useConflicts(reviewId, isSupervisor);
 
-  // PDF viewer state
-  const [pdfOpen, setPdfOpen] = useState(false);
-  const [pdfTargetPage, setPdfTargetPage] = useState<number | null>(null);
+  // Page filter state (driven by heatmap clicks)
+  const [pageFilter, setPageFilter] = useState<number | null>(null);
 
   const handlePageClick = useCallback((page: number) => {
-    if (!pdfOpen) setPdfOpen(true);
-    setPdfTargetPage(page);
-  }, [pdfOpen]);
-
-  // Keyboard navigation
-  const navOrder = useMemo(() => getNavigationOrder(feedback.findings), [feedback.findings]);
-
-  const handleNavSelect = useCallback(
-    (navIndex: number) => {
-      const globalIndex = navOrder[navIndex];
-      if (globalIndex != null) {
-        toggleAnnotation(globalIndex, "accepted");
-      }
-    },
-    [navOrder, toggleAnnotation]
-  );
-
-  const { focusedIndex } = useKeyboardNavigation({
-    itemCount: navOrder.length,
-    onSelect: handleNavSelect,
-    enabled: navOrder.length > 0,
-  });
-
-  const focusedGlobalIndex = focusedIndex != null ? navOrder[focusedIndex] ?? null : null;
-  const focusedPosition = focusedIndex != null ? focusedIndex + 1 : null;
+    setPageFilter((prev) => (prev === page ? null : page));
+  }, []);
 
   // Focus the results heading when the results view mounts
   const resultsHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -230,98 +198,66 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
           {fileName && <p className="text-sm text-gray-600">{fileName}</p>}
           <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
         </div>
-        <header className="no-print mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <IconBadge />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 ref={resultsHeadingRef} tabIndex={-1} className="text-lg font-semibold text-slate-900 dark:text-white outline-none">Review Results</h1>
-                {reviewMode === "thesis" && (
-                  <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
-                    thesis
-                  </span>
-                )}
-                {role && (
-                  <WorkflowStatusBadge
-                    reviewId={reviewId}
-                    status={workflowStatus ?? "draft"}
-                    role={role}
-                    isOwner={isOwner !== false}
-                  />
-                )}
+        <header className="no-print mb-6 space-y-3">
+          {/* Row 1: Logo + Title + User menu (wraps below on narrow screens) */}
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex items-start gap-3 min-w-0">
+              <IconBadge />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 ref={resultsHeadingRef} tabIndex={-1} className="text-lg font-semibold text-slate-900 dark:text-white outline-none">Review Results</h1>
+                  {reviewMode === "thesis" && (
+                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:bg-purple-500/20 dark:text-purple-400">
+                      thesis
+                    </span>
+                  )}
+                </div>
+                {fileName && <p className="text-xs text-slate-400 dark:text-white/40">{fileName}</p>}
               </div>
-              {fileName && <p className="text-xs text-slate-400 dark:text-white/40">{fileName}</p>}
             </div>
-            <ReviewTags reviewId={reviewId} editable={isOwner !== false || role === "admin" || role === "phd"} />
-            <nav aria-label="Review actions">
-              <ReviewAnotherButton size="sm" />
-              <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
-              <PrintButton />
-              <CopyMarkdownButton feedback={feedback} fileName={fileName} />
-              <DownloadCsvButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
-              <DownloadJsonButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
-              {(isOwner || role === "admin") && (
-                <DeleteReviewButton reviewId={reviewId} fileName={fileName} variant="button" />
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPdfOpen((v) => !v)}
-                className={`border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white ${pdfOpen ? "bg-blue-500/10 dark:bg-blue-500/20 border-blue-500/30 dark:border-blue-500/30" : ""}`}
-                aria-pressed={pdfOpen}
-              >
-                <FileText className="mr-1.5 h-3.5 w-3.5" />
-                {pdfOpen ? "Hide PDF" : "Show PDF"}
-              </Button>
+            <nav aria-label="User navigation" className="ml-auto">
+              <UserMenu />
             </nav>
           </div>
-          <nav aria-label="User navigation">
-            <UserMenu />
+          {/* Row 2: Tags */}
+          <ReviewTags reviewId={reviewId} editable={isOwner !== false || role === "admin" || role === "phd"} />
+          {/* Row 3: Action buttons */}
+          <nav aria-label="Review actions" className="flex flex-wrap items-center gap-2">
+            <ReviewAnotherButton size="sm" />
+            <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
+            <PrintButton />
+            <CopyMarkdownButton feedback={feedback} fileName={fileName} />
+            <DownloadCsvButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
+            <DownloadJsonButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
+            {(isOwner || role === "admin") && (
+              <DeleteReviewButton reviewId={reviewId} fileName={fileName} variant="button" />
+            )}
           </nav>
         </header>
-        <div className="mb-4 space-y-3">
-          <QualityScore findings={feedback.findings} />
+        <div className="mb-4 grid gap-3 lg:grid-cols-2">
           <ReviewStats feedback={feedback} annotations={mergedAnnotations} checkGroups={checkGroups} />
-          <ImprovementSummaryCard reviewId={reviewId} />
-          <FindingsHeatmap findings={feedback.findings} onPageClick={handlePageClick} />
+          <FindingsHeatmap findings={feedback.findings} onPageClick={handlePageClick} activePage={pageFilter} />
+          <div className="lg:col-span-2">
+            <ImprovementSummaryCard reviewId={reviewId} />
+          </div>
         </div>
-        <div className={`flex gap-4 ${pdfOpen ? "flex-col lg:flex-row" : ""}`}>
-          <main id="main-content" className={pdfOpen ? "min-w-0 flex-1" : "w-full"}>
-            <FeedbackList
-              feedback={feedback}
-              annotations={mergedAnnotations}
-              onAnnotate={canAnnotate ? toggleAnnotation : undefined}
-              onBulkAnnotate={canAnnotate ? bulkAnnotate : undefined}
-              onClearAllAnnotations={canAnnotate ? clearAllAnnotations : undefined}
-              focusedGlobalIndex={focusedGlobalIndex}
-              focusedPosition={focusedPosition}
-              onAddComment={handleAddComment}
-              onDeleteComment={handleDeleteComment}
-              onReplyComment={handleReplyComment}
-              onResolveThread={handleResolveThread}
-              commentSubmitting={commentSubmitting}
-              onPageClick={handlePageClick}
-              conflicts={conflicts}
-              reviewId={reviewId}
-              currentUserId={session?.user?.id ?? undefined}
-            />
-          </main>
-          {pdfOpen && (
-            <aside
-              aria-label="PDF preview"
-              className="no-print sticky top-4 h-[calc(100vh-2rem)] w-full shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/5 dark:backdrop-blur-xl lg:w-[400px]"
-            >
-              <PdfViewer
-                reviewId={reviewId}
-                targetPage={pdfTargetPage}
-                findings={feedback.findings}
-                onClose={() => setPdfOpen(false)}
-              />
-            </aside>
-          )}
-        </div>
-        <ReviewAssignments reviewId={reviewId} />
-        <ReviewNotes reviewId={reviewId} />
+        <main id="main-content">
+          <FeedbackList
+            feedback={feedback}
+            annotations={mergedAnnotations}
+            onAnnotate={canAnnotate ? toggleAnnotation : undefined}
+            onAddComment={handleAddComment}
+            onDeleteComment={handleDeleteComment}
+            onReplyComment={handleReplyComment}
+            onResolveThread={handleResolveThread}
+            commentSubmitting={commentSubmitting}
+            onPageClick={handlePageClick}
+            conflicts={conflicts}
+            reviewId={reviewId}
+            currentUserId={session?.user?.id ?? undefined}
+            pageFilter={pageFilter}
+          />
+        </main>
         {role === "admin" && (
           <div className="no-print">
             <AuditLog reviewId={reviewId} />

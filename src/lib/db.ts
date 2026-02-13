@@ -783,7 +783,7 @@ export async function queryReviews(opts: ReviewQueryOptions): Promise<ReviewRow[
   if (opts.search) {
     const pattern = `%${opts.search}%`;
     conditions.push(
-      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx})`
+      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx} OR EXISTS (SELECT 1 FROM review_tags rt WHERE rt.review_id = reviews.id AND rt.tag ILIKE $${paramIdx}))`
     );
     paramIdx++;
     params.push(pattern);
@@ -840,7 +840,7 @@ export async function queryReviewsGrouped(opts: {
   if (opts.search) {
     const pattern = `%${opts.search}%`;
     conditions.push(
-      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx})`
+      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx} OR EXISTS (SELECT 1 FROM review_tags rt WHERE rt.review_id = reviews.id AND rt.tag ILIKE $${paramIdx}))`
     );
     paramIdx++;
     params.push(pattern);
@@ -893,7 +893,7 @@ export async function getReviewCount(userId?: string, search?: string): Promise<
   if (search) {
     const pattern = `%${search}%`;
     conditions.push(
-      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx})`
+      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx} OR EXISTS (SELECT 1 FROM review_tags rt WHERE rt.review_id = reviews.id AND rt.tag ILIKE $${paramIdx}))`
     );
     paramIdx++;
     params.push(pattern);

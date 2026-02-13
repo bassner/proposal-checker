@@ -215,7 +215,7 @@ export function AuditLog({ reviewId }: { reviewId: string }) {
           )}
 
           {!loading && !error && events.length > 0 && (
-            <div className="relative">
+            <div className="relative max-h-80 overflow-y-auto">
               {/* Timeline line */}
               <div className="absolute bottom-0 left-[15px] top-0 w-px bg-slate-200 dark:bg-white/10" />
 

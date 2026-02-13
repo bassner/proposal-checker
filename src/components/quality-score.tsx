@@ -24,7 +24,7 @@ interface QualityScoreProps {
 }
 
 /** SVG circular progress indicator. */
-function ScoreRing({
+export function ScoreRing({
   score,
   maxScore,
   size = 56,
@@ -76,6 +76,53 @@ function ScoreRing({
       />
     </svg>
   );
+}
+
+/** Hook to compute quality score from findings (fetches severity weights from API). */
+export function useQualityScore(findings: Finding[]) {
+  const [weights, setWeights] = useState<Record<string, number>>(DEFAULT_WEIGHTS);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/severity-weights")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch");
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        if (data.weights && Array.isArray(data.weights)) {
+          const map: Record<string, number> = {};
+          for (const w of data.weights as SeverityWeight[]) {
+            map[w.severity] = w.weight;
+          }
+          setWeights(map);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return useMemo(() => {
+    const max = 100;
+    let totalDeduction = 0;
+    for (const finding of findings) {
+      totalDeduction += weights[finding.severity] ?? 0;
+    }
+    const score = Math.max(0, max - totalDeduction);
+    const pct = (score / max) * 100;
+    const scoreColor =
+      pct >= 80
+        ? "text-emerald-400"
+        : pct >= 60
+          ? "text-yellow-400"
+          : pct >= 40
+            ? "text-orange-400"
+            : "text-red-400";
+    return { score, maxScore: max, scoreColor };
+  }, [findings, weights]);
 }
 
 export function QualityScore({ findings, className }: QualityScoreProps) {

@@ -47,7 +47,8 @@ export async function GET(request: NextRequest) {
   const search = rawSearch.slice(0, MAX_SEARCH_LEN) || undefined;
 
   const isAdmin = session.user.role === "admin";
-  const userId = isAdmin ? undefined : session.user.id;
+  const mineOnly = url.searchParams.get("mine") === "true";
+  const userId = (isAdmin && !mineOnly) ? undefined : session.user.id;
 
   // Grouped mode: lightweight query for "Group by file" view
   if (url.searchParams.get("grouped") === "true") {

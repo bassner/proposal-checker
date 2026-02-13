@@ -265,7 +265,7 @@ export interface ModelConfig {
 }
 
 // Finding annotations (user feedback on individual findings)
-export type AnnotationStatus = "accepted" | "dismissed" | "fixed";
+export type AnnotationStatus = "dismissed" | "fixed";
 
 export type ThreadStatus = "open" | "resolved";
 

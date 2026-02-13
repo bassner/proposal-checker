@@ -230,7 +230,7 @@ export function ReviewTags({ reviewId, compact = false, editable = true }: Revie
             setAdding(true);
             setTimeout(() => inputRef.current?.focus(), 0);
           }}
-          className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-600 dark:border-white/15 dark:text-white/30 dark:hover:border-white/30 dark:hover:text-white/60"
+          className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-400 transition-colors hover:border-slate-400 hover:text-slate-600 dark:border-white/15 dark:text-white/30 dark:hover:border-white/30 dark:hover:text-white/60"
         >
           <Plus className="h-3 w-3" />
           Add tag

@@ -168,7 +168,7 @@ function ReplyForm({
         autoFocus
         className="flex-1 resize-none rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 placeholder:text-slate-400 focus:border-purple-400 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:placeholder:text-white/20 dark:focus:border-purple-500/40"
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSubmit();
           }
@@ -290,7 +290,7 @@ export function CommentThread({
 
       {/* Replies */}
       {replyCount > 0 && (
-        <div className="ml-4 space-y-1 border-l border-slate-200 pl-2 dark:border-white/10">
+        <div className="ml-4 space-y-2 border-l border-slate-200 pl-2 dark:border-white/10">
           {replies.map((reply) => (
             <CommentRow
               key={reply.id}

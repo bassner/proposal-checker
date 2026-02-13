@@ -64,7 +64,7 @@ export function DeadlineRiskSummary() {
     last48hWarningCount,
   } = data;
 
-  if (riskBreakdown.length === 0) {
+  if (!riskBreakdown || riskBreakdown.length === 0) {
     return (
       <p className="py-4 text-center text-xs text-white/30">
         No deadlines configured yet. Add one above to see risk analysis.

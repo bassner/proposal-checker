@@ -26,10 +26,8 @@ import {
 import Link from "next/link";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { PinButton } from "@/components/pin-button";
-import { WorkflowStatusLabel } from "@/components/workflow-status-badge";
 import { BulkActionsBar } from "@/components/admin/bulk-actions-bar";
-import type { WorkflowStatus } from "@/types/review";
-import { Tag, Filter } from "lucide-react";
+import { Tag, Filter, User } from "lucide-react";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -44,7 +42,7 @@ interface ReviewListItem {
   fileName: string | null;
   createdAt: string;
   isPinned: boolean;
-  workflowStatus: WorkflowStatus;
+  workflowStatus: string;
   tags: string[];
 }
 
@@ -72,7 +70,7 @@ interface GroupedReviewsResponse {
   grouped: true;
 }
 
-type SortColumn = "created_at" | "file_name" | "provider" | "status" | "user_name" | "workflow_status";
+type SortColumn = "created_at" | "file_name" | "provider" | "status" | "user_name";
 
 // ---------------------------------------------------------------------------
 // Tag color helper (same hash as review-tags.tsx for consistency)
@@ -378,6 +376,7 @@ export default function ReviewsPage() {
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set());
 
   const isAdmin = session?.user?.role === "admin";
+  const [mineOnly, setMineOnly] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const handleDeleted = useCallback(() => setRefreshKey((k) => k + 1), []);
   const handlePinToggle = useCallback(() => setRefreshKey((k) => k + 1), []);
@@ -391,7 +390,7 @@ export default function ReviewsPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const fetchReviews = useCallback(async (p: number, s: SortColumn, d: "asc" | "desc", q: string) => {
+  const fetchReviews = useCallback(async (p: number, s: SortColumn, d: "asc" | "desc", q: string, mine: boolean) => {
     setLoading(true);
     setError(null);
     try {
@@ -402,6 +401,7 @@ export default function ReviewsPage() {
         dir: d,
       });
       if (q) params.set("search", q);
+      if (mine) params.set("mine", "true");
       const res = await fetch(`/api/reviews?${params}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -416,12 +416,13 @@ export default function ReviewsPage() {
     }
   }, []);
 
-  const fetchGrouped = useCallback(async (q: string) => {
+  const fetchGrouped = useCallback(async (q: string, mine: boolean) => {
     setGroupedLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({ grouped: "true" });
       if (q) params.set("search", q);
+      if (mine) params.set("mine", "true");
       const res = await fetch(`/api/reviews?${params}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -438,11 +439,11 @@ export default function ReviewsPage() {
 
   useEffect(() => {
     if (groupByFile) {
-      fetchGrouped(debouncedSearch);
+      fetchGrouped(debouncedSearch, mineOnly);
     } else {
-      fetchReviews(page, sort, dir, debouncedSearch);
+      fetchReviews(page, sort, dir, debouncedSearch, mineOnly);
     }
-  }, [page, sort, dir, debouncedSearch, groupByFile, fetchReviews, fetchGrouped, refreshKey]);
+  }, [page, sort, dir, debouncedSearch, groupByFile, mineOnly, fetchReviews, fetchGrouped, refreshKey]);
 
   // Clear selection when table data changes
   useEffect(() => {
@@ -599,25 +600,54 @@ export default function ReviewsPage() {
 
       <div className="relative mx-auto w-full max-w-[1200px] px-3 py-4 sm:px-6 sm:py-8">
         {/* Header */}
-        <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 backdrop-blur-sm dark:bg-blue-500/20">
-              <ClipboardList className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+        <header className="mb-8 space-y-3">
+          {/* Row 1: Title + User menu */}
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 backdrop-blur-sm dark:bg-blue-500/20">
+                <ClipboardList className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  {isAdmin ? (mineOnly ? "My Reviews" : "All Reviews") : "My Reviews"}
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-white/40" aria-live="polite">
+                  {isLoading && !hasData
+                    ? "Loading..."
+                    : `${displayTotal} review${displayTotal !== 1 ? "s" : ""}${groupByFile ? ` in ${fileGroups.length} group${fileGroups.length !== 1 ? "s" : ""}` : ""}`}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
-                {isAdmin ? "All Reviews" : "My Reviews"}
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-white/40" aria-live="polite">
-                {isLoading && !hasData
-                  ? "Loading..."
-                  : `${displayTotal} review${displayTotal !== 1 ? "s" : ""}${groupByFile ? ` in ${fileGroups.length} group${fileGroups.length !== 1 ? "s" : ""}` : ""}`}
-              </p>
-            </div>
+            <nav aria-label="User navigation" className="ml-auto">
+              <UserMenu />
+            </nav>
           </div>
-          <nav aria-label="Reviews navigation" className="flex items-center gap-3">
+          {/* Row 2: Action buttons */}
+          <nav aria-label="Reviews actions" className="flex flex-wrap items-center gap-2">
+            <Link href="/" aria-label="Back to Home">
+              <Button variant="outline" size="sm" className="border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">
+                <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+                Back to Home
+              </Button>
+            </Link>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="sm"
+                className={
+                  mineOnly
+                    ? "border-blue-500/50 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 hover:text-blue-200"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+                }
+                onClick={() => { setMineOnly((m) => !m); setPage(1); }}
+              >
+                <User className="mr-1.5 h-3.5 w-3.5" />
+                {mineOnly ? "Show All" : "My Reviews"}
+              </Button>
+            )}
             <Button
               variant="outline"
+              size="sm"
               className={
                 groupByFile
                   ? "border-blue-500/50 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 hover:text-blue-200"
@@ -631,12 +661,13 @@ export default function ReviewsPage() {
                 }
               }}
             >
-              <Layers className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">{groupByFile ? "Exit Grouping" : "Group by File"}</span>
+              <Layers className="mr-1.5 h-3.5 w-3.5" />
+              {groupByFile ? "Exit Grouping" : "Group by File"}
             </Button>
             {!groupByFile && (
               <Button
                 variant="outline"
+                size="sm"
                 className={
                   compareMode
                     ? "border-purple-500/50 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-purple-200"
@@ -647,17 +678,10 @@ export default function ReviewsPage() {
                   setSelectedIds([]);
                 }}
               >
-                <GitCompareArrows className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">{compareMode ? "Exit Compare" : "Compare"}</span>
+                <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
+                {compareMode ? "Exit Compare" : "Compare"}
               </Button>
             )}
-            <Link href="/" aria-label="Back to Home">
-              <Button variant="outline" className="border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white">
-                <ArrowLeft className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Back to Home</span>
-              </Button>
-            </Link>
-            <UserMenu />
           </nav>
         </header>
 
@@ -668,7 +692,7 @@ export default function ReviewsPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-white/30" />
             <input
               type="text"
-              placeholder="Search by file name, user name, or email..."
+              placeholder="Search by file name, user, or tag..."
               aria-label="Search reviews"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -800,9 +824,6 @@ export default function ReviewsPage() {
                       <th className={sortableThClass} onClick={() => handleSort("status")}>
                         Status <SortIcon column="status" activeSort={sort} activeDir={dir} />
                       </th>
-                      <th className={`${thClass} hidden lg:table-cell`}>
-                        Workflow
-                      </th>
                       {isAdmin && (
                         <th className={`${sortableThClass} hidden lg:table-cell`} onClick={() => handleSort("user_name")}>
                           User <SortIcon column="user_name" activeSort={sort} activeDir={dir} />
@@ -880,9 +901,6 @@ export default function ReviewsPage() {
                         <td className="hidden py-2.5 pr-4 text-slate-500 dark:text-white/50 md:table-cell">{r.provider}</td>
                         <td className="py-2.5 pr-4">
                           {statusBadge(r.status, r.createdAt)}
-                        </td>
-                        <td className="hidden py-2.5 pr-4 lg:table-cell">
-                          <WorkflowStatusLabel status={r.workflowStatus ?? "draft"} />
                         </td>
                         {isAdmin && (
                           <td className="hidden py-2.5 pr-4 text-slate-500 dark:text-white/50 lg:table-cell">

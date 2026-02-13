@@ -21,10 +21,13 @@ export function useAnnotations(reviewId: string, initial: Annotations = {}) {
   reviewIdRef.current = reviewId;
 
   // Sync when initial annotations change (e.g. DB fetch completes)
+  // Use JSON key to compare by value — `initial` may be a new object reference each render
+  const initialKey = JSON.stringify(initial);
   useEffect(() => {
     setAnnotations(initial);
     latestRef.current = initial;
-  }, [initial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialKey]);
 
   const doSave = useCallback(async (data: Annotations, retries = 0) => {
     setSaving(true);

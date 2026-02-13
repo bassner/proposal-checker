@@ -11,7 +11,6 @@ import type {
   LLMPhase,
   StepStatus,
   Annotations,
-  WorkflowStatus,
 } from "@/types/review";
 import { CHECK_GROUPS, ALL_CHECK_GROUP_META, getCheckGroups } from "@/types/review";
 
@@ -195,7 +194,8 @@ export interface CompletedReview {
   canRetry: boolean;
   isOwner?: boolean;
   isStale?: boolean; // Computed when fetched for running reviews
-  workflowStatus?: WorkflowStatus;
+  /** @deprecated Workflow status is no longer used in the UI. */
+  workflowStatus?: string;
 }
 
 /**
@@ -374,6 +374,7 @@ function handleSSEEvent(
         : modeGroups;
       setState((prev) => ({
         ...prev,
+        status: "running",
         startTime,
         mode: reviewMode,
         checkGroups: activeGroups.map((g) => ({

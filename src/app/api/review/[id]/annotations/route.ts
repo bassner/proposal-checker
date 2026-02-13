@@ -5,7 +5,7 @@ import { cacheInvalidate } from "@/lib/cache";
 import type { AnnotationStatus, Annotations, MergedFeedback } from "@/types/review";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const VALID_STATUSES = new Set<AnnotationStatus>(["accepted", "dismissed", "fixed"]);
+const VALID_STATUSES = new Set<AnnotationStatus>(["dismissed", "fixed"]);
 const INDEX_RE = /^\d+$/;
 
 /**
@@ -97,19 +97,27 @@ export async function POST(
       );
     }
 
-    if (
-      !value ||
-      typeof value !== "object" ||
-      !VALID_STATUSES.has((value as { status?: string }).status as AnnotationStatus)
-    ) {
+    if (!value || typeof value !== "object") {
       return Response.json(
         { error: `Invalid annotation value for key ${key}` },
         { status: 400 }
       );
     }
 
+    const entryStatus = (value as { status?: string }).status;
+
+    // Skip comment-only entries (no status) — comments are managed separately
+    if (!entryStatus) continue;
+
+    if (!VALID_STATUSES.has(entryStatus as AnnotationStatus)) {
+      return Response.json(
+        { error: `Invalid annotation status for key ${key}: ${entryStatus}` },
+        { status: 400 }
+      );
+    }
+
     validated[key] = {
-      status: (value as { status: AnnotationStatus }).status,
+      status: entryStatus as AnnotationStatus,
       updatedAt: now,
     };
   }

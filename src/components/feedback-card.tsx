@@ -48,10 +48,10 @@ const severityConfig: Record<
 };
 
 const annotationButtons: { status: AnnotationStatus; icon: typeof Check; label: string }[] = [
-  { status: "accepted", icon: Check, label: "Accept" },
-  { status: "dismissed", icon: X, label: "Dismiss" },
   { status: "fixed", icon: Wrench, label: "Fixed" },
+  { status: "dismissed", icon: X, label: "Dismiss" },
 ];
+
 
 function renderQuoteWithBold(quote: string): ReactNode {
   const parts = quote.split("**");
@@ -124,7 +124,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
         rows={1}
         className="flex-1 resize-none rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 placeholder:text-slate-400 focus:border-purple-400 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:placeholder:text-white/20 dark:focus:border-purple-500/40"
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSubmit();
           }
@@ -219,15 +219,29 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
     <div
       ref={cardRef}
       className={cn(
-        "print-card rounded-lg border border-slate-200 border-l-4 bg-white p-3 backdrop-blur-sm transition-all hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/[0.07]",
-        // Default severity border, overridden by annotation state
+        "print-card overflow-hidden rounded-lg border border-slate-200 border-l-4 bg-white backdrop-blur-sm transition-all hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/[0.07]",
+        // Severity-based border color, overridden by annotation state
         !annotation?.status && config.borderColor,
         isFixed && "border-l-emerald-500 bg-emerald-500/5",
         isDismissed && "border-l-slate-300 opacity-50 dark:border-l-white/20",
         focused && "ring-2 ring-blue-500/60 bg-slate-100 dark:bg-white/[0.09]",
       )}
     >
-      <div className="space-y-1.5">
+      {/* Category banner - full width */}
+      {finding.category && (() => {
+        const cat = normalizeFindingCategory(finding.category);
+        const meta = FINDING_CATEGORIES[cat];
+        return (
+          <div className={cn(
+            "px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider",
+            meta.bgClass, meta.textClass,
+            isDismissed && "opacity-40"
+          )}>
+            {meta.label}
+          </div>
+        );
+      })()}
+      <div className="space-y-1.5 p-3">
         <div className="flex items-start gap-1.5">
           <SevIcon
             className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", config.iconColor, isDismissed && "opacity-40")}
@@ -246,20 +260,6 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
             </span>
           )}
         </div>
-        {/* Category badge */}
-        {finding.category && (() => {
-          const cat = normalizeFindingCategory(finding.category);
-          const meta = FINDING_CATEGORIES[cat];
-          return (
-            <span className={cn(
-              "inline-block rounded-full px-2 py-0.5 text-[10px] font-medium leading-none",
-              meta.bgClass, meta.textClass,
-              isDismissed && "opacity-40"
-            )}>
-              {meta.label}
-            </span>
-          );
-        })()}
         <p className={cn(
           "text-xs leading-relaxed text-slate-600 dark:text-white/50",
           isDismissed && "text-slate-400 dark:text-white/25"
@@ -325,11 +325,9 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
                     "flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
                     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-white/40",
                     isActive
-                      ? status === "accepted"
-                        ? "bg-blue-500/20 text-blue-300"
-                        : status === "dismissed"
-                          ? "bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-white/50"
-                          : "bg-emerald-500/20 text-emerald-300"
+                      ? status === "dismissed"
+                        ? "bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-white/50"
+                        : "bg-emerald-500/20 text-emerald-300"
                       : "text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-white/25 dark:hover:text-white/50 dark:hover:bg-white/5"
                   )}
                 >
