@@ -37,6 +37,8 @@ import {
   FileStack,
 } from "lucide-react";
 import { PreflightWarnings } from "@/components/preflight-warnings";
+import { OnboardingTour } from "@/components/onboarding-tour";
+import { useOnboarding } from "@/hooks/use-onboarding";
 import type { PreflightWarning } from "@/lib/pdf/preflight";
 
 /**
@@ -62,7 +64,7 @@ export default function Home() {
     return <Unauthorized />;
   }
 
-  return <UploadPage />;
+  return <UploadPage key="upload" />;
 }
 
 // ── Sign-in landing (unauthenticated) ─────────────────────────────────────
@@ -170,6 +172,7 @@ const STORAGE_KEY_GROUPS = "proposal-checker:selectedGroups";
 
 function UploadPage() {
   const router = useRouter();
+  const tour = useOnboarding();
   const [file, setFile] = useState<File | null>(null);
   const [mode, setModeRaw] = useState<ReviewMode>("proposal");
   const [provider, setProviderRaw] = useState<ProviderType>("azure");
@@ -392,11 +395,12 @@ function UploadPage() {
             </div>
           </div>
           <nav aria-label="User navigation">
-            <UserMenu />
+            <UserMenu onReplayTour={tour.startTour} />
           </nav>
         </header>
 
         <main id="main-content" className="space-y-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/5 dark:shadow-none dark:backdrop-blur-xl sm:p-5">
+          <div data-tour="upload-zone">
           {isBatchMode ? (
             <>
               <BatchFileList
@@ -424,6 +428,7 @@ function UploadPage() {
               disabled={isAnySubmitting}
             />
           )}
+          </div>
 
           {/* Preflight analysis warnings (single-file mode) */}
           {!isBatchMode && file && preflightLoading && (
@@ -443,7 +448,7 @@ function UploadPage() {
           )}
 
           {/* Review mode selector */}
-          <div>
+          <div data-tour="review-mode">
             <label className="mb-2 block text-xs font-medium text-slate-500 dark:text-white/50">Review Mode</label>
             <div className="flex gap-2">
               {REVIEW_MODES.map((m) => (
@@ -464,6 +469,7 @@ function UploadPage() {
             </div>
           </div>
 
+          <div data-tour="provider-select">
           {modelsLoading ? (
             <div className="flex items-center gap-2 py-2">
               <Loader2 className="h-4 w-4 animate-spin text-slate-400 dark:text-white/40" />
@@ -481,6 +487,7 @@ function UploadPage() {
               models={models}
             />
           )}
+          </div>
 
           {/* Template selector */}
           {templates.length > 0 && (
@@ -512,7 +519,7 @@ function UploadPage() {
           )}
 
           {/* Advanced Options — check group toggles */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 dark:border-white/5 dark:bg-white/[0.02]">
+          <div data-tour="check-groups" className="rounded-xl border border-slate-200 bg-slate-50 dark:border-white/5 dark:bg-white/[0.02]">
             <button
               type="button"
               onClick={() => setOptionsOpen((prev) => !prev)}
@@ -578,6 +585,7 @@ function UploadPage() {
           </div>
 
           <Button
+            data-tour="submit-button"
             onClick={handleStart}
             disabled={
               isAnySubmitting ||
@@ -626,6 +634,8 @@ function UploadPage() {
           </a>
         </footer>
       </div>
+
+      <OnboardingTour tour={tour} />
     </div>
   );
 }

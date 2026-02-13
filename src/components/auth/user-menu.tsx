@@ -1,13 +1,18 @@
 "use client";
 
 import { useSession, signIn } from "next-auth/react";
-import { LogOut, Shield, ClipboardList, Users } from "lucide-react";
+import { LogOut, Shield, ClipboardList, Users, HelpCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { NotificationBell } from "./notification-bell";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-export function UserMenu() {
+interface UserMenuProps {
+  /** When provided, shows a "Replay Tour" button that triggers the onboarding walkthrough */
+  onReplayTour?: () => void;
+}
+
+export function UserMenu({ onReplayTour }: UserMenuProps = {}) {
   const { data: session } = useSession();
 
   // If the token refresh failed, force re-login (with loop guard)
@@ -59,6 +64,17 @@ export function UserMenu() {
           <Shield className="h-3.5 w-3.5" />
           <span className="hidden md:inline">Admin</span>
         </Link>
+      )}
+      {onReplayTour && (
+        <button
+          onClick={onReplayTour}
+          className="flex items-center justify-center size-10 rounded-lg border border-slate-200 bg-white text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-auto md:gap-1.5 md:px-3 md:py-1.5"
+          aria-label="Replay Tour"
+          title="Replay onboarding tour"
+        >
+          <HelpCircle className="h-3.5 w-3.5" />
+          <span className="hidden md:inline">Tour</span>
+        </button>
       )}
       <ThemeToggle />
       <NotificationBell />
