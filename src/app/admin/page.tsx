@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
-import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplates, listWebhooks, getSeverityWeights } from "@/lib/db";
+import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplates, listWebhooks, getSeverityWeights, listPromptSnippets } from "@/lib/db";
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
-import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Puzzle } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
@@ -14,6 +14,7 @@ import { ReviewTemplatesEditor } from "@/components/admin/review-templates-edito
 import { WebhooksManager } from "@/components/admin/webhooks-manager";
 import { CheckMetricsDashboard } from "@/components/admin/check-metrics-dashboard";
 import { SeverityConfigEditor } from "@/components/admin/severity-config-editor";
+import { PromptSnippetsEditor } from "@/components/admin/prompt-snippets-editor";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -24,8 +25,8 @@ export default async function AdminPage() {
     redirect("/");
   }
 
-  // Load config + analytics + failed reviews + check metrics + templates + webhooks + severity weights from DB in parallel
-  const [configResults, analyticsData, failedReviewsData, checkMetricsData, templatesData, webhooksData, severityWeightsData] = await Promise.all([
+  // Load config + analytics + failed reviews + check metrics + templates + webhooks + severity weights + snippets from DB in parallel
+  const [configResults, analyticsData, failedReviewsData, checkMetricsData, templatesData, webhooksData, severityWeightsData, snippetsData] = await Promise.all([
     Promise.all(
       APP_ROLES.map(async (role) => ({
         role,
@@ -54,6 +55,10 @@ export default async function AdminPage() {
     }),
     getSeverityWeights().catch((err) => {
       console.error("[admin] Failed to load severity weights:", err);
+      return [];
+    }),
+    listPromptSnippets().catch((err) => {
+      console.error("[admin] Failed to load prompt snippets:", err);
       return [];
     }),
   ]);
@@ -150,6 +155,15 @@ export default async function AdminPage() {
             <h2 className="text-sm font-medium text-white/60">Review Templates</h2>
           </div>
           <ReviewTemplatesEditor initialTemplates={templatesData} />
+        </div>
+
+        {/* Prompt Snippets */}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-2">
+            <Puzzle className="h-4 w-4 text-blue-400" />
+            <h2 className="text-sm font-medium text-white/60">Prompt Snippets</h2>
+          </div>
+          <PromptSnippetsEditor initialSnippets={snippetsData} />
         </div>
 
         {/* Webhooks */}

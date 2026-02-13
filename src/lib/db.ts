@@ -238,6 +238,20 @@ async function ensureSchema(): Promise<void> {
         ('minor', 2, 'yellow', 'Minor'),
         ('suggestion', 1, 'blue', 'Suggestion')
       ON CONFLICT (severity) DO NOTHING;
+
+      -- Prompt snippets (reusable prompt fragments)
+      CREATE TABLE IF NOT EXISTS prompt_snippets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        category TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_prompt_snippets_category_name
+        ON prompt_snippets(category, name);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -2105,4 +2119,95 @@ export async function updateSeverityWeight(
     label: row.label as string,
     updatedAt: (row.updated_at as Date).toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Prompt snippets (reusable prompt fragments)
+// ---------------------------------------------------------------------------
+
+export interface PromptSnippetRow {
+  id: string;
+  name: string;
+  content: string;
+  category: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToPromptSnippet(row: Record<string, unknown>): PromptSnippetRow {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    content: row.content as string,
+    category: row.category as string,
+    createdBy: row.created_by as string,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+}
+
+/** List all prompt snippets, ordered by category then name. */
+export async function listPromptSnippets(): Promise<PromptSnippetRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM prompt_snippets ORDER BY category, name"
+  );
+  return result.rows.map(rowToPromptSnippet);
+}
+
+/** Create a new prompt snippet. Returns the created row. */
+export async function createPromptSnippet(snippet: {
+  name: string;
+  content: string;
+  category: string;
+  createdBy: string;
+}): Promise<PromptSnippetRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO prompt_snippets (name, content, category, created_by)
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [snippet.name, snippet.content, snippet.category, snippet.createdBy]
+  );
+  return rowToPromptSnippet(result.rows[0]);
+}
+
+/** Update an existing prompt snippet. Returns the updated row or null if not found. */
+export async function updatePromptSnippet(
+  id: string,
+  updates: { name: string; content: string; category: string }
+): Promise<PromptSnippetRow | null> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE prompt_snippets
+     SET name = $2, content = $3, category = $4, updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, updates.name, updates.content, updates.category]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToPromptSnippet(result.rows[0]);
+}
+
+/** Delete a prompt snippet. Returns true if deleted. */
+export async function deletePromptSnippet(id: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query("DELETE FROM prompt_snippets WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Fetch multiple prompt snippets by their IDs. */
+export async function getPromptSnippetsByIds(ids: string[]): Promise<PromptSnippetRow[]> {
+  if (!pool || ids.length === 0) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM prompt_snippets WHERE id = ANY($1) ORDER BY category, name",
+    [ids]
+  );
+  return result.rows.map(rowToPromptSnippet);
 }
