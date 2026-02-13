@@ -28,6 +28,7 @@ import { QualityScore } from "@/components/quality-score";
 import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
 import { ReviewNotes } from "@/components/review-notes";
+import { ReviewAssignments } from "@/components/review-assignments";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -304,6 +305,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             </aside>
           )}
         </div>
+        <ReviewAssignments reviewId={reviewId} />
         <ReviewNotes reviewId={reviewId} />
         {role === "admin" && (
           <div className="no-print">

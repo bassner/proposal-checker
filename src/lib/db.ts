@@ -252,6 +252,24 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_prompt_snippets_category_name
         ON prompt_snippets(category, name);
+
+      -- Review assignments (supervisor assigns reviews to users)
+      CREATE TABLE IF NOT EXISTS review_assignments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        assigned_to TEXT NOT NULL,
+        assigned_by TEXT NOT NULL,
+        assigned_by_name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_review_assignments_review
+        ON review_assignments(review_id);
+      CREATE INDEX IF NOT EXISTS idx_review_assignments_user
+        ON review_assignments(assigned_to, created_at DESC);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -2385,4 +2403,109 @@ export async function getPromptSnippetsByIds(ids: string[]): Promise<PromptSnipp
     [ids]
   );
   return result.rows.map(rowToPromptSnippet);
+}
+
+// ---------------------------------------------------------------------------
+// Review assignments
+// ---------------------------------------------------------------------------
+
+export type AssignmentStatus = "pending" | "in_progress" | "completed";
+
+export interface ReviewAssignmentRow {
+  id: string;
+  reviewId: string;
+  assignedTo: string;
+  assignedBy: string;
+  assignedByName: string;
+  status: AssignmentStatus;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToAssignment(row: Record<string, unknown>): ReviewAssignmentRow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    assignedTo: row.assigned_to as string,
+    assignedBy: row.assigned_by as string,
+    assignedByName: row.assigned_by_name as string,
+    status: row.status as AssignmentStatus,
+    note: (row.note as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+}
+
+/** Create an assignment for a review. Returns the new assignment. */
+export async function assignReview(
+  reviewId: string,
+  assignedTo: string,
+  assignedBy: string,
+  assignedByName: string,
+  note?: string
+): Promise<ReviewAssignmentRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO review_assignments (review_id, assigned_to, assigned_by, assigned_by_name, note)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [reviewId, assignedTo, assignedBy, assignedByName, note ?? null]
+  );
+  return rowToAssignment(result.rows[0]);
+}
+
+/** List all assignments for a review, newest first. */
+export async function getAssignmentsForReview(reviewId: string): Promise<ReviewAssignmentRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM review_assignments WHERE review_id = $1 ORDER BY created_at DESC",
+    [reviewId]
+  );
+  return result.rows.map(rowToAssignment);
+}
+
+/** List all assignments for a user, newest first. */
+export async function getAssignmentsForUser(userId: string): Promise<ReviewAssignmentRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM review_assignments WHERE assigned_to = $1 ORDER BY created_at DESC",
+    [userId]
+  );
+  return result.rows.map(rowToAssignment);
+}
+
+/** Update the status of an assignment. Returns the updated row or null if not found. */
+export async function updateAssignmentStatus(
+  assignmentId: string,
+  status: AssignmentStatus
+): Promise<ReviewAssignmentRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE review_assignments SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+    [assignmentId, status]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToAssignment(result.rows[0]);
+}
+
+/** Delete an assignment. Returns true if deleted. */
+export async function deleteAssignment(assignmentId: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query("DELETE FROM review_assignments WHERE id = $1", [assignmentId]);
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Get a single assignment by ID. */
+export async function getAssignmentById(assignmentId: string): Promise<ReviewAssignmentRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query("SELECT * FROM review_assignments WHERE id = $1", [assignmentId]);
+  if (result.rows.length === 0) return null;
+  return rowToAssignment(result.rows[0]);
 }
