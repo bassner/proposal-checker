@@ -18,7 +18,7 @@ export default async function GuidelinesPage() {
       </div>
 
       <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <GraduationCap className="h-5 w-5 text-blue-400" />
@@ -28,18 +28,22 @@ export default async function GuidelinesPage() {
               <p className="text-xs text-white/40">What your proposal will be checked against</p>
             </div>
           </div>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Home
-          </Link>
-        </div>
+          <nav aria-label="Page navigation">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to Home
+            </Link>
+          </nav>
+        </header>
 
-        <GuidelinesViewer guidelines={guidelines} />
+        <main id="main-content">
+          <GuidelinesViewer guidelines={guidelines} />
+        </main>
 
-        <footer className="mt-12 pb-4 text-center text-xs text-white/20">
+        <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">
           Created with &#10084;&#65039; by{" "}
           <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
             @bassner

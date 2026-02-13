@@ -246,7 +246,7 @@ function SharedResultsView({ review }: { review: SharedReview }) {
           <p className="text-xs text-gray-400">by {review.userName}</p>
           <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
         </div>
-        <div className="no-print mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="no-print mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
               <GraduationCap className="h-5 w-5 text-blue-400" />
@@ -257,7 +257,7 @@ function SharedResultsView({ review }: { review: SharedReview }) {
               <p className="text-xs text-white/30">by {review.userName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <nav aria-label="Page actions" className="flex items-center gap-2">
             <PrintButton />
             <CopyMarkdownButton feedback={review.feedback!} fileName={review.fileName} />
             <Link href="/">
@@ -266,16 +266,18 @@ function SharedResultsView({ review }: { review: SharedReview }) {
                 Back to Home
               </Button>
             </Link>
-          </div>
-        </div>
-        <FeedbackList
-          feedback={review.feedback!}
-          annotations={displayAnnotations}
-          onAddComment={handleAddComment}
-          onDeleteComment={handleDeleteComment}
-          commentSubmitting={submitting}
-        />
-        <footer className="mt-12 pb-4 text-center text-xs text-white/20">
+          </nav>
+        </header>
+        <main id="main-content">
+          <FeedbackList
+            feedback={review.feedback!}
+            annotations={displayAnnotations}
+            onAddComment={handleAddComment}
+            onDeleteComment={handleDeleteComment}
+            commentSubmitting={submitting}
+          />
+        </main>
+        <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">
           Created with &#10084;&#65039; by{" "}
           <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
             @bassner
@@ -291,13 +293,15 @@ function PageShell({ children }: { children: React.ReactNode }) {
     <div className="relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
       <div className="relative mx-auto min-h-screen w-full max-w-[960px] px-3 py-4 sm:px-6 sm:py-8">
-        <div className="mb-6 flex items-center gap-3">
+        <header className="mb-6 flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/20 backdrop-blur-sm">
             <GraduationCap className="h-5 w-5 text-blue-400" />
           </div>
           <h1 className="text-lg font-semibold text-white">Shared Review</h1>
-        </div>
-        {children}
+        </header>
+        <main id="main-content">
+          {children}
+        </main>
       </div>
     </div>
   );

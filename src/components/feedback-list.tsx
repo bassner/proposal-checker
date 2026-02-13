@@ -226,6 +226,7 @@ function FilterBar({
             value={searchQuery}
             onChange={(e) => onSearchQuery(e.target.value)}
             placeholder="Search findings..."
+            aria-label="Search findings"
             className="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-8 text-[11px] text-white/70 placeholder:text-white/20 focus:border-white/20 focus:outline-none"
           />
           {searchQuery && (
@@ -241,11 +242,11 @@ function FilterBar({
       </div>
 
       {/* Filter status */}
-      {isFiltering && (
-        <p className="text-[11px] text-white/35">
-          Showing {visibleCount} of {totalCount} finding{totalCount !== 1 ? "s" : ""}
-        </p>
-      )}
+      <p className="text-[11px] text-white/35" aria-live="polite" role="status">
+        {isFiltering
+          ? `Showing ${visibleCount} of ${totalCount} finding${totalCount !== 1 ? "s" : ""}`
+          : ""}
+      </p>
     </div>
   );
 }

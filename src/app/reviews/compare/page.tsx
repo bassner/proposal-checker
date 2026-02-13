@@ -225,7 +225,7 @@ function ComparePageInner() {
 
       <div className="relative mx-auto w-full max-w-[1400px] px-3 py-4 sm:px-6 sm:py-8">
         {/* Header */}
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-500/20 backdrop-blur-sm">
               <GitCompareArrows className="h-5 w-5 text-purple-400" />
@@ -237,7 +237,7 @@ function ComparePageInner() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <nav aria-label="Compare navigation" className="flex items-center gap-3">
             <Link href="/reviews">
               <Button variant="outline" className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white">
                 <ArrowLeft className="h-4 w-4 sm:mr-2" />
@@ -245,11 +245,11 @@ function ComparePageInner() {
               </Button>
             </Link>
             <UserMenu />
-          </div>
-        </div>
+          </nav>
+        </header>
 
         {/* Content */}
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
+        <main id="main-content" className="rounded-2xl border border-white/10 bg-white/5 p-3 backdrop-blur-xl sm:p-5">
           {loading && (
             <p className="py-8 text-center text-sm text-white/30">Loading comparison...</p>
           )}
@@ -353,7 +353,7 @@ function ComparePageInner() {
               </div>
             </>
           )}
-        </div>
+        </main>
       </div>
     </div>
   );
