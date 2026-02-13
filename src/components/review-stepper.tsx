@@ -104,7 +104,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                 )}
                 {(state.mergeTokens > 0 || state.steps.merge === "active") && (
                   <span className={cn(
-                    "w-[3.5rem] text-right tabular-nums",
+                    "hidden w-[3.5rem] text-right tabular-nums sm:inline",
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
                   )}>
                     {mergeHasNoTokensYet ? "–" : formatTokensK(state.mergeTokens + state.mergeReasoningTokens)}
@@ -112,7 +112,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                 )}
                 {(state.mergeTokens > 0 || state.steps.merge === "active") && (
                   <span className={cn(
-                    "w-[3.5rem] text-right tabular-nums",
+                    "hidden w-[3.5rem] text-right tabular-nums sm:inline",
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
                   )}>
                     {mergeHasNoTokensYet
