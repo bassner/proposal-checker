@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, queryReviews, getReviewCount, queryReviewsGrouped } from "@/lib/db";
+import { isAvailable, queryReviews, getReviewCount, queryReviewsGrouped, getPinnedReviewIds } from "@/lib/db";
 
 const MAX_PAGE = 1000;
 const ALLOWED_SORT = new Set(["created_at", "file_name", "provider", "status", "user_name"]);
@@ -55,14 +55,18 @@ export async function GET(request: NextRequest) {
     return Response.json({ ...result, grouped: true as const });
   }
 
-  const [reviews, total] = await Promise.all([
+  const [reviews, total, pinnedIds] = await Promise.all([
     queryReviews({ userId, limit, offset, sortBy, sortDir, search }),
     getReviewCount(userId, search),
+    getPinnedReviewIds(session.user.id),
   ]);
 
-  // Strip sensitive/heavy fields from list responses
+  // Strip sensitive/heavy fields from list responses, add isPinned
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const sanitized = reviews.map(({ shareToken, sharePasswordHash, annotations, ...rest }) => rest);
+  const sanitized = reviews.map(({ shareToken, sharePasswordHash, annotations, ...rest }) => ({
+    ...rest,
+    isPinned: pinnedIds.has(rest.id),
+  }));
 
   return Response.json({ reviews: sanitized, total, page, limit });
 }

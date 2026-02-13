@@ -146,6 +146,18 @@ async function ensureSchema(): Promise<void> {
         created_by TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      -- Pinned reviews (bookmarks for quick access)
+      CREATE TABLE IF NOT EXISTS pinned_reviews (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL,
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(user_id, review_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_pinned_reviews_user
+        ON pinned_reviews(user_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -1398,4 +1410,50 @@ export async function getActiveWebhooksForEvent(
     [JSON.stringify([event])]
   );
   return result.rows.map(rowToWebhook);
+}
+
+// ---------------------------------------------------------------------------
+// Pinned reviews (bookmarks)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pin a review for a user. Idempotent — if already pinned, does nothing.
+ * Returns true if a new pin was created, false if already existed.
+ */
+export async function pinReview(userId: string, reviewId: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO pinned_reviews (user_id, review_id)
+     VALUES ($1, $2)
+     ON CONFLICT (user_id, review_id) DO NOTHING`,
+    [userId, reviewId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Unpin a review for a user. Returns true if the pin was removed.
+ */
+export async function unpinReview(userId: string, reviewId: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    `DELETE FROM pinned_reviews WHERE user_id = $1 AND review_id = $2`,
+    [userId, reviewId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
+ * Get the set of pinned review IDs for a user.
+ */
+export async function getPinnedReviewIds(userId: string): Promise<Set<string>> {
+  if (!pool) return new Set();
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT review_id FROM pinned_reviews WHERE user_id = $1`,
+    [userId]
+  );
+  return new Set(result.rows.map((row) => row.review_id as string));
 }

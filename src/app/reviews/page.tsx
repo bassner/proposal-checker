@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { DeleteReviewButton } from "@/components/delete-review-button";
+import { PinButton } from "@/components/pin-button";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -38,6 +39,7 @@ interface ReviewListItem {
   status: string;
   fileName: string | null;
   createdAt: string;
+  isPinned: boolean;
 }
 
 interface ReviewsResponse {
@@ -331,6 +333,7 @@ export default function ReviewsPage() {
   const isAdmin = session?.user?.role === "admin";
   const [refreshKey, setRefreshKey] = useState(0);
   const handleDeleted = useCallback(() => setRefreshKey((k) => k + 1), []);
+  const handlePinToggle = useCallback(() => setRefreshKey((k) => k + 1), []);
 
   // Debounce search input
   useEffect(() => {
@@ -451,6 +454,16 @@ export default function ReviewsPage() {
 
     return groups;
   }, [groupedData, isAdmin]);
+
+  // Sort pinned reviews to the top of the current page
+  const sortedReviews = useMemo(() => {
+    if (!data) return [];
+    return [...data.reviews].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return 0; // preserve server sort order within each group
+    });
+  }, [data]);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / limit)) : 1;
   const displayTotal = groupByFile
@@ -611,13 +624,14 @@ export default function ReviewsPage() {
           )}
 
           {/* Table view (default) */}
-          {!groupByFile && data && data.reviews.length > 0 && (
+          {!groupByFile && data && sortedReviews.length > 0 && (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 dark:border-white/10">
                       {compareMode && <th className={thClass} style={{ width: 32 }}></th>}
+                      <th className={thClass} style={{ width: 32 }}></th>
                       <th className={sortableThClass} onClick={() => handleSort("created_at")}>
                         Date <SortIcon column="created_at" activeSort={sort} activeDir={dir} />
                       </th>
@@ -642,7 +656,7 @@ export default function ReviewsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.reviews.map((r) => {
+                    {sortedReviews.map((r) => {
                       const isSelected = selectedIds.includes(r.id);
                       const isSelectable = compareMode && r.status === "done";
                       const canSelect = isSelectable && (isSelected || selectedIds.length < 2);
@@ -667,6 +681,13 @@ export default function ReviewsPage() {
                             )}
                           </td>
                         )}
+                        <td className="py-2.5 pr-1" onClick={(e) => e.stopPropagation()}>
+                          <PinButton
+                            reviewId={r.id}
+                            initialPinned={r.isPinned}
+                            onToggle={handlePinToggle}
+                          />
+                        </td>
                         <td className="py-2.5 pr-4 text-xs text-slate-500 dark:text-white/50">
                           {new Date(r.createdAt).toLocaleString()}
                         </td>
