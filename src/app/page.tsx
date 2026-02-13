@@ -8,7 +8,8 @@ import { ProviderSelect } from "@/components/provider-select";
 import { Button } from "@/components/ui/button";
 import { useReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
-import type { ProviderType, ModelConfig } from "@/types/review";
+import type { ProviderType, ReviewMode, ModelConfig, CheckGroupId } from "@/types/review";
+import { REVIEW_MODES, getCheckGroups } from "@/types/review";
 import Link from "next/link";
 import {
   GraduationCap,
@@ -20,6 +21,8 @@ import {
   CheckCircle,
   ShieldX,
   BookOpen,
+  ChevronDown,
+  Settings2,
 } from "lucide-react";
 
 /**
@@ -139,19 +142,107 @@ function Unauthorized() {
 
 // ── Upload page (authenticated) ───────────────────────────────────────────
 
+const MODE_LABELS: Record<ReviewMode, string> = {
+  proposal: "Proposal",
+  thesis: "Thesis",
+};
+
+const MODE_DESCRIPTIONS: Record<ReviewMode, string> = {
+  proposal: "4-6 page thesis proposal (9 checks)",
+  thesis: "Full thesis document (12 checks)",
+};
+
+const STORAGE_KEY_GROUPS = "proposal-checker:selectedGroups";
+
 function UploadPage() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
+  const [mode, setModeRaw] = useState<ReviewMode>("proposal");
   const [provider, setProviderRaw] = useState<ProviderType>("azure");
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [selectedGroups, setSelectedGroups] = useState<Set<CheckGroupId>>(() => new Set());
+  const [groupsInitialized, setGroupsInitialized] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const setMode = useCallback((v: ReviewMode) => {
+    setModeRaw(v);
+    localStorage.setItem("proposal-checker:mode", v);
+    // Reset to all groups for the new mode
+    const allIds = new Set(getCheckGroups(v).map((g) => g.id));
+    setSelectedGroups(allIds);
+    localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify([...allIds]));
+  }, []);
   const setProvider = useCallback((v: ProviderType) => {
     setProviderRaw(v);
     localStorage.setItem("proposal-checker:provider", v);
   }, []);
   const { startReview, error, isUploading } = useReview();
 
+  // Derived values for current mode
+  const modeGroups = getCheckGroups(mode);
+  const modeGroupIds = modeGroups.map((g) => g.id);
+  const allSelected = groupsInitialized && selectedGroups.size === modeGroupIds.length;
+  const noneSelected = groupsInitialized && selectedGroups.size === 0;
+
+  const toggleGroup = useCallback((groupId: CheckGroupId) => {
+    setSelectedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    setSelectedGroups((prev) => {
+      const allIds = getCheckGroups(mode).map((g) => g.id);
+      const next = prev.size === allIds.length
+        ? new Set<CheckGroupId>()
+        : new Set(allIds);
+      localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify([...next]));
+      return next;
+    });
+  }, [mode]);
+
   useEffect(() => {
+    // Restore saved mode + selectedGroups
+    const savedMode = localStorage.getItem("proposal-checker:mode");
+    const resolvedMode: ReviewMode = savedMode && (REVIEW_MODES as readonly string[]).includes(savedMode)
+      ? (savedMode as ReviewMode) : "proposal";
+    setModeRaw(resolvedMode);
+
+    const allIds = getCheckGroups(resolvedMode).map((g) => g.id);
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_GROUPS);
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[];
+        if (Array.isArray(parsed)) {
+          const validSet = new Set(allIds);
+          const restored = parsed.filter((id) => validSet.has(id as CheckGroupId)) as CheckGroupId[];
+          if (restored.length > 0) {
+            setSelectedGroups(new Set(restored));
+            setGroupsInitialized(true);
+          } else {
+            setSelectedGroups(new Set(allIds));
+            setGroupsInitialized(true);
+          }
+        } else {
+          setSelectedGroups(new Set(allIds));
+          setGroupsInitialized(true);
+        }
+      } else {
+        setSelectedGroups(new Set(allIds));
+        setGroupsInitialized(true);
+      }
+    } catch {
+      setSelectedGroups(new Set(allIds));
+      setGroupsInitialized(true);
+    }
+
     async function fetchModels() {
       try {
         const res = await fetch("/api/config");
@@ -176,8 +267,9 @@ function UploadPage() {
   }, []);
 
   const handleStart = async () => {
-    if (!file) return;
-    const id = await startReview(file, provider);
+    if (!file || noneSelected) return;
+    const groupsToSend = allSelected ? undefined : [...selectedGroups];
+    const id = await startReview(file, provider, mode, groupsToSend);
     if (id) {
       router.push(`/review/${id}`);
     }
@@ -212,6 +304,28 @@ function UploadPage() {
             disabled={isUploading}
           />
 
+          {/* Review mode selector */}
+          <div>
+            <label className="mb-2 block text-xs font-medium text-white/50">Review Mode</label>
+            <div className="flex gap-2">
+              {REVIEW_MODES.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  disabled={isUploading}
+                  className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                    mode === m
+                      ? "border-blue-500/50 bg-blue-500/10 text-blue-400"
+                      : "border-white/10 bg-white/[0.03] text-white/50 hover:border-white/20 hover:text-white/70"
+                  } disabled:opacity-40`}
+                >
+                  <div>{MODE_LABELS[m]}</div>
+                  <div className="mt-0.5 text-[10px] font-normal opacity-60">{MODE_DESCRIPTIONS[m]}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {modelsLoading ? (
             <div className="flex items-center gap-2 py-2">
               <Loader2 className="h-4 w-4 animate-spin text-white/40" />
@@ -230,9 +344,75 @@ function UploadPage() {
             />
           )}
 
+          {/* Advanced Options — check group toggles */}
+          <div className="rounded-xl border border-white/5 bg-white/[0.02]">
+            <button
+              type="button"
+              onClick={() => setOptionsOpen((prev) => !prev)}
+              disabled={isUploading}
+              className="flex w-full items-center justify-between px-4 py-3 text-sm text-white/50 transition-colors hover:text-white/70 disabled:opacity-40"
+            >
+              <span className="flex items-center gap-2">
+                <Settings2 className="h-3.5 w-3.5" />
+                Check Groups
+                {groupsInitialized && !allSelected && (
+                  <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-medium text-blue-400">
+                    {selectedGroups.size}/{modeGroupIds.length}
+                  </span>
+                )}
+              </span>
+              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${optionsOpen ? "rotate-180" : ""}`} />
+            </button>
+            {optionsOpen && (
+              <div className="border-t border-white/5 px-4 pb-3 pt-2">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-white/30">Toggle checks to run</span>
+                  <button
+                    type="button"
+                    onClick={toggleAll}
+                    disabled={isUploading}
+                    className="text-[11px] text-blue-400/70 transition-colors hover:text-blue-400 disabled:opacity-40"
+                  >
+                    {allSelected ? "Deselect all" : "Select all"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                  {modeGroups.map((g) => {
+                    const checked = selectedGroups.has(g.id);
+                    return (
+                      <label
+                        key={g.id}
+                        className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                          checked ? "bg-white/[0.04] text-white/70" : "text-white/30"
+                        } ${isUploading ? "pointer-events-none opacity-40" : "hover:bg-white/[0.06]"}`}
+                      >
+                        <div className="relative flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleGroup(g.id)}
+                            disabled={isUploading}
+                            className="peer sr-only"
+                          />
+                          <div className={`h-4 w-7 rounded-full transition-colors ${
+                            checked ? "bg-blue-500" : "bg-white/10"
+                          }`} />
+                          <div className={`absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+                            checked ? "translate-x-3" : "translate-x-0"
+                          }`} />
+                        </div>
+                        <span className="truncate">{g.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           <Button
             onClick={handleStart}
-            disabled={!file || isUploading || models.length === 0}
+            disabled={!file || isUploading || models.length === 0 || noneSelected}
             className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
           >
             {isUploading ? (
@@ -248,6 +428,9 @@ function UploadPage() {
             )}
           </Button>
 
+          {noneSelected && (
+            <p className="text-sm text-amber-400">Select at least one check group to start a review.</p>
+          )}
           {error && <p className="text-sm text-red-400">{error}</p>}
         </div>
 

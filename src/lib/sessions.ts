@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import type { ProviderType } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId } from "@/types/review";
 
 /** A single SSE event stored in the session's replay log. */
 interface SSEEvent {
@@ -30,6 +30,9 @@ export interface ReviewSession {
   userEmail: string;
   userName: string;
   provider: ProviderType;
+  mode: ReviewMode;
+  /** Which check groups are active for this review (resolved subset of mode groups). */
+  selectedGroups: CheckGroupId[];
   fileName?: string;
 }
 
@@ -38,6 +41,8 @@ export interface CreateSessionOptions {
   userEmail: string;
   userName: string;
   provider: ProviderType;
+  mode: ReviewMode;
+  selectedGroups: CheckGroupId[];
   fileName?: string;
 }
 
@@ -99,6 +104,8 @@ export function createSession(opts: CreateSessionOptions): string {
     userEmail: opts.userEmail,
     userName: opts.userName,
     provider: opts.provider,
+    mode: opts.mode,
+    selectedGroups: opts.selectedGroups,
     fileName: opts.fileName,
   });
   return id;
@@ -150,11 +157,19 @@ export function setSessionStatus(id: string, status: "done" | "error"): void {
   session.events = session.events.filter(Boolean);
 }
 
-/** Subscribe a writer. Adds to live set first, then replays past events.
+/** Subscribe a writer. Emits session info first, then replays past events.
  *  Events emitted during replay are delivered live (indices >= snapshot). */
 export function subscribe(id: string, writer: SSEWriter): boolean {
   const session = sessions.get(id);
   if (!session) return false;
+
+  // Emit _session-info BEFORE replay so client knows mode/provider before
+  // receiving check-group events (critical for thesis mode).
+  try {
+    writer("_session-info", { startTime: session.createdAt, provider: session.provider, mode: session.mode, selectedGroups: session.selectedGroups });
+  } catch {
+    return false;
+  }
 
   // Snapshot event count and add writer BEFORE replay so no events are lost
   const replayEnd = session.events.length;
@@ -167,11 +182,6 @@ export function subscribe(id: string, writer: SSEWriter): boolean {
       session.writers.delete(writer);
       return false;
     }
-  }
-
-  try { writer("_session-info", { startTime: session.createdAt, provider: session.provider }); } catch {
-    session.writers.delete(writer);
-    return false;
   }
 
   return true;

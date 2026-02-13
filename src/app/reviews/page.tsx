@@ -26,6 +26,7 @@ interface ReviewListItem {
   userEmail: string;
   userName: string;
   provider: string;
+  reviewMode: string;
   status: string;
   fileName: string | null;
   createdAt: string;
@@ -225,6 +226,9 @@ export default function ReviewsPage() {
                       <th className={sortableThClass} onClick={() => handleSort("file_name")}>
                         File <SortIcon column="file_name" activeSort={sort} activeDir={dir} />
                       </th>
+                      <th className={`${thClass} hidden md:table-cell`}>
+                        Mode
+                      </th>
                       <th className={`${sortableThClass} hidden md:table-cell`} onClick={() => handleSort("provider")}>
                         Provider <SortIcon column="provider" activeSort={sort} activeDir={dir} />
                       </th>
@@ -251,6 +255,13 @@ export default function ReviewsPage() {
                         </td>
                         <td className="py-2.5 pr-4 text-white/70">
                           {r.fileName ?? "\u2014"}
+                        </td>
+                        <td className="hidden py-2.5 pr-4 md:table-cell">
+                          {r.reviewMode === "thesis" ? (
+                            <span className="inline-block rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-400">thesis</span>
+                          ) : (
+                            <span className="text-white/50">proposal</span>
+                          )}
                         </td>
                         <td className="hidden py-2.5 pr-4 text-white/50 md:table-cell">{r.provider}</td>
                         <td className="py-2.5 pr-4">

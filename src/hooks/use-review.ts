@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import type {
   ReviewState,
+  ReviewMode,
   StepEvent,
   CheckGroupId,
   ProviderType,
@@ -10,10 +11,11 @@ import type {
   LLMPhase,
   StepStatus,
 } from "@/types/review";
-import { CHECK_GROUPS } from "@/types/review";
+import { CHECK_GROUPS, ALL_CHECK_GROUP_META, getCheckGroups } from "@/types/review";
 
 const INITIAL_STATE: ReviewState = {
   status: "idle",
+  mode: null,
   provider: null,
   currentStep: null,
   steps: {
@@ -49,13 +51,17 @@ export function useReview() {
   const [isUploading, setIsUploading] = useState(false);
 
   const startReview = useCallback(
-    async (file: File, provider: ProviderType): Promise<string | null> => {
+    async (file: File, provider: ProviderType, mode: ReviewMode = "proposal", selectedGroups?: CheckGroupId[]): Promise<string | null> => {
       setError(null);
       setIsUploading(true);
 
       const formData = new FormData();
       formData.append("file", file);
       formData.append("provider", provider);
+      formData.append("mode", mode);
+      if (selectedGroups && selectedGroups.length > 0) {
+        formData.append("selectedGroups", JSON.stringify(selectedGroups));
+      }
 
       try {
         const response = await fetch("/api/review", {
@@ -172,6 +178,7 @@ export interface CompletedReview {
   id: string;
   status: "running" | "done" | "error";
   provider: string;
+  reviewMode: ReviewMode;
   fileName: string | null;
   createdAt: string;
   completedAt: string | null;
@@ -294,6 +301,40 @@ async function parseSSEStream(
 }
 
 /**
+ * Ensure a check group exists in the state. If a check-group SSE event arrives
+ * for a group not yet in the list (e.g. thesis-only groups when replaying), insert
+ * it in canonical order based on ALL_CHECK_GROUP_META.
+ */
+function ensureCheckGroup(
+  checkGroups: ReviewState["checkGroups"],
+  groupId: CheckGroupId
+): ReviewState["checkGroups"] {
+  if (checkGroups.some((g) => g.id === groupId)) return checkGroups;
+
+  const meta = ALL_CHECK_GROUP_META[groupId];
+  if (!meta) return checkGroups;
+
+  // Find canonical insertion index: after the last group that appears before this
+  // one in the ALL_CHECK_GROUP_META key order.
+  const allIds = Object.keys(ALL_CHECK_GROUP_META) as CheckGroupId[];
+  const targetIdx = allIds.indexOf(groupId);
+  let insertAt = checkGroups.length;
+  for (let i = checkGroups.length - 1; i >= 0; i--) {
+    const existingIdx = allIds.indexOf(checkGroups[i].id);
+    if (existingIdx < targetIdx) {
+      insertAt = i + 1;
+      break;
+    }
+    if (i === 0) insertAt = 0;
+  }
+
+  const newGroup = { id: meta.id, label: meta.label, status: "pending" as StepStatus };
+  const updated = [...checkGroups];
+  updated.splice(insertAt, 0, newGroup);
+  return updated;
+}
+
+/**
  * Applies a single SSE event to the ReviewState.
  *
  * Uses the server-injected `_ts` timestamp (added by {@link emitEvent} in sessions.ts)
@@ -310,10 +351,24 @@ function handleSSEEvent(
 
   switch (event) {
     case "_session-info": {
-      const { startTime, provider } = data as { startTime: number; provider?: string };
+      const { startTime, provider, mode, selectedGroups } = data as {
+        startTime: number; provider?: string; mode?: string; selectedGroups?: string[];
+      };
+      const reviewMode = (mode === "thesis" ? "thesis" : "proposal") as ReviewMode;
+      // Use selectedGroups if provided, otherwise show all mode groups
+      const modeGroups = getCheckGroups(reviewMode);
+      const activeGroups = selectedGroups && selectedGroups.length > 0
+        ? modeGroups.filter((g) => selectedGroups.includes(g.id))
+        : modeGroups;
       setState((prev) => ({
         ...prev,
         startTime,
+        mode: reviewMode,
+        checkGroups: activeGroups.map((g) => ({
+          id: g.id,
+          label: g.label,
+          status: "pending" as StepStatus,
+        })),
         ...(provider ? { provider: provider as ReviewState["provider"] } : {}),
       }));
       break;
@@ -333,14 +388,17 @@ function handleSSEEvent(
 
     case "check-start": {
       const { groupId } = data as { groupId: CheckGroupId };
-      setState((prev) => ({
-        ...prev,
-        checkGroups: prev.checkGroups.map((g) =>
-          g.id === groupId
-            ? { ...g, status: "active" as StepStatus, startTime: ts }
-            : g
-        ),
-      }));
+      setState((prev) => {
+        const groups = ensureCheckGroup(prev.checkGroups, groupId);
+        return {
+          ...prev,
+          checkGroups: groups.map((g) =>
+            g.id === groupId
+              ? { ...g, status: "active" as StepStatus, startTime: ts }
+              : g
+          ),
+        };
+      });
       break;
     }
 
@@ -350,20 +408,23 @@ function handleSSEEvent(
         tokens: number;
         phase: LLMPhase;
       };
-      setState((prev) => ({
-        ...prev,
-        checkGroups: prev.checkGroups.map((g) => {
-          if (g.id !== groupId) return g;
-          return {
-            ...g,
-            tokenCount: tokens,
-            phase,
-            ...(phase === "generating" && !g.generatingStartTime
-              ? { generatingStartTime: ts, generatingStartTokenCount: tokens }
-              : {}),
-          };
-        }),
-      }));
+      setState((prev) => {
+        const groups = ensureCheckGroup(prev.checkGroups, groupId);
+        return {
+          ...prev,
+          checkGroups: groups.map((g) => {
+            if (g.id !== groupId) return g;
+            return {
+              ...g,
+              tokenCount: tokens,
+              phase,
+              ...(phase === "generating" && !g.generatingStartTime
+                ? { generatingStartTime: ts, generatingStartTokenCount: tokens }
+                : {}),
+            };
+          }),
+        };
+      });
       break;
     }
 
@@ -372,14 +433,17 @@ function handleSSEEvent(
         groupId: CheckGroupId;
         text: string;
       };
-      setState((prev) => ({
-        ...prev,
-        checkGroups: prev.checkGroups.map((g) =>
-          g.id === groupId
-            ? { ...g, thinkingSummary: text, phase: g.phase ?? "thinking" }
-            : g
-        ),
-      }));
+      setState((prev) => {
+        const groups = ensureCheckGroup(prev.checkGroups, groupId);
+        return {
+          ...prev,
+          checkGroups: groups.map((g) =>
+            g.id === groupId
+              ? { ...g, thinkingSummary: text, phase: g.phase ?? "thinking" }
+              : g
+          ),
+        };
+      });
       break;
     }
 
@@ -390,22 +454,24 @@ function handleSSEEvent(
         outputTokens?: number;
         reasoningTokens?: number;
       };
-      setState((prev) => ({
-        ...prev,
-        checkGroups: prev.checkGroups.map((g) =>
-          g.id === groupId
-            ? {
-                ...g,
-                status: "done" as StepStatus,
-                findingCount,
-                endTime: ts,
-                // Intentional: replace streaming estimate with accurate API-reported count
-                ...(outputTokens != null ? { tokenCount: outputTokens } : {}),
-                ...(reasoningTokens != null ? { reasoningTokens } : {}),
-              }
-            : g
-        ),
-      }));
+      setState((prev) => {
+        const groups = ensureCheckGroup(prev.checkGroups, groupId);
+        return {
+          ...prev,
+          checkGroups: groups.map((g) =>
+            g.id === groupId
+              ? {
+                  ...g,
+                  status: "done" as StepStatus,
+                  findingCount,
+                  endTime: ts,
+                  ...(outputTokens != null ? { tokenCount: outputTokens } : {}),
+                  ...(reasoningTokens != null ? { reasoningTokens } : {}),
+                }
+              : g
+          ),
+        };
+      });
       break;
     }
 
@@ -414,14 +480,17 @@ function handleSSEEvent(
         groupId: CheckGroupId;
         error: string;
       };
-      setState((prev) => ({
-        ...prev,
-        checkGroups: prev.checkGroups.map((g) =>
-          g.id === groupId
-            ? { ...g, status: "error" as StepStatus, error, endTime: ts }
-            : g
-        ),
-      }));
+      setState((prev) => {
+        const groups = ensureCheckGroup(prev.checkGroups, groupId);
+        return {
+          ...prev,
+          checkGroups: groups.map((g) =>
+            g.id === groupId
+              ? { ...g, status: "error" as StepStatus, error, endTime: ts }
+              : g
+          ),
+        };
+      });
       break;
     }
 

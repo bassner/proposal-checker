@@ -11,7 +11,7 @@ import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
 import { GraduationCap, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import type { MergedFeedback } from "@/types/review";
+import type { MergedFeedback, ReviewMode } from "@/types/review";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -42,7 +42,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} reviewMode={review.reviewMode} />;
     }
 
     if (review?.status === "error") {
@@ -77,16 +77,16 @@ export default function ReviewPage() {
 
   // ── Live SSE: results view ──────────────────────────────────────────────
   if (hasResult) {
-    return <ResultsView feedback={state.result!} reviewId={id} />;
+    return <ResultsView feedback={state.result!} reviewId={id} reviewMode={state.mode ?? undefined} />;
   }
 
   // ── Live SSE: processing / error view ───────────────────────────────────
   return (
-    <PageShell title="Proposal Checker" subtitle={state.status === "idle" ? "Connecting..." : "Reviewing proposal..."}>
+    <PageShell title="Proposal Checker" subtitle={state.status === "idle" ? "Connecting..." : state.mode === "thesis" ? "Reviewing thesis..." : "Reviewing proposal..."}>
       {isRunning && (
         <div className="mb-4 flex items-center justify-center gap-2 py-2">
           <ThinkingBubble />
-          <span className="text-xs text-white/40">Analyzing proposal...</span>
+          <span className="text-xs text-white/40">{state.mode === "thesis" ? "Analyzing thesis..." : "Analyzing proposal..."}</span>
         </div>
       )}
 
@@ -107,13 +107,13 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null }) {
+function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; reviewMode?: ReviewMode }) {
   return (
     <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
       <div className="relative mx-auto w-full px-3 py-4 sm:px-6 sm:py-8">
         <div className="print-header">
-          <h1 className="text-base font-semibold">Proposal Review Results</h1>
+          <h1 className="text-base font-semibold">{reviewMode === "thesis" ? "Thesis" : "Proposal"} Review Results</h1>
           {fileName && <p className="text-sm text-gray-600">{fileName}</p>}
           <p className="text-xs text-gray-400">{new Date().toLocaleDateString()}</p>
         </div>
@@ -121,7 +121,14 @@ function ResultsView({ feedback, fileName, reviewId, shareToken }: { feedback: M
           <div className="flex items-center gap-3">
             <IconBadge />
             <div>
-              <h1 className="text-lg font-semibold text-white">Review Results</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-semibold text-white">Review Results</h1>
+                {reviewMode === "thesis" && (
+                  <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-medium text-purple-400">
+                    thesis
+                  </span>
+                )}
+              </div>
               {fileName && <p className="text-xs text-white/40">{fileName}</p>}
             </div>
             <ReviewAnotherButton size="sm" />
