@@ -9,6 +9,8 @@ import { Check, X, Wrench, MessageSquare, Send, Trash2, AlertOctagon, AlertTrian
 import type { LucideIcon } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { COMMENT_TEMPLATES } from "@/lib/comment-templates";
+import { ConflictIndicator } from "@/components/conflict-indicator";
+import type { AnnotationConflict } from "@/types/review";
 
 interface FeedbackCardProps {
   finding: Finding;
@@ -20,6 +22,8 @@ interface FeedbackCardProps {
   commentSubmitting?: boolean;
   /** Called when a page reference in the finding is clicked (for PDF viewer navigation). */
   onPageClick?: (page: number) => void;
+  /** Conflict data for this finding, if any. */
+  conflict?: AnnotationConflict;
 }
 
 const severityConfig: Record<
@@ -178,7 +182,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
   );
 }
 
-export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, commentSubmitting, onPageClick }: FeedbackCardProps) {
+export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddComment, onDeleteComment, commentSubmitting, onPageClick, conflict }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
   const SevIcon = config.icon;
   const [locationsExpanded, setLocationsExpanded] = useState(false);
@@ -328,6 +332,7 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
                 </button>
               );
             })}
+            {conflict && <ConflictIndicator conflict={conflict} />}
           </div>
         )}
 

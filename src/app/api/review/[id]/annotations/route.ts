@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, saveAnnotations, logAuditEvent } from "@/lib/db";
+import { isAvailable, getReviewById, saveAnnotations, logAuditEvent, logAnnotationChange } from "@/lib/db";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
 import type { AnnotationStatus, Annotations, MergedFeedback } from "@/types/review";
 
@@ -119,6 +119,19 @@ export async function POST(
   logAuditEvent(id, session.user.id, session.user.email ?? null, "annotation.updated", {
     count: entries.length,
   });
+
+  // Log each annotation change to the history table (fire-and-forget)
+  for (const [key, entry] of Object.entries(validated)) {
+    if (entry.status) {
+      logAnnotationChange(
+        id,
+        parseInt(key, 10),
+        session.user.id!,
+        session.user.name ?? null,
+        entry.status
+      ).catch((err) => console.error("[api] Annotation history log failed:", err));
+    }
+  }
 
   dispatchWebhookEvent("annotation.updated", {
     reviewId: id,

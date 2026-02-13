@@ -243,3 +243,14 @@ export interface AnnotationEntry {
 
 /** Keys are stringified finding indices from the feedback.findings array. */
 export type Annotations = Record<string, AnnotationEntry>;
+
+/** Conflict detected when different users set different statuses on the same finding. */
+export interface AnnotationConflict {
+  findingIndex: number;
+  entries: {
+    userId: string;
+    userName: string | null;
+    status: string;
+    createdAt: string;
+  }[];
+}

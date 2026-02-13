@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -190,6 +190,20 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_audit_log_review_created
         ON review_audit_log(review_id, created_at DESC);
+
+      -- Annotation history (for conflict detection)
+      CREATE TABLE IF NOT EXISTS annotation_history (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL,
+        finding_index INT NOT NULL,
+        user_id TEXT NOT NULL,
+        user_name TEXT,
+        status TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_annotation_history_review
+        ON annotation_history(review_id, finding_index);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -1622,4 +1636,85 @@ export async function getAuditLog(reviewId: string): Promise<AuditLogRow[]> {
     [reviewId]
   );
   return result.rows.map(rowToAuditLog);
+}
+
+// ---------------------------------------------------------------------------
+// Annotation history & conflict detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Log an annotation status change to the history table.
+ * Fire-and-forget — errors are logged, not thrown.
+ */
+export async function logAnnotationChange(
+  reviewId: string,
+  findingIndex: number,
+  userId: string,
+  userName: string | null,
+  status: string
+): Promise<void> {
+  if (!pool) return;
+  await ensureSchema();
+  try {
+    await pool.query(
+      `INSERT INTO annotation_history (review_id, finding_index, user_id, user_name, status)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [reviewId, findingIndex, userId, userName, status]
+    );
+  } catch (err) {
+    console.error("[db] logAnnotationChange failed:", err);
+  }
+}
+
+/**
+ * Find findings where different users have set different annotation statuses.
+ * Returns only findings with actual conflicts (2+ users, differing statuses).
+ * For each conflicting finding, returns the most recent entry per user.
+ */
+export async function getAnnotationConflicts(
+  reviewId: string
+): Promise<AnnotationConflict[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  // For each (review, finding, user), pick the latest entry. Then find findings
+  // where at least two distinct users have different statuses.
+  const result = await pool.query(
+    `WITH latest_per_user AS (
+       SELECT DISTINCT ON (finding_index, user_id)
+         finding_index, user_id, user_name, status, created_at
+       FROM annotation_history
+       WHERE review_id = $1
+       ORDER BY finding_index, user_id, created_at DESC
+     ),
+     conflicting_findings AS (
+       SELECT finding_index
+       FROM latest_per_user
+       GROUP BY finding_index
+       HAVING COUNT(DISTINCT status) > 1
+     )
+     SELECT lpu.finding_index, lpu.user_id, lpu.user_name, lpu.status, lpu.created_at
+     FROM latest_per_user lpu
+     INNER JOIN conflicting_findings cf ON cf.finding_index = lpu.finding_index
+     ORDER BY lpu.finding_index, lpu.created_at DESC`,
+    [reviewId]
+  );
+
+  // Group rows by finding_index
+  const map = new Map<number, AnnotationConflict["entries"]>();
+  for (const row of result.rows) {
+    const fi = row.finding_index as number;
+    if (!map.has(fi)) map.set(fi, []);
+    map.get(fi)!.push({
+      userId: row.user_id as string,
+      userName: (row.user_name as string) ?? null,
+      status: row.status as string,
+      createdAt: (row.created_at as Date).toISOString(),
+    });
+  }
+
+  return Array.from(map.entries()).map(([findingIndex, entries]) => ({
+    findingIndex,
+    entries,
+  }));
 }
