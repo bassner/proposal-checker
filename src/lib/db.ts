@@ -1718,3 +1718,33 @@ export async function getAnnotationConflicts(
     entries,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Previous reviews for the same file (improvement tracking)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns previous completed reviews of the same file by the same user,
+ * ordered by created_at DESC. Excludes the given review ID and soft-deleted rows.
+ * Only returns reviews that have feedback (status = 'done').
+ */
+export async function getPreviousReviewsForFile(
+  userId: string,
+  fileName: string,
+  excludeId: string
+): Promise<ReviewRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT * FROM reviews
+     WHERE user_id = $1
+       AND file_name = $2
+       AND id != $3
+       AND status = 'done'
+       AND feedback IS NOT NULL
+       AND deleted_at IS NULL
+     ORDER BY created_at DESC`,
+    [userId, fileName, excludeId]
+  );
+  return result.rows.map(rowToReview);
+}
