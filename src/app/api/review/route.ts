@@ -10,6 +10,7 @@ import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
 import { sendReviewCompleteEmail, sendReviewErrorEmail } from "@/lib/email/send";
+import { dispatchWebhookEvent } from "@/lib/webhooks";
 
 /**
  * Sanitize error for client/DB to avoid leaking internal details.
@@ -229,32 +230,50 @@ export async function POST(request: NextRequest) {
       send("done", {});
       setSessionStatus(sessionId, "done");
       completeReview(sessionId, feedback, dbMeta)
-        .then(() =>
+        .then(() => {
           sendReviewCompleteEmail({
             to: dbMeta.userEmail,
             userName: dbMeta.userName,
             fileName: dbMeta.fileName,
             reviewId: sessionId,
             feedback,
-          })
-        )
-        .catch((err) => console.error("[api] DB complete / email failed:", err));
+          }).catch((err) => console.error("[api] Email failed:", err));
+          dispatchWebhookEvent("review.completed", {
+            reviewId: sessionId,
+            provider: dbMeta.provider,
+            mode: dbMeta.mode,
+            fileName: dbMeta.fileName,
+            userName: dbMeta.userName,
+            findingCount: feedback.findings?.length ?? 0,
+            overallAssessment: feedback.overallAssessment,
+            summary: feedback.summary,
+          }).catch((err) => console.error("[api] Webhook dispatch failed:", err));
+        })
+        .catch((err) => console.error("[api] DB complete failed:", err));
     },
     onError: (error) => {
       const sanitizedError = sanitizeError(error, sessionId);
       send("error", { error: sanitizedError });
       setSessionStatus(sessionId, "error");
       failReview(sessionId, sanitizedError, dbMeta)
-        .then(() =>
+        .then(() => {
           sendReviewErrorEmail({
             to: dbMeta.userEmail,
             userName: dbMeta.userName,
             fileName: dbMeta.fileName,
             reviewId: sessionId,
             error: sanitizedError,
-          })
-        )
-        .catch((err) => console.error("[api] DB fail / email failed:", err));
+          }).catch((err) => console.error("[api] Email failed:", err));
+          dispatchWebhookEvent("review.failed", {
+            reviewId: sessionId,
+            provider: dbMeta.provider,
+            mode: dbMeta.mode,
+            fileName: dbMeta.fileName,
+            userName: dbMeta.userName,
+            error: sanitizedError,
+          }).catch((err) => console.error("[api] Webhook dispatch failed:", err));
+        })
+        .catch((err) => console.error("[api] DB fail failed:", err));
     },
   }, selectedGroups);
 

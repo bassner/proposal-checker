@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth/helpers";
 import { isAvailable, getReviewById, saveAnnotations } from "@/lib/db";
+import { dispatchWebhookEvent } from "@/lib/webhooks";
 import type { AnnotationStatus, Annotations, MergedFeedback } from "@/types/review";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -113,6 +114,11 @@ export async function POST(
   }
 
   await saveAnnotations(id, validated);
+
+  dispatchWebhookEvent("annotation.updated", {
+    reviewId: id,
+    annotations: validated,
+  }).catch((err) => console.error("[api] Webhook dispatch failed:", err));
 
   return Response.json({ ok: true });
 }
