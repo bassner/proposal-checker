@@ -55,7 +55,8 @@ export async function GET(request: NextRequest) {
   ]);
 
   // Strip shareToken from list responses to prevent token leakage
-  const sanitized = reviews.map(({ shareToken: _, ...rest }) => rest);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const sanitized = reviews.map(({ shareToken, ...rest }) => rest);
 
   return Response.json({ reviews: sanitized, total, page, limit });
 }

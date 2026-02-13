@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Share2, Copy, Check, LinkOff, Loader2 } from "lucide-react";
+import { Share2, Copy, Check, Link2Off, Loader2 } from "lucide-react";
 
 interface ShareButtonProps {
   reviewId: string;
@@ -139,7 +139,7 @@ export function ShareButton({ reviewId, initialShareToken }: ShareButtonProps) {
               onClick={unshare}
               className="w-full border-red-500/20 text-red-400 hover:bg-red-500/10 hover:text-red-300"
             >
-              <LinkOff className="mr-2 h-3.5 w-3.5" />
+              <Link2Off className="mr-2 h-3.5 w-3.5" />
               Revoke Share Link
             </Button>
           </div>
