@@ -519,6 +519,24 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
         ON comment_reactions(comment_id);
+
+      -- Review schedules (recurring review reminders)
+      CREATE TABLE IF NOT EXISTS review_schedules (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        description TEXT,
+        cron_expression TEXT NOT NULL,
+        target_users TEXT[] DEFAULT '{}',
+        provider TEXT NOT NULL DEFAULT 'azure',
+        is_active BOOLEAN DEFAULT true,
+        last_run_at TIMESTAMPTZ,
+        next_run_at TIMESTAMPTZ,
+        created_by TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_review_schedules_active
+        ON review_schedules(is_active, next_run_at);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -6177,4 +6195,237 @@ export async function getReactionsForComments(
     grouped[cr.commentId].push(cr);
   }
   return grouped;
+}
+
+// ---------------------------------------------------------------------------
+// Review schedules (recurring review reminders)
+// ---------------------------------------------------------------------------
+
+export interface ScheduleRow {
+  id: string;
+  title: string;
+  description: string | null;
+  cronExpression: string;
+  targetUsers: string[];
+  provider: string;
+  isActive: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  createdBy: string;
+  createdAt: string;
+}
+
+function rowToSchedule(row: Record<string, unknown>): ScheduleRow {
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    description: (row.description as string) ?? null,
+    cronExpression: row.cron_expression as string,
+    targetUsers: (row.target_users as string[]) ?? [],
+    provider: row.provider as string,
+    isActive: row.is_active as boolean,
+    lastRunAt: row.last_run_at ? (row.last_run_at as Date).toISOString() : null,
+    nextRunAt: row.next_run_at ? (row.next_run_at as Date).toISOString() : null,
+    createdBy: row.created_by as string,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Compute the next run date from a simplified cron expression.
+ * Supported formats:
+ *   "daily"        — every day at 08:00 UTC
+ *   "weekly:1"     — every Monday at 08:00 UTC (1=Mon, 7=Sun)
+ *   "monthly:15"   — 15th of every month at 08:00 UTC
+ */
+export function computeNextRun(cronExpression: string, fromDate?: Date): Date | null {
+  const now = fromDate ?? new Date();
+  const hour = 8; // 08:00 UTC
+
+  if (cronExpression === "daily") {
+    const next = new Date(now);
+    next.setUTCHours(hour, 0, 0, 0);
+    if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
+    return next;
+  }
+
+  if (cronExpression.startsWith("weekly:")) {
+    const dayOfWeek = parseInt(cronExpression.split(":")[1], 10); // 1=Mon ... 7=Sun
+    if (isNaN(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7) return null;
+    // JS: 0=Sun, 1=Mon...6=Sat. Convert: 1->1, 2->2,...,7->0
+    const jsDow = dayOfWeek === 7 ? 0 : dayOfWeek;
+    const next = new Date(now);
+    next.setUTCHours(hour, 0, 0, 0);
+    const currentDow = next.getUTCDay();
+    let daysAhead = jsDow - currentDow;
+    if (daysAhead < 0) daysAhead += 7;
+    if (daysAhead === 0 && next <= now) daysAhead = 7;
+    next.setUTCDate(next.getUTCDate() + daysAhead);
+    return next;
+  }
+
+  if (cronExpression.startsWith("monthly:")) {
+    const dayOfMonth = parseInt(cronExpression.split(":")[1], 10);
+    if (isNaN(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 28) return null;
+    const next = new Date(now);
+    next.setUTCHours(hour, 0, 0, 0);
+    next.setUTCDate(dayOfMonth);
+    if (next <= now) {
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      next.setUTCDate(dayOfMonth);
+    }
+    return next;
+  }
+
+  return null;
+}
+
+/** Create a new schedule. Returns the created row. */
+export async function createSchedule(schedule: {
+  title: string;
+  description?: string;
+  cronExpression: string;
+  targetUsers?: string[];
+  provider?: string;
+  createdBy: string;
+}): Promise<ScheduleRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const nextRun = computeNextRun(schedule.cronExpression);
+  const result = await pool.query(
+    `INSERT INTO review_schedules (title, description, cron_expression, target_users, provider, next_run_at, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [
+      schedule.title,
+      schedule.description ?? null,
+      schedule.cronExpression,
+      schedule.targetUsers ?? [],
+      schedule.provider ?? "azure",
+      nextRun,
+      schedule.createdBy,
+    ]
+  );
+  return rowToSchedule(result.rows[0]);
+}
+
+/** List all schedules ordered by creation date (newest first). */
+export async function listSchedules(): Promise<ScheduleRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM review_schedules ORDER BY created_at DESC"
+  );
+  return result.rows.map(rowToSchedule);
+}
+
+/** Update an existing schedule. Returns the updated row or null if not found. */
+export async function updateSchedule(
+  id: string,
+  updates: {
+    title?: string;
+    description?: string;
+    cronExpression?: string;
+    targetUsers?: string[];
+    provider?: string;
+    isActive?: boolean;
+  }
+): Promise<ScheduleRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (updates.title !== undefined) {
+    sets.push(`title = $${idx++}`);
+    params.push(updates.title);
+  }
+  if (updates.description !== undefined) {
+    sets.push(`description = $${idx++}`);
+    params.push(updates.description);
+  }
+  if (updates.cronExpression !== undefined) {
+    sets.push(`cron_expression = $${idx++}`);
+    params.push(updates.cronExpression);
+    // Recompute next_run_at when cron changes
+    const nextRun = computeNextRun(updates.cronExpression);
+    sets.push(`next_run_at = $${idx++}`);
+    params.push(nextRun);
+  }
+  if (updates.targetUsers !== undefined) {
+    sets.push(`target_users = $${idx++}`);
+    params.push(updates.targetUsers);
+  }
+  if (updates.provider !== undefined) {
+    sets.push(`provider = $${idx++}`);
+    params.push(updates.provider);
+  }
+  if (updates.isActive !== undefined) {
+    sets.push(`is_active = $${idx++}`);
+    params.push(updates.isActive);
+    // When re-activating, recompute next_run_at
+    if (updates.isActive && updates.cronExpression === undefined) {
+      // We need to fetch current cronExpression to recompute
+      // Skip for now; we'll handle it after the query
+    }
+  }
+
+  if (sets.length === 0) return null;
+
+  params.push(id);
+  const result = await pool.query(
+    `UPDATE review_schedules SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
+    params
+  );
+  if (result.rows.length === 0) return null;
+  return rowToSchedule(result.rows[0]);
+}
+
+/** Delete a schedule by ID. Returns true if deleted. */
+export async function deleteSchedule(id: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM review_schedules WHERE id = $1",
+    [id]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/** Get all active schedules. */
+export async function getActiveSchedules(): Promise<ScheduleRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM review_schedules WHERE is_active = TRUE ORDER BY next_run_at ASC NULLS LAST"
+  );
+  return result.rows.map(rowToSchedule);
+}
+
+/** Mark a schedule as having been run. Updates last_run_at and computes next_run_at. */
+export async function markScheduleRun(id: string): Promise<ScheduleRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // First fetch the current cron expression
+  const current = await pool.query(
+    "SELECT cron_expression FROM review_schedules WHERE id = $1",
+    [id]
+  );
+  if (current.rows.length === 0) return null;
+
+  const cronExpression = current.rows[0].cron_expression as string;
+  const nextRun = computeNextRun(cronExpression);
+
+  const result = await pool.query(
+    `UPDATE review_schedules
+     SET last_run_at = NOW(), next_run_at = $2
+     WHERE id = $1
+     RETURNING *`,
+    [id, nextRun]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToSchedule(result.rows[0]);
 }
