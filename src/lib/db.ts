@@ -204,6 +204,22 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_annotation_history_review
         ON annotation_history(review_id, finding_index);
+
+      -- Review notes (free-text supervisor observations)
+      CREATE TABLE IF NOT EXISTS review_notes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_review_notes_user_review
+        ON review_notes(review_id, user_id);
+      CREATE INDEX IF NOT EXISTS idx_review_notes_review
+        ON review_notes(review_id, created_at ASC);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -1930,4 +1946,84 @@ export async function getPreviousReviewsForFile(
     [userId, fileName, excludeId]
   );
   return result.rows.map(rowToReview);
+}
+
+// ---------------------------------------------------------------------------
+// Review notes (free-text supervisor observations)
+// ---------------------------------------------------------------------------
+
+export interface ReviewNoteRow {
+  id: string;
+  reviewId: string;
+  userId: string;
+  userName: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToNote(row: Record<string, unknown>): ReviewNoteRow {
+  return {
+    id: row.id as string,
+    reviewId: row.review_id as string,
+    userId: row.user_id as string,
+    userName: row.user_name as string,
+    content: row.content as string,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+}
+
+/** Get all notes for a review, ordered by creation time. */
+export async function getReviewNotes(reviewId: string): Promise<ReviewNoteRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM review_notes WHERE review_id = $1 ORDER BY created_at ASC",
+    [reviewId]
+  );
+  return result.rows.map(rowToNote);
+}
+
+/**
+ * Create or update the current user's note for a review.
+ * Each user can have at most one note per review (upsert by user_id + review_id).
+ * Returns the upserted note.
+ */
+export async function upsertReviewNote(
+  reviewId: string,
+  userId: string,
+  userName: string,
+  content: string
+): Promise<ReviewNoteRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO review_notes (review_id, user_id, user_name, content)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (review_id, user_id) DO UPDATE SET
+       content = EXCLUDED.content,
+       user_name = EXCLUDED.user_name,
+       updated_at = NOW()
+     RETURNING *`,
+    [reviewId, userId, userName, content]
+  );
+  return rowToNote(result.rows[0]);
+}
+
+/**
+ * Delete a note. Only succeeds if the note belongs to the given user.
+ * Returns true if the row was deleted.
+ */
+export async function deleteReviewNote(
+  noteId: string,
+  userId: string
+): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM review_notes WHERE id = $1 AND user_id = $2",
+    [noteId, userId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }

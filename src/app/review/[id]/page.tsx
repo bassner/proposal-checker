@@ -26,6 +26,7 @@ import { DeleteReviewButton } from "@/components/delete-review-button";
 import { ReviewStats } from "@/components/review-stats";
 import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
+import { ReviewNotes } from "@/components/review-notes";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -287,6 +288,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             </aside>
           )}
         </div>
+        <ReviewNotes reviewId={reviewId} />
         {role === "admin" && (
           <div className="no-print">
             <AuditLog reviewId={reviewId} />
