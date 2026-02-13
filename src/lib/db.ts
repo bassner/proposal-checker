@@ -311,6 +311,22 @@ async function ensureSchema(): Promise<void> {
 
       -- Workflow status for review lifecycle
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS workflow_status TEXT NOT NULL DEFAULT 'draft';
+
+      -- Review versions (link reviews as sequential versions of the same document)
+      CREATE TABLE IF NOT EXISTS review_versions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        group_id UUID NOT NULL,
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        version_number INT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(group_id, version_number),
+        UNIQUE(review_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_review_versions_group
+        ON review_versions(group_id);
+      CREATE INDEX IF NOT EXISTS idx_review_versions_review
+        ON review_versions(review_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -2777,4 +2793,125 @@ export async function getReviewsByWorkflowStatus(
     params
   );
   return result.rows.map(rowToReview);
+}
+
+// ---------------------------------------------------------------------------
+// Review versions (link reviews as sequential versions of the same document)
+// ---------------------------------------------------------------------------
+
+export interface ReviewVersionRow {
+  id: string;
+  groupId: string;
+  reviewId: string;
+  versionNumber: number;
+  createdAt: string;
+}
+
+function rowToVersion(row: Record<string, unknown>): ReviewVersionRow {
+  return {
+    id: row.id as string,
+    groupId: row.group_id as string,
+    reviewId: row.review_id as string,
+    versionNumber: Number(row.version_number),
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Link a review as a version in a version group.
+ * - If groupId is provided, adds to that existing group with the next version number.
+ * - If groupId is omitted, creates a new group (new UUID) starting at version 1.
+ * Returns the newly created version row.
+ */
+export async function linkReviewVersion(
+  reviewId: string,
+  groupId?: string
+): Promise<ReviewVersionRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+
+  const gid = groupId ?? (await generateUUID());
+
+  // Determine next version number for this group
+  const maxResult = await pool.query(
+    "SELECT COALESCE(MAX(version_number), 0) AS max_ver FROM review_versions WHERE group_id = $1",
+    [gid]
+  );
+  const nextVersion = Number(maxResult.rows[0].max_ver) + 1;
+
+  const result = await pool.query(
+    `INSERT INTO review_versions (group_id, review_id, version_number)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (review_id) DO UPDATE SET
+       group_id = $1,
+       version_number = $3
+     RETURNING *`,
+    [gid, reviewId, nextVersion]
+  );
+
+  return rowToVersion(result.rows[0]);
+}
+
+/** Helper to generate a UUID via the database. */
+async function generateUUID(): Promise<string> {
+  if (!pool) throw new Error("Database pool not initialized");
+  const result = await pool.query("SELECT gen_random_uuid() AS id");
+  return result.rows[0].id as string;
+}
+
+/**
+ * Get the version group for a given review.
+ * Returns all reviews in the same version group, ordered by version number.
+ * Returns null if the review is not part of any version group.
+ */
+export async function getVersionGroup(
+  reviewId: string
+): Promise<{ groupId: string; versions: ReviewVersionRow[] } | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  // Find the group_id for this review
+  const groupResult = await pool.query(
+    "SELECT group_id FROM review_versions WHERE review_id = $1",
+    [reviewId]
+  );
+  if (groupResult.rows.length === 0) return null;
+
+  const groupId = groupResult.rows[0].group_id as string;
+  return getVersionGroupByGroupId(groupId);
+}
+
+/**
+ * Get all versions in a version group by group ID, ordered by version number.
+ */
+export async function getVersionGroupByGroupId(
+  groupId: string
+): Promise<{ groupId: string; versions: ReviewVersionRow[] } | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(
+    "SELECT * FROM review_versions WHERE group_id = $1 ORDER BY version_number ASC",
+    [groupId]
+  );
+  if (result.rows.length === 0) return null;
+
+  return {
+    groupId,
+    versions: result.rows.map(rowToVersion),
+  };
+}
+
+/**
+ * Unlink a review from its version group. If it was the last review in the
+ * group, the group simply ceases to exist. Returns true if a row was removed.
+ */
+export async function unlinkReviewVersion(reviewId: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM review_versions WHERE review_id = $1",
+    [reviewId]
+  );
+  return (result.rowCount ?? 0) > 0;
 }
