@@ -310,6 +310,82 @@ export async function queryReviews(opts: ReviewQueryOptions): Promise<ReviewRow[
   return result.rows.map(rowToReview);
 }
 
+// ---------------------------------------------------------------------------
+// Grouped reviews (lightweight query for file-history grouping)
+// ---------------------------------------------------------------------------
+
+export interface GroupedReviewItem {
+  id: string;
+  fileName: string | null;
+  userId: string;
+  userName: string;
+  createdAt: string;
+  status: string;
+  findingCount: number;
+}
+
+const GROUPED_CAP = 500;
+
+/**
+ * Lightweight query for the "Group by file" view.
+ * Returns minimal columns + SQL-computed findingCount. Capped at 500 rows.
+ */
+export async function queryReviewsGrouped(opts: {
+  userId?: string;
+  search?: string;
+}): Promise<{ reviews: GroupedReviewItem[]; total: number; truncated: boolean }> {
+  if (!pool) return { reviews: [], total: 0, truncated: false };
+  await ensureSchema();
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  let paramIdx = 1;
+
+  if (opts.userId) {
+    conditions.push(`user_id = $${paramIdx++}`);
+    params.push(opts.userId);
+  }
+
+  if (opts.search) {
+    const pattern = `%${opts.search}%`;
+    conditions.push(
+      `(file_name ILIKE $${paramIdx} OR user_name ILIKE $${paramIdx} OR user_email ILIKE $${paramIdx})`
+    );
+    paramIdx++;
+    params.push(pattern);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  // Count total first
+  const countResult = await pool.query(`SELECT COUNT(*) FROM reviews ${where}`, params);
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  const query = `
+    SELECT id, file_name, user_id, user_name, created_at, status,
+      CASE
+        WHEN feedback IS NOT NULL AND jsonb_typeof(feedback->'findings') = 'array'
+        THEN jsonb_array_length(feedback->'findings')
+        ELSE 0
+      END AS finding_count
+    FROM reviews ${where}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${GROUPED_CAP}`;
+
+  const result = await pool.query(query, params);
+  const reviews: GroupedReviewItem[] = result.rows.map((row) => ({
+    id: row.id as string,
+    fileName: (row.file_name as string) ?? null,
+    userId: row.user_id as string,
+    userName: row.user_name as string,
+    createdAt: (row.created_at as Date).toISOString(),
+    status: row.status as string,
+    findingCount: parseInt(row.finding_count, 10),
+  }));
+
+  return { reviews, total, truncated: total > GROUPED_CAP };
+}
+
 export async function getReviewCount(userId?: string, search?: string): Promise<number> {
   if (!pool) return 0;
   await ensureSchema();

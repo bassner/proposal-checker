@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, queryReviews, getReviewCount } from "@/lib/db";
+import { isAvailable, queryReviews, getReviewCount, queryReviewsGrouped } from "@/lib/db";
 
 const MAX_PAGE = 1000;
 const ALLOWED_SORT = new Set(["created_at", "file_name", "provider", "status", "user_name"]);
@@ -48,6 +48,12 @@ export async function GET(request: NextRequest) {
 
   const isAdmin = session.user.role === "admin";
   const userId = isAdmin ? undefined : session.user.id;
+
+  // Grouped mode: lightweight query for "Group by file" view
+  if (url.searchParams.get("grouped") === "true") {
+    const result = await queryReviewsGrouped({ userId, search });
+    return Response.json({ ...result, grouped: true as const });
+  }
 
   const [reviews, total] = await Promise.all([
     queryReviews({ userId, limit, offset, sortBy, sortDir, search }),
