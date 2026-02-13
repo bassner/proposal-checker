@@ -52,7 +52,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
       className={cn(
         "rounded-lg border px-3 py-2 transition-all",
         group.status === "pending" &&
-          "border-white/5 bg-white/[0.02]",
+          "border-slate-200 bg-slate-50 dark:border-white/5 dark:bg-white/[0.02]",
         group.status === "active" &&
           "border-blue-400/20 bg-blue-400/5",
         group.status === "done" &&
@@ -62,7 +62,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
     >
       <div className="flex items-center gap-2.5">
         {group.status === "pending" && (
-          <Circle className="h-3.5 w-3.5 shrink-0 text-white/20" />
+          <Circle className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-white/20" />
         )}
         {group.status === "active" && (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue-400" />
@@ -77,7 +77,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         <span
           className={cn(
             "flex-1 text-xs font-medium",
-            group.status === "pending" && "text-white/30",
+            group.status === "pending" && "text-slate-400 dark:text-white/30",
             group.status === "active" && "text-blue-300",
             group.status === "done" && "text-emerald-300",
             group.status === "error" && "text-red-300"
@@ -88,7 +88,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
 
         {/* Right-aligned stats: findings → phase → tokens → tok/s → time */}
         {group.status === "done" && group.findingCount !== undefined && (
-          <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-xs text-white/40">
+          <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-xs text-slate-500 dark:text-white/40">
             {group.findingCount} {group.findingCount === 1 ? "finding" : "findings"}
           </span>
         )}
@@ -106,7 +106,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         {((group.tokenCount !== undefined && group.tokenCount > 0) || group.status === "active") && group.startTime && (
           <span className={cn(
             "hidden min-w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs sm:inline",
-            group.status === "active" ? "text-blue-400/60" : "text-white/30"
+            group.status === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
           )}>
             {hasNoTokensYet ? "–" : formatTokensK((group.tokenCount ?? 0) + (group.reasoningTokens ?? 0))}
           </span>
@@ -115,7 +115,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         {((group.tokenCount !== undefined && group.tokenCount > 0) || group.status === "active") && group.startTime && (
           <span className={cn(
             "hidden w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs sm:inline",
-            group.status === "active" ? "text-blue-400/60" : "text-white/30"
+            group.status === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
           )}>
             {hasNoTokensYet
               ? "–"
@@ -142,7 +142,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         )}
 
         {staticElapsed && (
-          <span className="w-[3rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs text-white/30">{staticElapsed}s</span>
+          <span className="w-[3rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs text-slate-400 dark:text-white/30">{staticElapsed}s</span>
         )}
 
         {group.status === "error" && group.error && (

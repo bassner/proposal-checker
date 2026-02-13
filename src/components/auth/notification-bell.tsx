@@ -14,7 +14,7 @@ export function NotificationBell() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className="relative flex items-center justify-center size-10 rounded-lg border border-white/10 bg-white/5 text-white/60 transition-colors hover:bg-white/10 hover:text-white md:size-8"
+          className="relative flex items-center justify-center size-10 rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white md:size-8"
           aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
         >
           <Bell className="h-3.5 w-3.5" />
@@ -27,14 +27,14 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-80 border-white/10 bg-zinc-900 p-0 text-white shadow-xl"
+        className="w-80 border-slate-200 bg-white p-0 text-slate-900 shadow-xl dark:border-white/10 dark:bg-zinc-900 dark:text-white"
       >
-        <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-          <span className="text-xs font-medium text-white/70">Notifications</span>
+        <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-white/10">
+          <span className="text-xs font-medium text-slate-600 dark:text-white/70">Notifications</span>
           {unreadCount > 0 && (
             <button
               onClick={() => markAllRead()}
-              className="flex items-center gap-1 text-[10px] text-white/40 transition-colors hover:text-white/70"
+              className="flex items-center gap-1 text-[10px] text-slate-400 transition-colors hover:text-slate-700 dark:text-white/40 dark:hover:text-white/70"
             >
               <CheckCheck className="h-3 w-3" />
               Mark all read
@@ -43,7 +43,7 @@ export function NotificationBell() {
         </div>
         <div className="max-h-64 overflow-y-auto">
           {notifications.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs text-white/30">
+            <div className="px-3 py-6 text-center text-xs text-slate-400 dark:text-white/30">
               No new notifications
             </div>
           ) : (
@@ -55,12 +55,12 @@ export function NotificationBell() {
                   markRead(n.id);
                   setOpen(false);
                 }}
-                className="flex items-start gap-2.5 border-b border-white/5 px-3 py-2.5 transition-colors hover:bg-white/5 last:border-b-0"
+                className="flex items-start gap-2.5 border-b border-slate-100 px-3 py-2.5 transition-colors hover:bg-slate-50 last:border-b-0 dark:border-white/5 dark:hover:bg-white/5"
               >
-                <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />
+                <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500 dark:text-blue-400" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs leading-snug text-white/80">{n.message}</p>
-                  <p className="mt-0.5 text-[10px] text-white/30">
+                  <p className="text-xs leading-snug text-slate-700 dark:text-white/80">{n.message}</p>
+                  <p className="mt-0.5 text-[10px] text-slate-400 dark:text-white/30">
                     {formatRelativeTime(n.createdAt)}
                   </p>
                 </div>

@@ -13,7 +13,7 @@ interface StepItemProps {
 }
 
 const statusIcons: Record<StepStatus, ReactNode> = {
-  pending: <Circle className="h-5 w-5 text-white/30" />,
+  pending: <Circle className="h-5 w-5 text-slate-300 dark:text-white/30" />,
   active: <Loader2 className="h-5 w-5 animate-spin text-blue-400" />,
   done: <Check className="h-5 w-5 text-emerald-400" />,
   error: <X className="h-5 w-5 text-red-400" />,
@@ -27,7 +27,7 @@ export function StepItem({ label, status, children, isLast }: StepItemProps) {
         <div
           className={cn(
             "flex h-8 w-8 items-center justify-center rounded-full border transition-all",
-            status === "pending" && "border-white/10 bg-white/5",
+            status === "pending" && "border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/5",
             status === "active" && "border-blue-400/50 bg-blue-400/10",
             status === "done" && "border-emerald-400/50 bg-emerald-400/10",
             status === "error" && "border-red-400/50 bg-red-400/10"
@@ -39,7 +39,7 @@ export function StepItem({ label, status, children, isLast }: StepItemProps) {
           <div
             className={cn(
               "absolute left-1/2 top-8 bottom-0 -translate-x-1/2 w-px",
-              status === "done" ? "bg-emerald-400/30" : "bg-white/10"
+              status === "done" ? "bg-emerald-400/30" : "bg-slate-200 dark:bg-white/10"
             )}
           />
         )}
@@ -51,7 +51,7 @@ export function StepItem({ label, status, children, isLast }: StepItemProps) {
           <p
             className={cn(
               "text-sm font-medium leading-none transition-colors",
-              status === "pending" && "text-white/40",
+              status === "pending" && "text-slate-400 dark:text-white/40",
               status === "active" && "text-blue-300",
               status === "done" && "text-emerald-300",
               status === "error" && "text-red-300"

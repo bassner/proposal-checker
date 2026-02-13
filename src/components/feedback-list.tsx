@@ -168,11 +168,11 @@ function FilterBar({
   const isFiltering = severityFilter.size < 4 || annotationFilter !== "all" || searchQuery.length > 0;
 
   return (
-    <div className="no-print space-y-3 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm">
+    <div className="no-print space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
       <div className="flex flex-wrap items-center gap-3">
         {/* Severity toggles */}
         <div className="flex items-center gap-1.5">
-          <Filter className="h-3.5 w-3.5 text-white/30" />
+          <Filter className="h-3.5 w-3.5 text-slate-400 dark:text-white/30" />
           {SEVERITY_ORDER.map((s) => {
             const col = severityColumnConfig[s];
             const active = severityFilter.has(s);
@@ -185,10 +185,10 @@ function FilterBar({
                 disabled={!hasFindingsOfType}
                 className={cn(
                   "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-white/40",
                   active && hasFindingsOfType
                     ? cn(col.headerBg, col.headerText)
-                    : "text-white/20 hover:text-white/40",
+                    : "text-slate-400 hover:text-slate-600 dark:text-white/20 dark:hover:text-white/40",
                   !hasFindingsOfType && "opacity-30 cursor-not-allowed",
                 )}
               >
@@ -199,7 +199,7 @@ function FilterBar({
         </div>
 
         {/* Annotation status filter */}
-        <div className="flex items-center gap-1 border-l border-white/10 pl-3">
+        <div className="flex items-center gap-1 border-l border-slate-200 pl-3 dark:border-white/10">
           {ANNOTATION_FILTER_OPTIONS.map(({ value, label }) => (
             <button
               key={value}
@@ -207,10 +207,10 @@ function FilterBar({
               onClick={() => onAnnotationFilter(value)}
               className={cn(
                 "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-white/40",
                 annotationFilter === value
-                  ? "bg-white/10 text-white/70"
-                  : "text-white/25 hover:text-white/45",
+                  ? "bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/70"
+                  : "text-slate-400 hover:text-slate-600 dark:text-white/25 dark:hover:text-white/45",
               )}
             >
               {label}
@@ -220,19 +220,19 @@ function FilterBar({
 
         {/* Search input */}
         <div className="relative ml-auto min-w-[180px]">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/25" />
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-white/25" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQuery(e.target.value)}
             placeholder="Search findings..."
-            className="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-8 text-[11px] text-white/70 placeholder:text-white/20 focus:border-white/20 focus:outline-none"
+            className="w-full rounded-md border border-slate-200 bg-white py-1.5 pl-8 pr-8 text-[11px] text-slate-700 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:placeholder:text-white/20 dark:focus:border-white/20"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:text-white/30 dark:hover:text-white/60"
             >
               <XIcon className="h-3.5 w-3.5" />
             </button>
@@ -242,7 +242,7 @@ function FilterBar({
 
       {/* Filter status */}
       {isFiltering && (
-        <p className="text-[11px] text-white/35">
+        <p className="text-[11px] text-slate-500 dark:text-white/35">
           Showing {visibleCount} of {totalCount} finding{totalCount !== 1 ? "s" : ""}
         </p>
       )}
@@ -345,7 +345,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
               <p className={cn("text-sm font-semibold", config.textColor)}>
                 {config.label}
               </p>
-              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-white/40">
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-white/40">
                 {SEVERITY_ORDER.map((s) => {
                   const count = allGrouped[s]?.length || 0;
                   if (count === 0) return null;
@@ -360,12 +360,12 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                 })}
               </div>
               {totalFindings > 0 && addressedCount > 0 && (
-                <span className="text-xs text-white/30">
+                <span className="text-xs text-slate-400 dark:text-white/30">
                   {addressedCount}/{totalFindings} findings addressed
                 </span>
               )}
             </div>
-            <p className="mt-1 text-sm leading-relaxed text-white/60">
+            <p className="mt-1 text-sm leading-relaxed text-slate-600 dark:text-white/60">
               {feedback.summary}
             </p>
             {/* Bulk annotation actions */}
@@ -375,7 +375,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
                   type="button"
                   onClick={() => onBulkAnnotate(unaddressedIndices, "accepted")}
                   disabled={unaddressedIndices.length === 0}
-                  className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30 dark:border-white/10 dark:bg-white/5 dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white/70"
                 >
                   <CheckCheck className="h-3 w-3" />
                   Accept All
@@ -459,8 +459,8 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
 
       {/* Empty filter result */}
       {totalFindings > 0 && filteredIndexed.length === 0 && (
-        <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center backdrop-blur-sm">
-          <p className="text-sm text-white/40">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center backdrop-blur-sm dark:border-white/10 dark:bg-white/5">
+          <p className="text-sm text-slate-500 dark:text-white/40">
             No findings match the current filters.
           </p>
         </div>
@@ -523,16 +523,16 @@ export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate
 
       {/* Keyboard navigation hint */}
       {onAnnotate && totalFindings > 0 && (
-        <p className="no-print text-center text-[11px] text-white/20">
-          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">j</kbd>
+        <p className="no-print text-center text-[11px] text-slate-400 dark:text-white/20">
+          <kbd className="rounded border border-slate-200 px-1 py-0.5 font-mono text-[10px] dark:border-white/10">j</kbd>
           {" / "}
-          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">k</kbd>
+          <kbd className="rounded border border-slate-200 px-1 py-0.5 font-mono text-[10px] dark:border-white/10">k</kbd>
           {" navigate "}
           <span className="mx-1">&middot;</span>
-          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
+          <kbd className="rounded border border-slate-200 px-1 py-0.5 font-mono text-[10px] dark:border-white/10">Enter</kbd>
           {" accept "}
           <span className="mx-1">&middot;</span>
-          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">Esc</kbd>
+          <kbd className="rounded border border-slate-200 px-1 py-0.5 font-mono text-[10px] dark:border-white/10">Esc</kbd>
           {" deselect"}
         </p>
       )}

@@ -37,7 +37,7 @@ function renderQuoteWithBold(quote: string): ReactNode {
   const parts = quote.split("**");
   return parts.map((part, i) =>
     i % 2 === 1 ? (
-      <strong key={i} className="text-white/70">
+      <strong key={i} className="text-slate-700 dark:text-white/70">
         {part}
       </strong>
     ) : (
@@ -57,13 +57,13 @@ function CommentItem({ comment, onDelete }: { comment: Comment; onDelete?: (id: 
   const [deleting, setDeleting] = useState(false);
 
   return (
-    <div className="group flex gap-2 rounded-md bg-white/[0.03] px-2.5 py-2">
+    <div className="group flex gap-2 rounded-md bg-slate-50 px-2.5 py-2 dark:bg-white/[0.03]">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px] font-medium text-purple-300/80">{comment.authorName}</span>
-          <span className="text-[9px] text-white/20">{formatCommentDate(comment.createdAt)}</span>
+          <span className="text-[10px] font-medium text-purple-600 dark:text-purple-300/80">{comment.authorName}</span>
+          <span className="text-[9px] text-slate-400 dark:text-white/20">{formatCommentDate(comment.createdAt)}</span>
         </div>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-white/60 whitespace-pre-wrap break-words">
+        <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600 whitespace-pre-wrap break-words dark:text-white/60">
           {comment.text}
         </p>
       </div>
@@ -75,7 +75,7 @@ function CommentItem({ comment, onDelete }: { comment: Comment; onDelete?: (id: 
             setDeleting(true);
             try { await onDelete(comment.id); } finally { setDeleting(false); }
           }}
-          className="no-print shrink-0 self-start opacity-0 group-hover:opacity-100 transition-opacity text-white/20 hover:text-red-400"
+          className="no-print shrink-0 self-start opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500 dark:text-white/20 dark:hover:text-red-400"
           aria-label="Delete comment"
         >
           <Trash2 className="h-3 w-3" />
@@ -102,7 +102,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
         onChange={(e) => setText(e.target.value)}
         placeholder="Add supervisor comment..."
         rows={1}
-        className="flex-1 resize-none rounded-md border border-white/10 bg-white/5 px-2.5 py-1.5 text-[11px] text-white/70 placeholder:text-white/20 focus:border-purple-500/40 focus:outline-none"
+        className="flex-1 resize-none rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] text-slate-700 placeholder:text-slate-400 focus:border-purple-400 focus:outline-none dark:border-white/10 dark:bg-white/5 dark:text-white/70 dark:placeholder:text-white/20 dark:focus:border-purple-500/40"
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
@@ -114,7 +114,7 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
         type="button"
         disabled={!text.trim() || submitting}
         onClick={handleSubmit}
-        className="shrink-0 rounded-md bg-purple-500/20 p-1.5 text-purple-300 transition-colors hover:bg-purple-500/30 disabled:opacity-30 disabled:cursor-not-allowed"
+        className="shrink-0 rounded-md bg-purple-100 p-1.5 text-purple-600 transition-colors hover:bg-purple-200 disabled:opacity-30 disabled:cursor-not-allowed dark:bg-purple-500/20 dark:text-purple-300 dark:hover:bg-purple-500/30"
         aria-label="Submit comment"
       >
         <Send className="h-3.5 w-3.5" />
@@ -154,12 +154,12 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
     <div
       ref={cardRef}
       className={cn(
-        "print-card rounded-lg border border-white/10 border-l-4 bg-white/5 p-3 backdrop-blur-sm transition-all hover:bg-white/[0.07]",
+        "print-card rounded-lg border border-slate-200 border-l-4 bg-white p-3 backdrop-blur-sm transition-all hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/[0.07]",
         // Default severity border, overridden by annotation state
         !annotation?.status && config.borderColor,
         isFixed && "border-l-emerald-500 bg-emerald-500/5",
-        isDismissed && "border-l-white/20 opacity-50",
-        focused && "ring-2 ring-blue-500/60 bg-white/[0.09]",
+        isDismissed && "border-l-slate-300 opacity-50 dark:border-l-white/20",
+        focused && "ring-2 ring-blue-500/60 bg-slate-100 dark:bg-white/[0.09]",
       )}
     >
       <div className="space-y-1.5">
@@ -169,29 +169,29 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
             aria-label={finding.severity}
           />
           <p className={cn(
-            "flex-1 text-xs font-medium leading-snug text-white/90",
-            isDismissed && "line-through text-white/40"
+            "flex-1 text-xs font-medium leading-snug text-slate-900 dark:text-white/90",
+            isDismissed && "line-through text-slate-400 dark:text-white/40"
           )}>
             {finding.title}
           </p>
           {commentCount > 0 && (
-            <span className="no-print flex shrink-0 items-center gap-0.5 rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[9px] font-medium text-purple-300/80">
+            <span className="no-print flex shrink-0 items-center gap-0.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-medium text-purple-600 dark:bg-purple-500/15 dark:text-purple-300/80">
               <MessageSquare className="h-2.5 w-2.5" />
               {commentCount}
             </span>
           )}
         </div>
         <p className={cn(
-          "text-xs leading-relaxed text-white/50",
-          isDismissed && "text-white/25"
+          "text-xs leading-relaxed text-slate-600 dark:text-white/50",
+          isDismissed && "text-slate-400 dark:text-white/25"
         )}>
           {finding.description}
         </p>
         {sortedLocations.length > 0 && (
           <div className="space-y-1 pt-1">
             {visibleLocations.map((loc, i) => (
-              <div key={i} className="text-[11px] leading-snug text-white/35">
-                <span className="font-medium text-white/45">
+              <div key={i} className="text-[11px] leading-snug text-slate-500 dark:text-white/35">
+                <span className="font-medium text-slate-600 dark:text-white/45">
                   {[loc.page != null && `p.\u00A0${loc.page}`, loc.section]
                     .filter(Boolean)
                     .join(" \u00B7 ") || "\u2014"}
@@ -205,7 +205,7 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
             {hiddenCount > 0 && (
               <button
                 type="button"
-                className="text-[11px] text-white/30 hover:text-white/50 transition-colors"
+                className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors dark:text-white/30 dark:hover:text-white/50"
                 onClick={() => setLocationsExpanded((e) => !e)}
                 aria-expanded={locationsExpanded}
                 aria-label={locationsExpanded ? "Show fewer source locations" : `Show ${hiddenCount} more source location${hiddenCount === 1 ? "" : "s"}`}
@@ -232,14 +232,14 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
                   onClick={() => onAnnotate(status)}
                   className={cn(
                     "flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/40",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400 dark:focus-visible:ring-white/40",
                     isActive
                       ? status === "accepted"
                         ? "bg-blue-500/20 text-blue-300"
                         : status === "dismissed"
-                          ? "bg-white/10 text-white/50"
+                          ? "bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-white/50"
                           : "bg-emerald-500/20 text-emerald-300"
-                      : "text-white/25 hover:text-white/50 hover:bg-white/5"
+                      : "text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-white/25 dark:hover:text-white/50 dark:hover:bg-white/5"
                   )}
                 >
                   <Icon className="h-3 w-3" />
@@ -252,7 +252,7 @@ export function FeedbackCard({ finding, annotation, onAnnotate, focused, onAddCo
 
         {/* Supervisor comments */}
         {commentCount > 0 && (
-          <div className="space-y-1.5 pt-2 border-t border-white/5">
+          <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-white/5">
             {comments.map((comment) => (
               <CommentItem
                 key={comment.id}

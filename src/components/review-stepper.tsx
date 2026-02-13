@@ -105,7 +105,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                 {(state.mergeTokens > 0 || state.steps.merge === "active") && (
                   <span className={cn(
                     "hidden w-[3.5rem] text-right tabular-nums sm:inline",
-                    state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
+                    state.steps.merge === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
                   )}>
                     {mergeHasNoTokensYet ? "–" : formatTokensK(state.mergeTokens + state.mergeReasoningTokens)}
                   </span>
@@ -113,7 +113,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                 {(state.mergeTokens > 0 || state.steps.merge === "active") && (
                   <span className={cn(
                     "hidden w-[3.5rem] text-right tabular-nums sm:inline",
-                    state.steps.merge === "active" ? "text-blue-400/60" : "text-white/30"
+                    state.steps.merge === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
                   )}>
                     {mergeHasNoTokensYet
                       ? "–"
@@ -138,7 +138,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                   <LiveTimer startTime={state.mergeStartTime} className="w-[3rem] tabular-nums text-blue-400/60" />
                 )}
                 {state.steps.merge === "done" && state.mergeEndTime && (
-                  <span className="w-[3rem] tabular-nums text-white/30">
+                  <span className="w-[3rem] tabular-nums text-slate-400 dark:text-white/30">
                     {((state.mergeEndTime - state.mergeStartTime) / 1000).toFixed(1)}s
                   </span>
                 )}
@@ -172,7 +172,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
 
       {/* Overall timer + cost — centered at the bottom */}
       {state.startTime && (
-        <div className="mt-4 flex items-center justify-center gap-3 border-t border-white/5 pt-4 text-sm font-medium">
+        <div className="mt-4 flex items-center justify-center gap-3 border-t border-slate-200 pt-4 text-sm font-medium dark:border-white/5">
           {state.status === "running" ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
@@ -186,11 +186,11 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
           ) : (
             state.status === "done" && state.mergeEndTime && (
               <>
-                <span className="tabular-nums text-white/50">
+                <span className="tabular-nums text-slate-600 dark:text-white/50">
                   {((state.mergeEndTime - state.startTime) / 1000).toFixed(1)}s
                 </span>
                 {state.provider === "azure" && (inputTokens > 0 || outputTokens > 0) && (
-                  <span className="tabular-nums text-white/30">
+                  <span className="tabular-nums text-slate-400 dark:text-white/30">
                     {estimateCost(inputTokens, outputTokens)}
                   </span>
                 )}
