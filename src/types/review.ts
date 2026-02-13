@@ -76,10 +76,18 @@ export interface CheckGroupResult {
   error?: string;
 }
 
+export interface FailedGroupInfo {
+  groupId: CheckGroupId;
+  label: string;
+  error: string;
+}
+
 export interface MergedFeedback {
   overallAssessment: "good" | "acceptable" | "needs-work";
   summary: string;
   findings: Finding[];
+  /** Check groups that failed during the review. Present only when partial results are returned. */
+  failedGroups?: FailedGroupInfo[];
 }
 
 export type LLMPhase = "thinking" | "generating";

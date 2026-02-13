@@ -1,6 +1,6 @@
 import type { ProviderType, ReviewMode } from "@/types/review";
-import type { CheckGroupId, CheckGroupMeta, LLMPhase, MergedFeedback } from "@/types/review";
-import { getCheckGroups } from "@/types/review";
+import type { CheckGroupId, CheckGroupMeta, LLMPhase, MergedFeedback, FailedGroupInfo } from "@/types/review";
+import { getCheckGroups, ALL_CHECK_GROUP_META } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { createModel } from "@/lib/llm/provider";
 import { extractPDFText } from "@/lib/pdf/extract";
@@ -130,6 +130,24 @@ export async function runReviewPipeline(
 
     callbacks.onStep("check", "done");
 
+    // Collect failed group info for partial results indicator
+    const failedResults = checkResults.filter((r) => r.error);
+    const failedGroups: FailedGroupInfo[] = failedResults.map((r) => ({
+      groupId: r.groupId,
+      label: ALL_CHECK_GROUP_META[r.groupId]?.label ?? r.groupId,
+      error: r.error!,
+    }));
+    const successCount = checkResults.length - failedResults.length;
+
+    // If ALL groups failed, skip the merge and report an error
+    if (successCount === 0) {
+      const groupNames = failedGroups.map((g) => g.label).join(", ");
+      callbacks.onError(
+        `All check groups failed: ${groupNames}. Please try again later.`
+      );
+      return;
+    }
+
     // Step 4: Merge results
     callbacks.onStep("merge", "active");
 
@@ -152,8 +170,12 @@ export async function runReviewPipeline(
 
     callbacks.onStep("merge", "done");
 
-    // Step 5: Deliver results
-    callbacks.onResult(mergedFeedback as MergedFeedback);
+    // Step 5: Deliver results (attach failed groups info for partial results)
+    const result: MergedFeedback = {
+      ...(mergedFeedback as MergedFeedback),
+      ...(failedGroups.length > 0 ? { failedGroups } : {}),
+    };
+    callbacks.onResult(result);
   } catch (error) {
     if (pipelineAbort.signal.aborted) {
       console.error("[pipeline] Review timed out after 15 minutes");

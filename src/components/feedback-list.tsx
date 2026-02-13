@@ -3,7 +3,7 @@
 import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon } from "lucide-react";
 
 interface FeedbackListProps {
   feedback: MergedFeedback;
@@ -165,6 +165,34 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
           </div>
         </div>
       </div>
+
+      {/* Partial results warning banner */}
+      {feedback.failedGroups && feedback.failedGroups.length > 0 && (
+        <div className="rounded-xl border border-orange-500/20 bg-orange-500/5 p-4 backdrop-blur-sm">
+          <div className="flex items-start gap-3">
+            <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0 text-orange-400" />
+            <div>
+              <p className="text-sm font-medium text-orange-300">
+                Partial Results
+              </p>
+              <p className="mt-1 text-sm text-orange-300/60">
+                {feedback.failedGroups.length === 1
+                  ? "1 check group failed during the review. Results below may be incomplete."
+                  : `${feedback.failedGroups.length} check groups failed during the review. Results below may be incomplete.`}
+              </p>
+              <ul className="mt-2 space-y-1">
+                {feedback.failedGroups.map((g) => (
+                  <li key={g.groupId} className="text-xs text-orange-300/50">
+                    <span className="font-medium text-orange-300/70">{g.label}</span>
+                    {" — "}
+                    {g.error}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {feedback.findings.length === 0 && (
         <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-6 text-center backdrop-blur-sm">
