@@ -1180,6 +1180,79 @@ export async function getAnalytics(): Promise<AnalyticsData | null> {
 }
 
 // ---------------------------------------------------------------------------
+// Analytics export (date-range filtered)
+// ---------------------------------------------------------------------------
+
+export interface AnalyticsExportRow {
+  reviewId: string;
+  userEmail: string;
+  fileName: string | null;
+  status: string;
+  provider: string;
+  reviewMode: string;
+  findingCount: number;
+  createdAt: string;
+}
+
+/**
+ * Returns review rows for CSV/JSON export with optional date-range filtering.
+ * Only includes non-deleted reviews. Ordered by created_at DESC.
+ */
+export async function getAnalyticsForDateRange(
+  startDate?: string,
+  endDate?: string
+): Promise<AnalyticsExportRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const conditions: string[] = ["deleted_at IS NULL"];
+  const params: unknown[] = [];
+  let paramIdx = 1;
+
+  if (startDate) {
+    conditions.push(`created_at >= $${paramIdx++}::timestamptz`);
+    params.push(startDate);
+  }
+  if (endDate) {
+    // Include the entire end date by adding a day
+    conditions.push(`created_at < ($${paramIdx++}::date + 1)::timestamptz`);
+    params.push(endDate);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+
+  const result = await pool.query(
+    `SELECT
+       id,
+       user_email,
+       file_name,
+       status,
+       provider,
+       review_mode,
+       CASE
+         WHEN feedback IS NOT NULL AND jsonb_typeof(feedback->'findings') = 'array'
+         THEN jsonb_array_length(feedback->'findings')
+         ELSE 0
+       END AS finding_count,
+       created_at
+     FROM reviews ${where}
+     ORDER BY created_at DESC`,
+    params
+  );
+
+  return result.rows.map((row) => ({
+    reviewId: row.id as string,
+    userEmail: row.user_email as string,
+    fileName: (row.file_name as string) ?? null,
+    status: row.status as string,
+    provider: row.provider as string,
+    reviewMode: (row.review_mode as string) ?? "proposal",
+    findingCount: parseInt(row.finding_count, 10),
+    createdAt: (row.created_at as Date).toISOString(),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Notification operations
 // ---------------------------------------------------------------------------
 
