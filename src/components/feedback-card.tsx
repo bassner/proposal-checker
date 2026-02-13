@@ -4,8 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import type { Finding, Severity, AnnotationStatus, AnnotationEntry, Comment } from "@/types/review";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Check, X, Wrench, MessageSquare, Send, Trash2, AlertOctagon, AlertTriangle, AlertCircle, Lightbulb } from "lucide-react";
+import { Check, X, Wrench, MessageSquare, Send, Trash2, AlertOctagon, AlertTriangle, AlertCircle, Lightbulb, FileText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { COMMENT_TEMPLATES } from "@/lib/comment-templates";
 
 interface FeedbackCardProps {
   finding: Finding;
@@ -87,6 +89,8 @@ function CommentItem({ comment, onDelete }: { comment: Comment; onDelete?: (id: 
 
 function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Promise<void>; submitting?: boolean }) {
   const [text, setText] = useState("");
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleSubmit = async () => {
     const trimmed = text.trim();
@@ -95,9 +99,20 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
     setText("");
   };
 
+  const insertTemplate = (templateText: string) => {
+    setText((prev) => {
+      if (!prev.trim()) return templateText;
+      return prev.trimEnd() + " " + templateText;
+    });
+    setTemplateOpen(false);
+    // Focus the textarea after inserting
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
   return (
     <div className="no-print flex items-start gap-1.5">
       <textarea
+        ref={textareaRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Add supervisor comment..."
@@ -110,6 +125,43 @@ function CommentForm({ onSubmit, submitting }: { onSubmit: (text: string) => Pro
           }
         }}
       />
+      <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="shrink-0 rounded-md bg-white/5 p-1.5 text-white/30 transition-colors hover:bg-white/10 hover:text-white/50"
+            aria-label="Insert comment template"
+          >
+            <FileText className="h-3.5 w-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          side="top"
+          className="w-64 max-h-72 overflow-y-auto border-white/10 bg-slate-900 p-2"
+        >
+          <p className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-white/30">
+            Templates
+          </p>
+          {COMMENT_TEMPLATES.map((cat) => (
+            <div key={cat.category} className="mb-1">
+              <p className="px-1 py-1 text-[10px] font-semibold text-white/50">
+                {cat.category}
+              </p>
+              {cat.templates.map((tpl) => (
+                <button
+                  key={tpl.label}
+                  type="button"
+                  onClick={() => insertTemplate(tpl.text)}
+                  className="w-full rounded px-2 py-1 text-left text-[11px] text-white/60 transition-colors hover:bg-white/10 hover:text-white/80"
+                >
+                  {tpl.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </PopoverContent>
+      </Popover>
       <button
         type="button"
         disabled={!text.trim() || submitting}
