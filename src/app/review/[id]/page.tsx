@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useReviewStream, useCompletedReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import { ShareButton } from "@/components/share-button";
-import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
+import { PrintButton, CopyMarkdownButton, DownloadCsvButton, DownloadJsonButton } from "@/components/export-button";
 import { GraduationCap, RotateCcw, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback, ReviewMode, Annotations } from "@/types/review";
@@ -208,6 +208,8 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             <ShareButton reviewId={reviewId} initialShareToken={shareToken} initialExpiresAt={shareExpiresAt} initialHasPassword={shareHasPassword} />
             <PrintButton />
             <CopyMarkdownButton feedback={feedback} fileName={fileName} />
+            <DownloadCsvButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
+            <DownloadJsonButton feedback={feedback} annotations={mergedAnnotations} fileName={fileName} reviewMode={reviewMode} />
           </div>
           <UserMenu />
         </div>
