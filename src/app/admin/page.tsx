@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
-import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplates, listWebhooks, getSeverityWeights, listPromptSnippets, getCheckGroupOrder, listFindingPatterns } from "@/lib/db";
+import { getAnalytics, getFailedReviews, getCheckGroupMetrics, getReviewTemplates, listWebhooks, getSeverityWeights, listPromptSnippets, getCheckGroupOrder, listFindingPatterns, getFindingImpactMatrix } from "@/lib/db";
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
-import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Download, Puzzle, ListOrdered, Repeat, CalendarDays, Users2 } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle, FileStack, Webhook, Activity, Gauge, Download, Puzzle, ListOrdered, Repeat, CalendarDays, Users2, Grid3x3 } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
@@ -21,6 +21,7 @@ import { FindingPatternsDashboard } from "@/components/admin/finding-patterns-da
 import { DeadlineCalendar } from "@/components/admin/deadline-calendar";
 import { DeadlineRiskSummary } from "@/components/admin/deadline-risk-summary";
 import { PeerPairingDashboard } from "@/components/admin/peer-pairing-dashboard";
+import { ImpactMatrixDashboard } from "@/components/admin/impact-matrix-dashboard";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -31,8 +32,8 @@ export default async function AdminPage() {
     redirect("/");
   }
 
-  // Load config + analytics + failed reviews + check metrics + templates + webhooks + severity weights + snippets + check group order + finding patterns from DB in parallel
-  const [configResults, analyticsData, failedReviewsData, checkMetricsData, templatesData, webhooksData, severityWeightsData, snippetsData, checkGroupOrderData, findingPatternsData] = await Promise.all([
+  // Load config + analytics + failed reviews + check metrics + templates + webhooks + severity weights + snippets + check group order + finding patterns + impact matrix from DB in parallel
+  const [configResults, analyticsData, failedReviewsData, checkMetricsData, templatesData, webhooksData, severityWeightsData, snippetsData, checkGroupOrderData, findingPatternsData, impactMatrixData] = await Promise.all([
     Promise.all(
       APP_ROLES.map(async (role) => ({
         role,
@@ -74,6 +75,10 @@ export default async function AdminPage() {
     listFindingPatterns().catch((err) => {
       console.error("[admin] Failed to load finding patterns:", err);
       return [];
+    }),
+    getFindingImpactMatrix().catch((err) => {
+      console.error("[admin] Failed to load impact matrix:", err);
+      return null;
     }),
   ]);
 
@@ -174,6 +179,15 @@ export default async function AdminPage() {
             <h2 className="text-sm font-medium text-white/60">Recurring Finding Patterns</h2>
           </div>
           <FindingPatternsDashboard initialPatterns={findingPatternsData} />
+        </div>
+
+        {/* Finding Impact Matrix */}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-2">
+            <Grid3x3 className="h-4 w-4 text-blue-400" />
+            <h2 className="text-sm font-medium text-white/60">Finding Impact Matrix</h2>
+          </div>
+          <ImpactMatrixDashboard initialData={impactMatrixData} />
         </div>
 
         {/* Role-Provider Mapping */}

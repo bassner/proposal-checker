@@ -5743,3 +5743,69 @@ export async function listRevisionSummariesForReview(
   );
   return result.rows.map(rowToRevisionSummary);
 }
+
+// ---------------------------------------------------------------------------
+// Finding Impact Matrix (category x severity heatmap)
+// ---------------------------------------------------------------------------
+
+export interface ImpactMatrixCell {
+  category: string;
+  severity: string;
+  count: number;
+}
+
+export interface ImpactMatrixData {
+  cells: ImpactMatrixCell[];
+  totalReviews: number;
+}
+
+/**
+ * Build a matrix of finding category x severity with counts across all
+ * completed reviews. Uses the `category` field from the merged feedback
+ * findings and the `severity` field.
+ */
+export async function getFindingImpactMatrix(): Promise<ImpactMatrixData | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(`
+    WITH
+    completed AS (
+      SELECT id, feedback->'findings' AS findings
+      FROM reviews
+      WHERE status = 'done'
+        AND deleted_at IS NULL
+        AND feedback IS NOT NULL
+        AND jsonb_typeof(feedback->'findings') = 'array'
+    ),
+    exploded AS (
+      SELECT
+        COALESCE(f.value->>'category', 'other') AS category,
+        COALESCE(f.value->>'severity', 'suggestion') AS severity
+      FROM completed c, jsonb_array_elements(c.findings) AS f(value)
+    ),
+    matrix AS (
+      SELECT category, severity, COUNT(*)::int AS count
+      FROM exploded
+      GROUP BY category, severity
+    ),
+    review_count AS (
+      SELECT COUNT(*)::int AS cnt FROM completed
+    )
+    SELECT
+      json_build_object(
+        'cells', COALESCE((SELECT json_agg(json_build_object('category', category, 'severity', severity, 'count', count)) FROM matrix), '[]'::json),
+        'totalReviews', (SELECT cnt FROM review_count)
+      ) AS data
+  `);
+
+  const raw = result.rows[0].data;
+  return {
+    cells: (raw.cells as { category: string; severity: string; count: string }[]).map((c) => ({
+      category: c.category,
+      severity: c.severity,
+      count: Number(c.count),
+    })),
+    totalReviews: Number(raw.totalReviews),
+  };
+}
