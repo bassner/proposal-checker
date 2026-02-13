@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
-import { getAnalytics } from "@/lib/db";
+import { getAnalytics, getFailedReviews } from "@/lib/db";
 import { APP_ROLES, ROLE_HIERARCHY } from "@/lib/auth/roles";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
-import { Shield, ArrowLeft, ClipboardList, AlertTriangle } from "lucide-react";
+import { Shield, ArrowLeft, ClipboardList, AlertTriangle, XCircle } from "lucide-react";
 import Link from "next/link";
 import { RoleConfigEditor } from "@/components/admin/role-config-editor";
 import { AnalyticsDashboard } from "@/components/admin/analytics-dashboard";
+import { FailedReviewsDashboard } from "@/components/admin/failed-reviews-dashboard";
 
 export default async function AdminPage() {
   const session = await auth();
@@ -19,8 +20,8 @@ export default async function AdminPage() {
     redirect("/");
   }
 
-  // Load config + analytics from DB in parallel
-  const [configResults, analyticsData] = await Promise.all([
+  // Load config + analytics + failed reviews from DB in parallel
+  const [configResults, analyticsData, failedReviewsData] = await Promise.all([
     Promise.all(
       APP_ROLES.map(async (role) => ({
         role,
@@ -29,6 +30,10 @@ export default async function AdminPage() {
     ),
     getAnalytics().catch((err) => {
       console.error("[admin] Failed to load analytics:", err);
+      return null;
+    }),
+    getFailedReviews().catch((err) => {
+      console.error("[admin] Failed to load failed reviews:", err);
       return null;
     }),
   ]);
@@ -74,6 +79,15 @@ export default async function AdminPage() {
         <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
           <h2 className="mb-4 text-sm font-medium text-white/60">Review Analytics</h2>
           <AnalyticsDashboard initialData={analyticsData} />
+        </div>
+
+        {/* Failed Reviews */}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl">
+          <div className="mb-4 flex items-center gap-2">
+            <XCircle className="h-4 w-4 text-red-400" />
+            <h2 className="text-sm font-medium text-white/60">Failed Reviews</h2>
+          </div>
+          <FailedReviewsDashboard initialData={failedReviewsData} />
         </div>
 
         {/* Role-Provider Mapping */}
