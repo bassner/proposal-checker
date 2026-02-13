@@ -99,13 +99,21 @@ export function useAnnotations(reviewId: string, initial: Annotations = {}) {
         const existing = prev[key];
         let next: Annotations;
         if (existing?.status === status) {
-          // Toggle off: remove the annotation
-          next = { ...prev };
-          delete next[key];
+          // Toggle off: remove status but preserve comments
+          if (existing.comments?.length) {
+            next = { ...prev, [key]: { updatedAt: new Date().toISOString(), comments: existing.comments } };
+          } else {
+            next = { ...prev };
+            delete next[key];
+          }
         } else {
           next = {
             ...prev,
-            [key]: { status, updatedAt: new Date().toISOString() },
+            [key]: {
+              status,
+              updatedAt: new Date().toISOString(),
+              ...(existing?.comments?.length ? { comments: existing.comments } : {}),
+            },
           };
         }
         latestRef.current = next;

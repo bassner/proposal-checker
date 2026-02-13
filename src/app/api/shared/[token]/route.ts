@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewByShareToken } from "@/lib/db";
+import { isAvailable, getReviewByShareToken, sanitizeAnnotations } from "@/lib/db";
 
 const TOKEN_RE = /^[a-f0-9]{16}$/;
 
@@ -15,8 +15,9 @@ export async function GET(
 ) {
   const { token } = await params;
 
+  let session;
   try {
-    await requireAuth();
+    session = await requireAuth();
   } catch (response) {
     return response as Response;
   }
@@ -35,6 +36,8 @@ export async function GET(
     return Response.json({ error: "Shared review not found" }, { status: 404 });
   }
 
+  const isSupervisor = session.user.role === "admin" || session.user.role === "phd";
+
   return Response.json({
     id: review.id,
     status: review.status,
@@ -44,6 +47,7 @@ export async function GET(
     createdAt: review.createdAt,
     feedback: review.feedback,
     userName: review.userName,
-    annotations: review.annotations,
+    annotations: sanitizeAnnotations(review.annotations),
+    canComment: isSupervisor,
   });
 }

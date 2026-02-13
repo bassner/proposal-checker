@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { ReviewStepper } from "@/components/review-stepper";
 import { FeedbackList } from "@/components/feedback-list";
 import { ThinkingBubble } from "@/components/thinking-bubble";
@@ -16,7 +17,8 @@ import type { MergedFeedback, ReviewMode, Annotations } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
 import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { getNavigationOrder } from "@/lib/finding-nav-order";
-import { useMemo, useCallback } from "react";
+import { useMemo } from "react";
+import { useComments } from "@/hooks/use-comments";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -47,7 +49,7 @@ export default function ReviewPage() {
     }
 
     if (review?.status === "done" && review.feedback) {
-      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} reviewMode={review.reviewMode} initialAnnotations={review.annotations} />;
+      return <ResultsView feedback={review.feedback} fileName={review.fileName} reviewId={id} shareToken={review.shareToken} reviewMode={review.reviewMode} initialAnnotations={review.annotations} isOwner={review.isOwner !== false} />;
     }
 
     if (review?.status === "error") {
@@ -86,7 +88,7 @@ export default function ReviewPage() {
 
   // ── Live SSE: results view ──────────────────────────────────────────────
   if (hasResult) {
-    return <ResultsView feedback={state.result!} reviewId={id} reviewMode={state.mode ?? undefined} />;
+    return <ResultsView feedback={state.result!} reviewId={id} reviewMode={state.mode ?? undefined} isOwner />;
   }
 
   // ── Live SSE: processing / error view ───────────────────────────────────
@@ -118,9 +120,17 @@ export default function ReviewPage() {
 // ── Shared components ─────────────────────────────────────────────────────
 
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
-function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, initialAnnotations }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; reviewMode?: ReviewMode; initialAnnotations?: Annotations }) {
-  const { annotations, toggleAnnotation } = useAnnotations(reviewId, initialAnnotations);
+function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, initialAnnotations, isOwner }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; reviewMode?: ReviewMode; initialAnnotations?: Annotations; isOwner?: boolean }) {
+  const { data: session } = useSession();
+  const role = session?.user?.role;
+  const isSupervisor = role === "admin" || role === "phd";
+  const canAnnotate = isOwner !== false; // Owner can annotate (toggle status)
+  const canComment = isSupervisor; // Admin/PhD can comment on any review
 
+  const { annotations, toggleAnnotation } = useAnnotations(reviewId, initialAnnotations);
+  const { annotations: commentAnnotations, addComment, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
+
+  // Keyboard navigation
   const navOrder = useMemo(() => getNavigationOrder(feedback.findings), [feedback.findings]);
 
   const handleNavSelect = useCallback(
@@ -141,6 +151,33 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, ini
 
   const focusedGlobalIndex = focusedIndex != null ? navOrder[focusedIndex] ?? null : null;
   const focusedPosition = focusedIndex != null ? focusedIndex + 1 : null;
+
+  // Merge annotation status from useAnnotations with comments from useComments
+  const mergedAnnotations: Annotations = {};
+  const allKeys = new Set([...Object.keys(annotations), ...Object.keys(commentAnnotations)]);
+  for (const key of allKeys) {
+    const ann = annotations[key];
+    const comm = commentAnnotations[key];
+    mergedAnnotations[key] = {
+      ...ann,
+      ...comm,
+      updatedAt: ann?.updatedAt ?? comm?.updatedAt ?? new Date().toISOString(),
+      ...(ann?.status ? { status: ann.status } : {}),
+      ...(comm?.comments?.length ? { comments: comm.comments } : ann?.comments?.length ? { comments: ann.comments } : {}),
+    };
+  }
+
+  const handleAddComment = canComment
+    ? async (findingIndex: number, text: string) => {
+        await addComment(findingIndex, text);
+      }
+    : undefined;
+
+  const handleDeleteComment = canComment
+    ? async (findingIndex: number, commentId: string) => {
+        await deleteComment(findingIndex, commentId);
+      }
+    : undefined;
 
   return (
     <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -172,7 +209,16 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, ini
           </div>
           <UserMenu />
         </div>
-        <FeedbackList feedback={feedback} annotations={annotations} onAnnotate={toggleAnnotation} focusedGlobalIndex={focusedGlobalIndex} focusedPosition={focusedPosition} />
+        <FeedbackList
+          feedback={feedback}
+          annotations={mergedAnnotations}
+          onAnnotate={canAnnotate ? toggleAnnotation : undefined}
+          focusedGlobalIndex={focusedGlobalIndex}
+          focusedPosition={focusedPosition}
+          onAddComment={handleAddComment}
+          onDeleteComment={handleDeleteComment}
+          commentSubmitting={commentSubmitting}
+        />
         <Footer />
       </div>
     </div>
@@ -306,7 +352,7 @@ function BackgroundOrbs() {
 function Footer() {
   return (
     <footer className="mt-12 pb-4 text-center text-xs text-white/20">
-      Created with ❤️ by{" "}
+      Created with &#10084;&#65039; by{" "}
       <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
         @bassner
       </a>

@@ -190,6 +190,7 @@ export interface CompletedReview {
   annotations: Annotations;
   retryCount: number;
   canRetry: boolean;
+  isOwner?: boolean;
   isStale?: boolean; // Computed when fetched for running reviews
 }
 
