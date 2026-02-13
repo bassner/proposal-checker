@@ -1,6 +1,7 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useState, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { ReviewStepper } from "@/components/review-stepper";
 import { FeedbackList } from "@/components/feedback-list";
 import { ThinkingBubble } from "@/components/thinking-bubble";
@@ -9,7 +10,7 @@ import { useReviewStream, useCompletedReview } from "@/hooks/use-review";
 import { UserMenu } from "@/components/auth/user-menu";
 import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
-import { GraduationCap, RotateCcw } from "lucide-react";
+import { GraduationCap, RotateCcw, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback, ReviewMode, Annotations } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
@@ -52,7 +53,9 @@ export default function ReviewPage() {
     if (review?.status === "error") {
       return (
         <PageShell title="Review Failed">
-          <StatusCard variant="error" title="Review Failed" message={review.errorMessage ?? "An unknown error occurred"} />
+          <StatusCard variant="error" title="Review Failed" message={review.errorMessage ?? "An unknown error occurred"}>
+            {review.canRetry && <RetryButton reviewId={id} />}
+          </StatusCard>
         </PageShell>
       );
     }
@@ -65,9 +68,11 @@ export default function ReviewPage() {
             variant="warning"
             title={isStale ? "Review was interrupted" : "Review is still running"}
             message={isStale
-              ? "The server restarted while this review was in progress. Please try again."
+              ? "The server restarted while this review was in progress."
               : "This review may still be running on the server. Please refresh in a moment."}
-          />
+          >
+            {isStale && review.canRetry && <RetryButton reviewId={id} />}
+          </StatusCard>
         </PageShell>
       );
     }
@@ -102,7 +107,9 @@ export default function ReviewPage() {
       )}
 
       {hasError && (
-        <StatusCard variant="error" title="Review Failed" message={state.error!} />
+        <StatusCard variant="error" title="Review Failed" message={state.error!}>
+          <RetryButton reviewId={id} />
+        </StatusCard>
       )}
     </PageShell>
   );
@@ -196,11 +203,12 @@ function PageShell({ title, subtitle, children }: { title: string; subtitle?: st
 }
 
 /** Status card for error / warning / neutral states with a "Review Another" action. */
-function StatusCard({ variant, title, message, buttonLabel = "Review Another" }: {
+function StatusCard({ variant, title, message, buttonLabel = "Review Another", children }: {
   variant: "error" | "warning" | "neutral";
   title: string;
   message?: string;
   buttonLabel?: string;
+  children?: React.ReactNode;
 }) {
   const styles = {
     error: "border-red-500/20 bg-red-500/5 text-red-300",
@@ -216,7 +224,53 @@ function StatusCard({ variant, title, message, buttonLabel = "Review Another" }:
     <div className={`mt-6 rounded-2xl border p-6 backdrop-blur-xl ${styles[variant]}`}>
       <p className="text-sm font-medium">{title}</p>
       {message && <p className={`mt-2 text-sm ${msgStyles[variant]}`}>{message}</p>}
-      <ReviewAnotherButton className="mt-4" label={buttonLabel} />
+      <div className="mt-4 flex items-center gap-2">
+        {children}
+        <ReviewAnotherButton label={buttonLabel} />
+      </div>
+    </div>
+  );
+}
+
+/** Retry button — calls POST /api/review/[id]/retry and reloads the page on success. */
+function RetryButton({ reviewId }: { reviewId: string }) {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  const handleRetry = useCallback(async () => {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const res = await fetch(`/api/review/${reviewId}/retry`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setRetryError(body.error || "Retry failed");
+        setRetrying(false);
+        return;
+      }
+      // Reload the page to reconnect to the new SSE stream
+      router.refresh();
+      window.location.reload();
+    } catch (err) {
+      setRetryError(err instanceof Error ? err.message : "Retry failed");
+      setRetrying(false);
+    }
+  }, [reviewId, router]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleRetry}
+        disabled={retrying}
+        className="border-white/10 text-white/70 hover:bg-white/10 hover:text-white"
+      >
+        <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
+        {retrying ? "Retrying..." : "Retry Review"}
+      </Button>
+      {retryError && <span className="text-xs text-red-400">{retryError}</span>}
     </div>
   );
 }

@@ -51,10 +51,13 @@ export async function GET(
     reviewMode: review.reviewMode,
     fileName: review.fileName,
     createdAt: review.createdAt,
+    updatedAt: review.updatedAt,
     completedAt: review.completedAt,
     feedback: review.feedback,
     errorMessage: review.errorMessage,
     shareToken: review.shareToken,
     annotations: review.annotations,
+    retryCount: review.retryCount,
+    canRetry: !!review.pdfPath,
   });
 }
