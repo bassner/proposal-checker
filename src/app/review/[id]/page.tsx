@@ -19,6 +19,7 @@ import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
 import { getNavigationOrder } from "@/lib/finding-nav-order";
 import { useMemo } from "react";
 import { useComments } from "@/hooks/use-comments";
+import { TimeEstimate } from "@/components/time-estimate";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -98,6 +99,7 @@ export default function ReviewPage() {
         <div className="mb-4 flex items-center justify-center gap-2 py-2">
           <ThinkingBubble />
           <span className="text-xs text-white/40">{state.mode === "thesis" ? "Analyzing thesis..." : "Analyzing proposal..."}</span>
+          <TimeEstimate state={state} />
         </div>
       )}
 
