@@ -127,7 +127,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, ini
   const canAnnotate = isOwner !== false; // Owner can annotate (toggle status)
   const canComment = isSupervisor; // Admin/PhD can comment on any review
 
-  const { annotations, toggleAnnotation } = useAnnotations(reviewId, initialAnnotations);
+  const { annotations, toggleAnnotation, bulkAnnotate, clearAllAnnotations } = useAnnotations(reviewId, initialAnnotations);
   const { annotations: commentAnnotations, addComment, deleteComment, submitting: commentSubmitting } = useComments(reviewId, initialAnnotations);
 
   // Keyboard navigation
@@ -213,6 +213,8 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, ini
           feedback={feedback}
           annotations={mergedAnnotations}
           onAnnotate={canAnnotate ? toggleAnnotation : undefined}
+          onBulkAnnotate={canAnnotate ? bulkAnnotate : undefined}
+          onClearAllAnnotations={canAnnotate ? clearAllAnnotations : undefined}
           focusedGlobalIndex={focusedGlobalIndex}
           focusedPosition={focusedPosition}
           onAddComment={handleAddComment}

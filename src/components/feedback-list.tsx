@@ -3,13 +3,15 @@
 import type { MergedFeedback, Severity, Finding, Annotations, AnnotationStatus } from "@/types/review";
 import { FeedbackCard } from "./feedback-card";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, AlertOctagon, AlertCircle, Lightbulb, CheckCheck, XIcon, Eraser } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface FeedbackListProps {
   feedback: MergedFeedback;
   annotations?: Annotations;
   onAnnotate?: (findingIndex: number, status: AnnotationStatus) => void;
+  onBulkAnnotate?: (indices: number[], status: AnnotationStatus) => void;
+  onClearAllAnnotations?: () => void;
   /** Global finding index currently focused by keyboard navigation (or null/undefined). */
   focusedGlobalIndex?: number | null;
   /** Current 1-based position in the navigation order (for screen reader announcement). */
@@ -117,7 +119,7 @@ function groupBySeverity(findings: Finding[]): Partial<Record<Severity, IndexedF
   return groups;
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, onBulkAnnotate, onClearAllAnnotations, focusedGlobalIndex, focusedPosition, onAddComment, onDeleteComment, commentSubmitting }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
   const grouped = groupBySeverity(feedback.findings);
@@ -128,6 +130,19 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
   const addressedCount = annotations
     ? Object.values(annotations).filter((e) => e.status).length
     : 0;
+
+  // Bulk action helpers
+  const unaddressedIndices = totalFindings > 0
+    ? feedback.findings
+        .map((_, i) => i)
+        .filter((i) => !annotations?.[String(i)]?.status)
+    : [];
+  const suggestionIndices = totalFindings > 0
+    ? feedback.findings
+        .map((f, i) => ({ severity: f.severity, index: i }))
+        .filter((e) => e.severity === "suggestion" && !annotations?.[String(e.index)]?.status)
+        .map((e) => e.index)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -171,6 +186,40 @@ export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalI
             <p className="mt-1 text-sm leading-relaxed text-white/60">
               {feedback.summary}
             </p>
+            {/* Bulk annotation actions */}
+            {onBulkAnnotate && totalFindings > 0 && (
+              <div className="no-print mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => onBulkAnnotate(unaddressedIndices, "accepted")}
+                  disabled={unaddressedIndices.length === 0}
+                  className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <CheckCheck className="h-3 w-3" />
+                  Accept All
+                </button>
+                {suggestionIndices.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onBulkAnnotate(suggestionIndices, "dismissed")}
+                    className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/70"
+                  >
+                    <XIcon className="h-3 w-3" />
+                    Dismiss Suggestions
+                  </button>
+                )}
+                {addressedCount > 0 && onClearAllAnnotations && (
+                  <button
+                    type="button"
+                    onClick={onClearAllAnnotations}
+                    className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/50 transition-colors hover:bg-white/10 hover:text-white/70"
+                  >
+                    <Eraser className="h-3 w-3" />
+                    Clear All
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
