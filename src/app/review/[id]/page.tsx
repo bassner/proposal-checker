@@ -28,6 +28,7 @@ import { QualityScore } from "@/components/quality-score";
 import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
 import { ReviewNotes } from "@/components/review-notes";
+import { FindingsHeatmap } from "@/components/findings-heatmap";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -270,6 +271,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
           <QualityScore findings={feedback.findings} />
           <ReviewStats feedback={feedback} annotations={mergedAnnotations} checkGroups={checkGroups} />
           <ImprovementSummaryCard reviewId={reviewId} />
+          <FindingsHeatmap findings={feedback.findings} onPageClick={handlePageClick} />
         </div>
         <div className={`flex gap-4 ${pdfOpen ? "flex-col lg:flex-row" : ""}`}>
           <main id="main-content" className={pdfOpen ? "min-w-0 flex-1" : "w-full"}>
