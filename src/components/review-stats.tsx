@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import type { MergedFeedback, Severity, Annotations, Finding } from "@/types/review";
+import type { MergedFeedback, Severity, Annotations, Finding, CheckGroupState } from "@/types/review";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
@@ -13,11 +13,15 @@ import {
   FileText,
   CheckCircle2,
   Layers,
+  ShieldCheck,
+  ShieldAlert,
+  ShieldX,
 } from "lucide-react";
 
 interface ReviewStatsProps {
   feedback: MergedFeedback;
   annotations?: Annotations;
+  checkGroups?: CheckGroupState[];
 }
 
 const SEVERITY_ORDER: Severity[] = ["critical", "major", "minor", "suggestion"];
@@ -98,7 +102,7 @@ function ProgressRing({
   );
 }
 
-export function ReviewStats({ feedback, annotations }: ReviewStatsProps) {
+export function ReviewStats({ feedback, annotations, checkGroups }: ReviewStatsProps) {
   const [expanded, setExpanded] = useState(true);
 
   const findings = feedback.findings;
@@ -128,7 +132,17 @@ export function ReviewStats({ feedback, annotations }: ReviewStatsProps) {
   const hasAnnotations = annotations != null && Object.keys(annotations).length > 0;
   const annotationProgress = totalFindings > 0 ? addressedCount / totalFindings : 0;
 
-  // Category breakdown
+  // Check group coverage (from live SSE state)
+  const hasCheckGroups = checkGroups != null && checkGroups.length > 0;
+  const groupCoverage = useMemo(() => {
+    if (!hasCheckGroups) return null;
+    const clean = checkGroups!.filter((g) => g.status === "done" && (g.findingCount == null || g.findingCount === 0));
+    const withFindings = checkGroups!.filter((g) => g.status === "done" && g.findingCount != null && g.findingCount > 0);
+    const failed = checkGroups!.filter((g) => g.status === "error");
+    return { clean, withFindings, failed, total: checkGroups!.length };
+  }, [checkGroups, hasCheckGroups]);
+
+  // Category breakdown (fallback when check groups not available)
   const categoryGroups = useMemo(() => groupByCategory(findings), [findings]);
   const categoriesWithIssues = categoryGroups.size;
   const categoriesSorted = useMemo(() => {
@@ -136,6 +150,10 @@ export function ReviewStats({ feedback, annotations }: ReviewStatsProps) {
   }, [categoryGroups]);
 
   if (totalFindings === 0) return null;
+
+  // Determine grid column count based on visible sections
+  const sectionCount = 2 + (hasAnnotations ? 1 : 0) + 1; // severity + density + progress? + coverage/category
+  const gridCols = sectionCount >= 4 ? "lg:grid-cols-4" : "lg:grid-cols-3";
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm">
@@ -161,7 +179,7 @@ export function ReviewStats({ feedback, annotations }: ReviewStatsProps) {
       {/* Collapsible content */}
       {expanded && (
         <div id="review-stats-content" className="border-t border-white/5 px-4 pb-4 pt-3">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className={cn("grid gap-4 sm:grid-cols-2", gridCols)}>
             {/* 1. Severity breakdown bar chart */}
             <div className="space-y-2">
               <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
@@ -237,32 +255,80 @@ export function ReviewStats({ feedback, annotations }: ReviewStatsProps) {
               </div>
             )}
 
-            {/* 4. Category coverage */}
-            <div className={cn("space-y-2", !hasAnnotations && "sm:col-span-2")}>
-              <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-                <BarChart3 className="h-3 w-3" />
-                By Category
-              </h3>
-              <div className="space-y-1">
-                {categoriesSorted.map(([category, items]) => {
-                  const hasCritical = items.some((f) => f.severity === "critical");
-                  const hasMajor = items.some((f) => f.severity === "major");
-                  return (
-                    <div key={category} className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[11px] text-white/50">{category}</span>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {hasCritical && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
-                        {hasMajor && !hasCritical && <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />}
-                        <span className="text-[10px] font-medium tabular-nums text-white/40">{items.length}</span>
+            {/* 4. Check group coverage (when available) or category fallback */}
+            <div className={cn("space-y-2", !hasAnnotations && "sm:col-span-2 lg:col-span-1")}>
+              {hasCheckGroups && groupCoverage ? (
+                <>
+                  <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
+                    <ShieldCheck className="h-3 w-3" />
+                    Check Groups
+                  </h3>
+                  <div className="space-y-1">
+                    {/* Groups with findings */}
+                    {groupCoverage.withFindings.map((g) => (
+                      <div key={g.id} className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <ShieldAlert className="h-3 w-3 shrink-0 text-amber-400" />
+                          <span className="truncate text-[11px] text-white/50">{g.label}</span>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-medium tabular-nums text-amber-400">
+                          {g.findingCount}
+                        </span>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {categoriesWithIssues > 0 && (
-                <p className="text-[10px] text-white/20">
-                  {categoriesWithIssues} categor{categoriesWithIssues === 1 ? "y" : "ies"} with findings
-                </p>
+                    ))}
+                    {/* Clean groups */}
+                    {groupCoverage.clean.map((g) => (
+                      <div key={g.id} className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-400/60" />
+                          <span className="truncate text-[11px] text-white/30">{g.label}</span>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-medium text-emerald-400/60">clean</span>
+                      </div>
+                    ))}
+                    {/* Failed groups */}
+                    {groupCoverage.failed.map((g) => (
+                      <div key={g.id} className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <ShieldX className="h-3 w-3 shrink-0 text-red-400/60" />
+                          <span className="truncate text-[11px] text-white/30">{g.label}</span>
+                        </div>
+                        <span className="shrink-0 text-[10px] font-medium text-red-400/60">failed</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-white/20">
+                    {groupCoverage.withFindings.length} of {groupCoverage.total} groups found issues
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
+                    <BarChart3 className="h-3 w-3" />
+                    By Category
+                  </h3>
+                  <div className="space-y-1">
+                    {categoriesSorted.map(([category, items]) => {
+                      const hasCritical = items.some((f) => f.severity === "critical");
+                      const hasMajor = items.some((f) => f.severity === "major");
+                      return (
+                        <div key={category} className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[11px] text-white/50">{category}</span>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {hasCritical && <span className="h-1.5 w-1.5 rounded-full bg-red-500" />}
+                            {hasMajor && !hasCritical && <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />}
+                            <span className="text-[10px] font-medium tabular-nums text-white/40">{items.length}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {categoriesWithIssues > 0 && (
+                    <p className="text-[10px] text-white/20">
+                      {categoriesWithIssues} categor{categoriesWithIssues === 1 ? "y" : "ies"} with findings
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>
