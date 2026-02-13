@@ -24,6 +24,7 @@ import { useConflicts } from "@/hooks/use-conflicts";
 import { TimeEstimate } from "@/components/time-estimate";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { ReviewStats } from "@/components/review-stats";
+import { QualityScore } from "@/components/quality-score";
 import { AuditLog } from "@/components/audit-log";
 import { ImprovementSummaryCard } from "@/components/improvement-summary";
 import { ReviewNotes } from "@/components/review-notes";
@@ -254,6 +255,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
           </nav>
         </header>
         <div className="mb-4 space-y-3">
+          <QualityScore findings={feedback.findings} />
           <ReviewStats feedback={feedback} annotations={mergedAnnotations} checkGroups={checkGroups} />
           <ImprovementSummaryCard reviewId={reviewId} />
         </div>

@@ -220,6 +220,24 @@ async function ensureSchema(): Promise<void> {
         ON review_notes(review_id, user_id);
       CREATE INDEX IF NOT EXISTS idx_review_notes_review
         ON review_notes(review_id, created_at ASC);
+
+      -- Severity weights (admin-configurable scoring)
+      CREATE TABLE IF NOT EXISTS severity_config (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        severity TEXT UNIQUE NOT NULL,
+        weight INT NOT NULL,
+        color TEXT NOT NULL,
+        label TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      -- Seed default severity weights
+      INSERT INTO severity_config (severity, weight, color, label) VALUES
+        ('critical', 10, 'red', 'Critical'),
+        ('major', 5, 'orange', 'Major'),
+        ('minor', 2, 'yellow', 'Minor'),
+        ('suggestion', 1, 'blue', 'Suggestion')
+      ON CONFLICT (severity) DO NOTHING;
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -2026,4 +2044,65 @@ export async function deleteReviewNote(
     [noteId, userId]
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Severity weight configuration
+// ---------------------------------------------------------------------------
+
+export interface SeverityWeightRow {
+  id: string;
+  severity: string;
+  weight: number;
+  color: string;
+  label: string;
+  updatedAt: string;
+}
+
+/**
+ * Get all severity weight configurations, ordered by weight descending.
+ */
+export async function getSeverityWeights(): Promise<SeverityWeightRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM severity_config ORDER BY weight DESC"
+  );
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    severity: row.severity as string,
+    weight: Number(row.weight),
+    color: row.color as string,
+    label: row.label as string,
+    updatedAt: (row.updated_at as Date).toISOString(),
+  }));
+}
+
+/**
+ * Update the weight for a specific severity level. Returns the updated row.
+ */
+export async function updateSeverityWeight(
+  severity: string,
+  weight: number
+): Promise<SeverityWeightRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE severity_config SET weight = $2, updated_at = NOW()
+     WHERE severity = $1
+     RETURNING *`,
+    [severity, weight]
+  );
+  if (result.rows.length === 0) {
+    throw new Error(`Unknown severity: ${severity}`);
+  }
+  const row = result.rows[0];
+  return {
+    id: row.id as string,
+    severity: row.severity as string,
+    weight: Number(row.weight),
+    color: row.color as string,
+    label: row.label as string,
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
 }
