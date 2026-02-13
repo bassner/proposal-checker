@@ -9,6 +9,10 @@ interface FeedbackListProps {
   feedback: MergedFeedback;
   annotations?: Annotations;
   onAnnotate?: (findingIndex: number, status: AnnotationStatus) => void;
+  /** Global finding index currently focused by keyboard navigation (or null/undefined). */
+  focusedGlobalIndex?: number | null;
+  /** Current 1-based position in the navigation order (for screen reader announcement). */
+  focusedPosition?: number | null;
 }
 
 const assessmentConfig = {
@@ -105,7 +109,7 @@ function groupBySeverity(findings: Finding[]): Partial<Record<Severity, IndexedF
   return groups;
 }
 
-export function FeedbackList({ feedback, annotations, onAnnotate }: FeedbackListProps) {
+export function FeedbackList({ feedback, annotations, onAnnotate, focusedGlobalIndex, focusedPosition }: FeedbackListProps) {
   const config = assessmentConfig[feedback.overallAssessment];
   const Icon = config.icon;
   const grouped = groupBySeverity(feedback.findings);
@@ -198,6 +202,7 @@ export function FeedbackList({ feedback, annotations, onAnnotate }: FeedbackList
                     finding={finding}
                     annotation={annotations?.[String(globalIndex)]}
                     onAnnotate={onAnnotate ? (status) => onAnnotate(globalIndex, status) : undefined}
+                    focused={focusedGlobalIndex === globalIndex}
                   />
                 ))}
               </div>
@@ -205,6 +210,29 @@ export function FeedbackList({ feedback, annotations, onAnnotate }: FeedbackList
           );
         })}
       </div>
+
+      {/* Screen reader announcement for keyboard navigation */}
+      {focusedPosition != null && (
+        <div role="status" aria-live="polite" className="sr-only">
+          Finding {focusedPosition} of {totalFindings}
+        </div>
+      )}
+
+      {/* Keyboard navigation hint */}
+      {onAnnotate && totalFindings > 0 && (
+        <p className="no-print text-center text-[11px] text-white/20">
+          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">j</kbd>
+          {" / "}
+          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">k</kbd>
+          {" navigate "}
+          <span className="mx-1">&middot;</span>
+          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">Enter</kbd>
+          {" accept "}
+          <span className="mx-1">&middot;</span>
+          <kbd className="rounded border border-white/10 px-1 py-0.5 font-mono text-[10px]">Esc</kbd>
+          {" deselect"}
+        </p>
+      )}
     </div>
   );
 }

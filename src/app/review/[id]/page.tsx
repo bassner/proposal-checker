@@ -13,6 +13,9 @@ import { GraduationCap, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import type { MergedFeedback, ReviewMode, Annotations } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
+import { useKeyboardNavigation } from "@/hooks/use-keyboard-navigation";
+import { getNavigationOrder } from "@/lib/finding-nav-order";
+import { useMemo, useCallback } from "react";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -110,6 +113,28 @@ export default function ReviewPage() {
 /** Full-width results view with feedback list (shared by live SSE + DB fallback). */
 function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, initialAnnotations }: { feedback: MergedFeedback; fileName?: string | null; reviewId: string; shareToken?: string | null; reviewMode?: ReviewMode; initialAnnotations?: Annotations }) {
   const { annotations, toggleAnnotation } = useAnnotations(reviewId, initialAnnotations);
+
+  const navOrder = useMemo(() => getNavigationOrder(feedback.findings), [feedback.findings]);
+
+  const handleNavSelect = useCallback(
+    (navIndex: number) => {
+      const globalIndex = navOrder[navIndex];
+      if (globalIndex != null) {
+        toggleAnnotation(globalIndex, "accepted");
+      }
+    },
+    [navOrder, toggleAnnotation]
+  );
+
+  const { focusedIndex } = useKeyboardNavigation({
+    itemCount: navOrder.length,
+    onSelect: handleNavSelect,
+    enabled: navOrder.length > 0,
+  });
+
+  const focusedGlobalIndex = focusedIndex != null ? navOrder[focusedIndex] ?? null : null;
+  const focusedPosition = focusedIndex != null ? focusedIndex + 1 : null;
+
   return (
     <div className="print-root relative min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <BackgroundOrbs />
@@ -140,7 +165,7 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, reviewMode, ini
           </div>
           <UserMenu />
         </div>
-        <FeedbackList feedback={feedback} annotations={annotations} onAnnotate={toggleAnnotation} />
+        <FeedbackList feedback={feedback} annotations={annotations} onAnnotate={toggleAnnotation} focusedGlobalIndex={focusedGlobalIndex} focusedPosition={focusedPosition} />
         <Footer />
       </div>
     </div>

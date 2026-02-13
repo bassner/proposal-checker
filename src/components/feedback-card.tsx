@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { Finding, Severity, AnnotationStatus, AnnotationEntry } from "@/types/review";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ interface FeedbackCardProps {
   finding: Finding;
   annotation?: AnnotationEntry;
   onAnnotate?: (status: AnnotationStatus) => void;
+  focused?: boolean;
 }
 
 const severityConfig: Record<
@@ -41,9 +42,16 @@ function renderQuoteWithBold(quote: string): ReactNode {
   );
 }
 
-export function FeedbackCard({ finding, annotation, onAnnotate }: FeedbackCardProps) {
+export function FeedbackCard({ finding, annotation, onAnnotate, focused }: FeedbackCardProps) {
   const config = severityConfig[finding.severity];
   const [locationsExpanded, setLocationsExpanded] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (focused && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [focused]);
 
   const sortedLocations = [...finding.locations].sort((a, b) => {
     const pa = a.page ?? Infinity;
@@ -59,12 +67,14 @@ export function FeedbackCard({ finding, annotation, onAnnotate }: FeedbackCardPr
 
   return (
     <div
+      ref={cardRef}
       className={cn(
         "print-card rounded-lg border border-white/10 border-l-4 bg-white/5 p-3 backdrop-blur-sm transition-all hover:bg-white/[0.07]",
         // Default severity border, overridden by annotation state
         !annotation && config.borderColor,
         isFixed && "border-l-emerald-500 bg-emerald-500/5",
         isDismissed && "border-l-white/20 opacity-50",
+        focused && "ring-2 ring-blue-500/60 bg-white/[0.09]",
       )}
     >
       <div className="space-y-1.5">
