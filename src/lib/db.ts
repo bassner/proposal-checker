@@ -435,6 +435,20 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_proposal_rel_source ON proposal_relationships(source_review_id);
       CREATE INDEX IF NOT EXISTS idx_proposal_rel_target ON proposal_relationships(target_review_id);
+
+      -- Readiness checklists (pre-submission self-assessment)
+      CREATE TABLE IF NOT EXISTS readiness_checklists (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL,
+        file_name TEXT,
+        checks JSONB NOT NULL DEFAULT '[]',
+        passed_count INT NOT NULL DEFAULT 0,
+        total_count INT NOT NULL DEFAULT 0,
+        completed BOOLEAN NOT NULL DEFAULT false,
+        review_id UUID REFERENCES reviews(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_readiness_user ON readiness_checklists(user_id);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -4619,4 +4633,137 @@ export async function getRelationshipStats(): Promise<{
       count: Number(r.count),
     })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Readiness checklists
+// ---------------------------------------------------------------------------
+
+export interface ChecklistItem {
+  label: string;
+  checked: boolean;
+}
+
+export interface ReadinessChecklistRow {
+  id: string;
+  userId: string;
+  fileName: string | null;
+  checks: ChecklistItem[];
+  passedCount: number;
+  totalCount: number;
+  completed: boolean;
+  reviewId: string | null;
+  createdAt: string;
+}
+
+function rowToReadinessChecklist(row: Record<string, unknown>): ReadinessChecklistRow {
+  return {
+    id: row.id as string,
+    userId: row.user_id as string,
+    fileName: (row.file_name as string) ?? null,
+    checks: (row.checks as ChecklistItem[]) ?? [],
+    passedCount: Number(row.passed_count ?? 0),
+    totalCount: Number(row.total_count ?? 0),
+    completed: Boolean(row.completed),
+    reviewId: (row.review_id as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+  };
+}
+
+/** Create a new readiness checklist. Returns the created row. */
+export async function createReadinessChecklist(checklist: {
+  userId: string;
+  fileName?: string | null;
+  checks: ChecklistItem[];
+  reviewId?: string | null;
+}): Promise<ReadinessChecklistRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const passedCount = checklist.checks.filter((c) => c.checked).length;
+  const totalCount = checklist.checks.length;
+  const completed = totalCount > 0 && passedCount === totalCount;
+  const result = await pool.query(
+    `INSERT INTO readiness_checklists (user_id, file_name, checks, passed_count, total_count, completed, review_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [
+      checklist.userId,
+      checklist.fileName ?? null,
+      JSON.stringify(checklist.checks),
+      passedCount,
+      totalCount,
+      completed,
+      checklist.reviewId ?? null,
+    ]
+  );
+  return rowToReadinessChecklist(result.rows[0]);
+}
+
+/** Update an existing readiness checklist. Returns the updated row or null if not found. */
+export async function updateReadinessChecklist(
+  id: string,
+  userId: string,
+  updates: {
+    fileName?: string | null;
+    checks: ChecklistItem[];
+    reviewId?: string | null;
+  }
+): Promise<ReadinessChecklistRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const passedCount = updates.checks.filter((c) => c.checked).length;
+  const totalCount = updates.checks.length;
+  const completed = totalCount > 0 && passedCount === totalCount;
+  const result = await pool.query(
+    `UPDATE readiness_checklists
+     SET file_name = COALESCE($3, file_name),
+         checks = $4,
+         passed_count = $5,
+         total_count = $6,
+         completed = $7,
+         review_id = COALESCE($8, review_id)
+     WHERE id = $1 AND user_id = $2
+     RETURNING *`,
+    [
+      id,
+      userId,
+      updates.fileName ?? null,
+      JSON.stringify(updates.checks),
+      passedCount,
+      totalCount,
+      completed,
+      updates.reviewId ?? null,
+    ]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToReadinessChecklist(result.rows[0]);
+}
+
+/** Get a checklist associated with a specific review. */
+export async function getChecklistForReview(reviewId: string): Promise<ReadinessChecklistRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT * FROM readiness_checklists WHERE review_id = $1 LIMIT 1`,
+    [reviewId]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToReadinessChecklist(result.rows[0]);
+}
+
+/** Get all checklists for a user, most recent first. */
+export async function getChecklistsByUser(
+  userId: string,
+  limit = 20
+): Promise<ReadinessChecklistRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    `SELECT * FROM readiness_checklists
+     WHERE user_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [userId, limit]
+  );
+  return result.rows.map(rowToReadinessChecklist);
 }
