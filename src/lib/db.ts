@@ -1718,3 +1718,186 @@ export async function getAnnotationConflicts(
     entries,
   }));
 }
+
+// ---------------------------------------------------------------------------
+// Supervisor dashboard queries
+// ---------------------------------------------------------------------------
+
+export interface SupervisorOverview {
+  totalReviews: number;
+  avgFindingsPerReview: number;
+  mostCommonSeverity: string | null;
+  reviewsNeedingAttention: number;
+  severityDistribution: { severity: string; count: number }[];
+}
+
+/**
+ * Aggregate stats for the supervisor dashboard.
+ * Returns total reviews, avg findings, severity distribution,
+ * most common severity, and count of reviews with unresolved critical findings.
+ */
+export async function getSupervisorOverview(): Promise<SupervisorOverview | null> {
+  if (!pool) return null;
+  await ensureSchema();
+
+  const result = await pool.query(`
+    WITH completed AS (
+      SELECT id, feedback
+      FROM reviews
+      WHERE status = 'done' AND deleted_at IS NULL
+        AND feedback IS NOT NULL
+        AND jsonb_typeof(feedback->'findings') = 'array'
+    ),
+    finding_rows AS (
+      SELECT c.id AS review_id, f.value AS finding
+      FROM completed c, jsonb_array_elements(c.feedback->'findings') AS f(value)
+    ),
+    severity_counts AS (
+      SELECT finding->>'severity' AS severity, COUNT(*) AS cnt
+      FROM finding_rows
+      GROUP BY finding->>'severity'
+    ),
+    review_finding_counts AS (
+      SELECT review_id, COUNT(*) AS finding_count
+      FROM finding_rows
+      GROUP BY review_id
+    ),
+    reviews_with_critical AS (
+      SELECT DISTINCT fr.review_id
+      FROM finding_rows fr
+      LEFT JOIN reviews r ON r.id = fr.review_id
+      WHERE fr.finding->>'severity' = 'critical'
+        AND (
+          r.annotations IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM jsonb_each(r.annotations) AS a(key, val)
+            WHERE a.val->>'status' IN ('dismissed', 'fixed')
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(r.feedback->'findings') WITH ORDINALITY AS f(val, idx)
+                WHERE (idx - 1)::text = a.key
+                  AND f.val->>'severity' = 'critical'
+              )
+          )
+        )
+    )
+    SELECT json_build_object(
+      'totalReviews', (SELECT COUNT(*) FROM reviews WHERE deleted_at IS NULL),
+      'avgFindings', (SELECT COALESCE(ROUND(AVG(finding_count), 1), 0) FROM review_finding_counts),
+      'reviewsNeedingAttention', (SELECT COUNT(*) FROM reviews_with_critical),
+      'severityDistribution', COALESCE(
+        (SELECT json_agg(json_build_object('severity', severity, 'count', cnt) ORDER BY cnt DESC)
+         FROM severity_counts),
+        '[]'::json
+      )
+    ) AS data
+  `);
+
+  const raw = result.rows[0].data;
+  const severityDist = (raw.severityDistribution as { severity: string; count: string }[]).map(
+    (r) => ({ severity: r.severity, count: Number(r.count) })
+  );
+
+  return {
+    totalReviews: Number(raw.totalReviews),
+    avgFindingsPerReview: Number(raw.avgFindings),
+    mostCommonSeverity: severityDist.length > 0 ? severityDist[0].severity : null,
+    reviewsNeedingAttention: Number(raw.reviewsNeedingAttention),
+    severityDistribution: severityDist,
+  };
+}
+
+export interface StudentReviewSummary {
+  id: string;
+  fileName: string | null;
+  status: string;
+  provider: string;
+  reviewMode: string;
+  createdAt: string;
+  findingCount: number;
+  overallAssessment: string | null;
+}
+
+export interface StudentGroup {
+  userId: string;
+  userEmail: string;
+  userName: string;
+  reviewCount: number;
+  lastReviewDate: string;
+  avgFindings: number;
+  reviews: StudentReviewSummary[];
+}
+
+/**
+ * Returns reviews grouped by user for the supervisor dashboard.
+ * Each group includes per-student stats and their individual reviews.
+ */
+export async function getReviewsByUser(): Promise<StudentGroup[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  const result = await pool.query(`
+    SELECT
+      r.id,
+      r.user_id,
+      r.user_email,
+      r.user_name,
+      r.file_name,
+      r.status,
+      r.provider,
+      r.review_mode,
+      r.created_at,
+      CASE
+        WHEN r.feedback IS NOT NULL AND jsonb_typeof(r.feedback->'findings') = 'array'
+        THEN jsonb_array_length(r.feedback->'findings')
+        ELSE 0
+      END AS finding_count,
+      r.feedback->>'overallAssessment' AS overall_assessment
+    FROM reviews r
+    WHERE r.deleted_at IS NULL
+    ORDER BY r.user_email, r.created_at DESC
+  `);
+
+  const groupMap = new Map<string, StudentGroup>();
+
+  for (const row of result.rows) {
+    const userId = row.user_id as string;
+    if (!groupMap.has(userId)) {
+      groupMap.set(userId, {
+        userId,
+        userEmail: row.user_email as string,
+        userName: row.user_name as string,
+        reviewCount: 0,
+        lastReviewDate: (row.created_at as Date).toISOString(),
+        avgFindings: 0,
+        reviews: [],
+      });
+    }
+
+    const group = groupMap.get(userId)!;
+    group.reviewCount++;
+    group.reviews.push({
+      id: row.id as string,
+      fileName: (row.file_name as string) ?? null,
+      status: row.status as string,
+      provider: row.provider as string,
+      reviewMode: (row.review_mode as string) ?? "proposal",
+      createdAt: (row.created_at as Date).toISOString(),
+      findingCount: parseInt(row.finding_count, 10),
+      overallAssessment: (row.overall_assessment as string) ?? null,
+    });
+  }
+
+  // Compute avg findings per student
+  for (const group of groupMap.values()) {
+    const doneReviews = group.reviews.filter((r) => r.status === "done");
+    if (doneReviews.length > 0) {
+      const totalFindings = doneReviews.reduce((sum, r) => sum + r.findingCount, 0);
+      group.avgFindings = Math.round((totalFindings / doneReviews.length) * 10) / 10;
+    }
+  }
+
+  // Sort by most recent review first
+  return Array.from(groupMap.values()).sort(
+    (a, b) => new Date(b.lastReviewDate).getTime() - new Date(a.lastReviewDate).getTime()
+  );
+}
