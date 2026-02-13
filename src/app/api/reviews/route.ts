@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, queryReviews, getReviewCount, queryReviewsGrouped, getPinnedReviewIds } from "@/lib/db";
+import { isAvailable, queryReviews, getReviewCount, queryReviewsGrouped, getPinnedReviewIds, getTagsForReviews } from "@/lib/db";
 
 const MAX_PAGE = 1000;
 const ALLOWED_SORT = new Set(["created_at", "file_name", "provider", "status", "user_name", "workflow_status"]);
@@ -61,11 +61,16 @@ export async function GET(request: NextRequest) {
     getPinnedReviewIds(session.user.id),
   ]);
 
-  // Strip sensitive/heavy fields from list responses, add isPinned
+  // Batch-fetch tags for all reviews on this page
+  const reviewIds = reviews.map((r) => r.id);
+  const tagsMap = await getTagsForReviews(reviewIds);
+
+  // Strip sensitive/heavy fields from list responses, add isPinned + tags
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const sanitized = reviews.map(({ shareToken, sharePasswordHash, annotations, ...rest }) => ({
     ...rest,
     isPinned: pinnedIds.has(rest.id),
+    tags: (tagsMap.get(rest.id) ?? []).map((t) => t.tag),
   }));
 
   return Response.json({ reviews: sanitized, total, page, limit });

@@ -28,6 +28,7 @@ import { DeleteReviewButton } from "@/components/delete-review-button";
 import { PinButton } from "@/components/pin-button";
 import { WorkflowStatusLabel } from "@/components/workflow-status-badge";
 import type { WorkflowStatus } from "@/types/review";
+import { Tag, Filter } from "lucide-react";
 
 const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes
 
@@ -43,6 +44,7 @@ interface ReviewListItem {
   createdAt: string;
   isPinned: boolean;
   workflowStatus: WorkflowStatus;
+  tags: string[];
 }
 
 interface ReviewsResponse {
@@ -70,6 +72,40 @@ interface GroupedReviewsResponse {
 }
 
 type SortColumn = "created_at" | "file_name" | "provider" | "status" | "user_name" | "workflow_status";
+
+// ---------------------------------------------------------------------------
+// Tag color helper (same hash as review-tags.tsx for consistency)
+// ---------------------------------------------------------------------------
+
+const TAG_COLORS = [
+  { bg: "bg-blue-500/15", text: "text-blue-600 dark:text-blue-400", border: "border-blue-500/25" },
+  { bg: "bg-purple-500/15", text: "text-purple-600 dark:text-purple-400", border: "border-purple-500/25" },
+  { bg: "bg-green-500/15", text: "text-green-600 dark:text-green-400", border: "border-green-500/25" },
+  { bg: "bg-amber-500/15", text: "text-amber-600 dark:text-amber-400", border: "border-amber-500/25" },
+  { bg: "bg-rose-500/15", text: "text-rose-600 dark:text-rose-400", border: "border-rose-500/25" },
+  { bg: "bg-cyan-500/15", text: "text-cyan-600 dark:text-cyan-400", border: "border-cyan-500/25" },
+  { bg: "bg-indigo-500/15", text: "text-indigo-600 dark:text-indigo-400", border: "border-indigo-500/25" },
+  { bg: "bg-emerald-500/15", text: "text-emerald-600 dark:text-emerald-400", border: "border-emerald-500/25" },
+  { bg: "bg-orange-500/15", text: "text-orange-600 dark:text-orange-400", border: "border-orange-500/25" },
+  { bg: "bg-pink-500/15", text: "text-pink-600 dark:text-pink-400", border: "border-pink-500/25" },
+];
+
+function hashTagColor(tag: string) {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) {
+    hash = ((hash << 5) - hash + tag.charCodeAt(i)) | 0;
+  }
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+}
+
+function TagPill({ tag }: { tag: string }) {
+  const color = hashTagColor(tag);
+  return (
+    <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${color.bg} ${color.text} ${color.border}`}>
+      {tag}
+    </span>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // File name normalization for grouping
@@ -328,6 +364,10 @@ export default function ReviewsPage() {
   const [compareMode, setCompareMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  // Tag filter
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [showTagFilter, setShowTagFilter] = useState(false);
+
   // Grouped mode
   const [groupByFile, setGroupByFile] = useState(false);
   const [groupedData, setGroupedData] = useState<GroupedReviewsResponse | null>(null);
@@ -458,15 +498,29 @@ export default function ReviewsPage() {
     return groups;
   }, [groupedData, isAdmin]);
 
-  // Sort pinned reviews to the top of the current page
+  // Collect all unique tags across loaded reviews for the filter dropdown
+  const allTags = useMemo(() => {
+    if (!data) return [];
+    const tagSet = new Set<string>();
+    for (const r of data.reviews) {
+      for (const t of r.tags ?? []) tagSet.add(t);
+    }
+    return Array.from(tagSet).sort();
+  }, [data]);
+
+  // Sort pinned reviews to the top of the current page, apply tag filter
   const sortedReviews = useMemo(() => {
     if (!data) return [];
-    return [...data.reviews].sort((a, b) => {
+    let reviews = [...data.reviews];
+    if (tagFilter) {
+      reviews = reviews.filter((r) => r.tags?.includes(tagFilter));
+    }
+    return reviews.sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
       return 0; // preserve server sort order within each group
     });
-  }, [data]);
+  }, [data, tagFilter]);
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / limit)) : 1;
   const displayTotal = groupByFile
@@ -602,6 +656,63 @@ export default function ReviewsPage() {
             )}
           </div>
 
+          {/* Tag filter */}
+          {!groupByFile && allTags.length > 0 && (
+            <div className="mb-4 flex items-center gap-2">
+              <button
+                onClick={() => setShowTagFilter((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  tagFilter
+                    ? "border-blue-500/50 bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                    : "border-slate-200 text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:text-white/50 dark:hover:bg-white/5"
+                }`}
+              >
+                <Filter className="h-3 w-3" />
+                {tagFilter ? (
+                  <>
+                    <Tag className="h-3 w-3" />
+                    {tagFilter}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTagFilter(null);
+                      }}
+                      className="ml-0.5 rounded-full p-0 opacity-60 hover:opacity-100"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </>
+                ) : (
+                  "Filter by tag"
+                )}
+              </button>
+              {showTagFilter && (
+                <div className="flex flex-wrap gap-1">
+                  {allTags.map((tag) => {
+                    const color = hashTagColor(tag);
+                    const isActive = tagFilter === tag;
+                    return (
+                      <button
+                        key={tag}
+                        onClick={() => {
+                          setTagFilter(isActive ? null : tag);
+                          setShowTagFilter(false);
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                          isActive
+                            ? `${color.bg} ${color.text} ${color.border} ring-1 ring-blue-400`
+                            : `${color.bg} ${color.text} ${color.border} hover:opacity-80`
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {isLoading && !hasData && (
             <p className="py-8 text-center text-sm text-slate-400 dark:text-white/30">Loading reviews...</p>
           )}
@@ -698,7 +809,16 @@ export default function ReviewsPage() {
                           {new Date(r.createdAt).toLocaleString()}
                         </td>
                         <td className="py-2.5 pr-4 text-slate-700 dark:text-white/70">
-                          {r.fileName ?? "\u2014"}
+                          <div className="flex flex-col gap-1">
+                            <span>{r.fileName ?? "\u2014"}</span>
+                            {r.tags && r.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {r.tags.map((tag) => (
+                                  <TagPill key={tag} tag={tag} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="hidden py-2.5 pr-4 md:table-cell">
                           {r.reviewMode === "thesis" ? (
