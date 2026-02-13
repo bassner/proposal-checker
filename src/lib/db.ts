@@ -5957,3 +5957,69 @@ export async function getScoreTrendsSummary(): Promise<ScoreTrendsSummary> {
     stableCount: students.filter((s) => s.trend === "stable").length,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Bulk operations (admin)
+// ---------------------------------------------------------------------------
+
+/**
+ * Soft-delete multiple reviews by ID. Returns the count of actually deleted rows.
+ */
+export async function bulkDeleteReviews(ids: string[]): Promise<number> {
+  if (!pool || ids.length === 0) return 0;
+  await ensureSchema();
+  const result = await pool.query(
+    "UPDATE reviews SET deleted_at = NOW(), updated_at = NOW() WHERE id = ANY($1) AND deleted_at IS NULL",
+    [ids]
+  );
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Add a tag to multiple reviews. Idempotent — existing tags are left as-is.
+ * Returns the count of newly created tag rows.
+ */
+export async function bulkAddTag(
+  reviewIds: string[],
+  tag: string,
+  userId: string
+): Promise<number> {
+  if (!pool || reviewIds.length === 0) return 0;
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO review_tags (review_id, tag, created_by)
+     SELECT unnest($1::uuid[]), $2, $3
+     ON CONFLICT (review_id, tag) DO NOTHING`,
+    [reviewIds, tag, userId]
+  );
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Remove a tag from multiple reviews. Returns the count of removed rows.
+ */
+export async function bulkRemoveTag(
+  reviewIds: string[],
+  tag: string
+): Promise<number> {
+  if (!pool || reviewIds.length === 0) return 0;
+  await ensureSchema();
+  const result = await pool.query(
+    "DELETE FROM review_tags WHERE review_id = ANY($1) AND tag = $2",
+    [reviewIds, tag]
+  );
+  return result.rowCount ?? 0;
+}
+
+/**
+ * Fetch full review data for export. Only returns non-deleted reviews.
+ */
+export async function bulkExportReviews(ids: string[]): Promise<ReviewRow[]> {
+  if (!pool || ids.length === 0) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM reviews WHERE id = ANY($1) AND deleted_at IS NULL ORDER BY created_at DESC",
+    [ids]
+  );
+  return result.rows.map(rowToReview);
+}
