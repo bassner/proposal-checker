@@ -23,6 +23,7 @@ import { useComments } from "@/hooks/use-comments";
 import { TimeEstimate } from "@/components/time-estimate";
 import { DeleteReviewButton } from "@/components/delete-review-button";
 import { ReviewStats } from "@/components/review-stats";
+import { AuditLog } from "@/components/audit-log";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -281,6 +282,11 @@ function ResultsView({ feedback, fileName, reviewId, shareToken, shareExpiresAt,
             </aside>
           )}
         </div>
+        {role === "admin" && (
+          <div className="no-print">
+            <AuditLog reviewId={reviewId} />
+          </div>
+        )}
         <Footer />
       </div>
     </div>

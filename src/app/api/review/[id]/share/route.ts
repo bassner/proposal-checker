@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, shareReview, unshareReview } from "@/lib/db";
+import { isAvailable, getReviewById, shareReview, unshareReview, logAuditEvent } from "@/lib/db";
 import { hashSharePassword } from "@/lib/share-password";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -90,6 +90,11 @@ export async function POST(
 
   const result = await shareReview(id, { expiresAt, passwordHash });
 
+  // Audit log (fire-and-forget)
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "share.created", {
+    expiration: expiration ?? "never", hasPassword: passwordHash !== null,
+  });
+
   return Response.json({
     shareToken: result.token,
     shareUrl: `/shared/${result.token}`,
@@ -137,6 +142,9 @@ export async function DELETE(
   }
 
   await unshareReview(id);
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "share.revoked");
 
   return new Response(null, { status: 204 });
 }

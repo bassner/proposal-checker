@@ -4,7 +4,7 @@ import { REVIEW_MODES, getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
-import { insertReview, completeReview, failReview } from "@/lib/db";
+import { insertReview, completeReview, failReview, logAuditEvent } from "@/lib/db";
 import { savePdf } from "@/lib/uploads";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
@@ -182,6 +182,11 @@ export async function POST(request: NextRequest) {
   // Persist to DB (fire-and-forget — don't block the response)
   insertReview({ id: sessionId, ...dbMeta, pdfPath, selectedGroups: resolvedGroups })
     .catch((err) => console.error("[api] DB insert failed:", err));
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(sessionId, session.user.id, session.user.email ?? null, "review.created", {
+    provider, mode, fileName: file.name, groups: resolvedGroups.length,
+  });
 
   // Throttle high-frequency events (token counts, thinking text) to avoid
   // flooding the SSE stream. Each source key gets its own last-send timestamp.

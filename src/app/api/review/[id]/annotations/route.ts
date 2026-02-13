@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { isAvailable, getReviewById, saveAnnotations } from "@/lib/db";
+import { isAvailable, getReviewById, saveAnnotations, logAuditEvent } from "@/lib/db";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
 import type { AnnotationStatus, Annotations, MergedFeedback } from "@/types/review";
 
@@ -114,6 +114,11 @@ export async function POST(
   }
 
   await saveAnnotations(id, validated);
+
+  // Audit log (fire-and-forget)
+  logAuditEvent(id, session.user.id, session.user.email ?? null, "annotation.updated", {
+    count: entries.length,
+  });
 
   dispatchWebhookEvent("annotation.updated", {
     reviewId: id,
