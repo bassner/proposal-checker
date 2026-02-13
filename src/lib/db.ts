@@ -123,6 +123,18 @@ async function ensureSchema(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
         ON notifications(user_id, read, created_at DESC);
+
+      -- Review templates (admin-configurable presets)
+      CREATE TABLE IF NOT EXISTS review_templates (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        check_groups JSONB NOT NULL,
+        review_mode TEXT NOT NULL DEFAULT 'proposal' CHECK (review_mode IN ('proposal', 'thesis')),
+        created_by TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -1145,4 +1157,111 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
     `UPDATE notifications SET read = TRUE WHERE user_id = $1 AND read = FALSE`,
     [userId]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Review templates
+// ---------------------------------------------------------------------------
+
+export interface ReviewTemplateRow {
+  id: string;
+  name: string;
+  description: string;
+  checkGroups: CheckGroupId[];
+  reviewMode: ReviewMode;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToTemplate(row: Record<string, unknown>): ReviewTemplateRow {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    description: (row.description as string) ?? "",
+    checkGroups: row.check_groups as CheckGroupId[],
+    reviewMode: (row.review_mode as string) === "thesis" ? "thesis" : "proposal",
+    createdBy: row.created_by as string,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+}
+
+/** Seed default templates if the table is empty. */
+async function seedDefaultTemplates(): Promise<void> {
+  if (!pool) return;
+  const count = await pool.query("SELECT COUNT(*) FROM review_templates");
+  if (Number(count.rows[0].count) > 0) return;
+
+  await pool.query(
+    `INSERT INTO review_templates (name, description, check_groups, review_mode, created_by) VALUES
+      ('Full Proposal Review', 'All checks for a thesis proposal', $1, 'proposal', 'system'),
+      ('Quick Proposal Check', 'Structure and writing checks only', $2, 'proposal', 'system'),
+      ('Thesis Review', 'Comprehensive thesis review with all checks', $3, 'thesis', 'system')`,
+    [
+      JSON.stringify(["structure", "problem-motivation-objectives", "bibliography", "figures", "writing-style", "writing-structure", "writing-formatting", "ai-transparency", "schedule"]),
+      JSON.stringify(["structure", "writing-style", "writing-structure", "writing-formatting"]),
+      JSON.stringify(["structure", "problem-motivation-objectives", "bibliography", "figures", "writing-style", "writing-structure", "writing-formatting", "ai-transparency", "schedule", "related-work", "methodology", "evaluation"]),
+    ]
+  );
+}
+
+export async function getReviewTemplates(): Promise<ReviewTemplateRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  await seedDefaultTemplates();
+  const result = await pool.query(
+    "SELECT * FROM review_templates ORDER BY created_at ASC"
+  );
+  return result.rows.map(rowToTemplate);
+}
+
+export async function getReviewTemplateById(id: string): Promise<ReviewTemplateRow | null> {
+  if (!pool) return null;
+  await ensureSchema();
+  const result = await pool.query("SELECT * FROM review_templates WHERE id = $1", [id]);
+  if (result.rows.length === 0) return null;
+  return rowToTemplate(result.rows[0]);
+}
+
+export async function createReviewTemplate(template: {
+  name: string;
+  description: string;
+  checkGroups: CheckGroupId[];
+  reviewMode: ReviewMode;
+  createdBy: string;
+}): Promise<ReviewTemplateRow> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `INSERT INTO review_templates (name, description, check_groups, review_mode, created_by)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [template.name, template.description, JSON.stringify(template.checkGroups), template.reviewMode, template.createdBy]
+  );
+  return rowToTemplate(result.rows[0]);
+}
+
+export async function updateReviewTemplate(
+  id: string,
+  updates: { name: string; description: string; checkGroups: CheckGroupId[]; reviewMode: ReviewMode }
+): Promise<ReviewTemplateRow | null> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE review_templates
+     SET name = $2, description = $3, check_groups = $4, review_mode = $5, updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, updates.name, updates.description, JSON.stringify(updates.checkGroups), updates.reviewMode]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToTemplate(result.rows[0]);
+}
+
+export async function deleteReviewTemplate(id: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query("DELETE FROM review_templates WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
 }
