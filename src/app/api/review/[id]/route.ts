@@ -48,6 +48,7 @@ export async function GET(
     id: review.id,
     status: review.status,
     provider: review.provider,
+    reviewMode: review.reviewMode,
     fileName: review.fileName,
     createdAt: review.createdAt,
     completedAt: review.completedAt,

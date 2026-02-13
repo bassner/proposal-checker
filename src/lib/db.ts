@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType } from "@/types/review";
+import type { ProviderType, ReviewMode } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -91,6 +91,9 @@ async function ensureSchema(): Promise<void> {
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_token TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_share_token
         ON reviews(share_token) WHERE share_token IS NOT NULL;
+
+      -- Review mode: proposal (default) or thesis
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS review_mode TEXT DEFAULT 'proposal';
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -127,6 +130,7 @@ export interface ReviewRow {
   userEmail: string;
   userName: string;
   provider: string;
+  reviewMode: ReviewMode;
   status: string;
   fileName: string | null;
   createdAt: string;
@@ -138,12 +142,14 @@ export interface ReviewRow {
 }
 
 function rowToReview(row: Record<string, unknown>): ReviewRow {
+  const rawMode = row.review_mode as string | null;
   return {
     id: row.id as string,
     userId: row.user_id as string,
     userEmail: row.user_email as string,
     userName: row.user_name as string,
     provider: row.provider as string,
+    reviewMode: (rawMode === "thesis" ? "thesis" : "proposal") as ReviewMode,
     status: row.status as string,
     fileName: (row.file_name as string) ?? null,
     createdAt: (row.created_at as Date).toISOString(),
@@ -165,29 +171,30 @@ export async function insertReview(review: {
   userEmail: string;
   userName: string;
   provider: string;
+  reviewMode?: ReviewMode;
   fileName: string | null;
 }): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, file_name)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (id) DO NOTHING`,
-    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.fileName]
+    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName]
   );
 }
 
 export async function completeReview(
   id: string,
   feedback: unknown,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; fileName?: string }
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string }
 ): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   // UPSERT: handles the case where the initial INSERT was lost (e.g. DB was down briefly)
   await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, status, feedback, file_name, completed_at, updated_at)
-     VALUES ($1, $3, $4, $5, $6, 'done', $2, $7, NOW(), NOW())
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, feedback, file_name, completed_at, updated_at)
+     VALUES ($1, $3, $4, $5, $6, $8, 'done', $2, $7, NOW(), NOW())
      ON CONFLICT (id) DO UPDATE SET
        status = 'done',
        feedback = $2,
@@ -201,6 +208,7 @@ export async function completeReview(
       meta?.userName ?? "",
       meta?.provider ?? "azure",
       meta?.fileName ?? null,
+      meta?.reviewMode ?? "proposal",
     ]
   );
 }
@@ -208,13 +216,13 @@ export async function completeReview(
 export async function failReview(
   id: string,
   errorMessage: string,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; fileName?: string }
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string }
 ): Promise<void> {
   if (!pool) return;
   await ensureSchema();
   await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, status, error_message, file_name, completed_at, updated_at)
-     VALUES ($1, $3, $4, $5, $6, 'error', $2, $7, NOW(), NOW())
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, error_message, file_name, completed_at, updated_at)
+     VALUES ($1, $3, $4, $5, $6, $8, 'error', $2, $7, NOW(), NOW())
      ON CONFLICT (id) DO UPDATE SET
        status = 'error',
        error_message = $2,
@@ -228,6 +236,7 @@ export async function failReview(
       meta?.userName ?? "",
       meta?.provider ?? "azure",
       meta?.fileName ?? null,
+      meta?.reviewMode ?? "proposal",
     ]
   );
 }

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import type { ProviderType, CheckGroupId, LLMPhase } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, LLMPhase } from "@/types/review";
+import { REVIEW_MODES, getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
@@ -68,6 +69,7 @@ export async function POST(request: NextRequest) {
   const fileEntry = formData.get("file");
   const file = fileEntry instanceof File ? fileEntry : null;
   const providerRaw = formData.get("provider") as string | null;
+  const modeRaw = formData.get("mode") as string | null;
 
   if (!file) {
     return new Response(JSON.stringify({ error: "No file provided" }), {
@@ -81,6 +83,45 @@ export async function POST(request: NextRequest) {
     });
   }
   const provider: ProviderType = providerRaw;
+
+  // Default to "proposal" for backward compatibility
+  const mode: ReviewMode = (REVIEW_MODES as readonly string[]).includes(modeRaw ?? "")
+    ? (modeRaw as ReviewMode)
+    : "proposal";
+
+  // Parse optional selectedGroups — validated against mode-specific groups
+  const modeGroupIds = new Set(getCheckGroups(mode).map((g) => g.id));
+  const selectedGroupsRaw = formData.get("selectedGroups") as string | null;
+  let selectedGroups: CheckGroupId[] | undefined;
+  if (selectedGroupsRaw) {
+    try {
+      const parsed = JSON.parse(selectedGroupsRaw);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "selectedGroups must be a non-empty array" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      // Filter to valid mode-specific group IDs, dedup, preserve canonical order
+      const requestedSet = new Set(parsed.filter((id: unknown) => typeof id === "string" && modeGroupIds.has(id as CheckGroupId)));
+      if (requestedSet.size === 0) {
+        return new Response(
+          JSON.stringify({ error: "No valid check groups selected" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      // Canonical order from getCheckGroups(mode)
+      selectedGroups = getCheckGroups(mode).map((g) => g.id).filter((id) => requestedSet.has(id));
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid selectedGroups format" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+  }
+
+  // Resolved groups: selectedGroups if provided, otherwise all mode groups
+  const resolvedGroups = selectedGroups ?? getCheckGroups(mode).map((g) => g.id);
 
   const { allowed, status } = await canUseProvider(session.user.role, provider);
   if (status === "unavailable") {
@@ -116,11 +157,14 @@ export async function POST(request: NextRequest) {
     userEmail: session.user.email ?? "",
     userName: session.user.name ?? "",
     provider,
+    mode,
+    reviewMode: mode,
+    selectedGroups: resolvedGroups,
     fileName: file.name,
   };
 
   const sessionId = createSession(dbMeta);
-  console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}`);
+  console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, mode: ${mode}, groups: ${resolvedGroups.length}/${modeGroupIds.size}`);
 
   // Persist to DB (fire-and-forget — don't block the response)
   insertReview({ id: sessionId, ...dbMeta })
@@ -147,7 +191,7 @@ export async function POST(request: NextRequest) {
   // Fire and forget — pipeline runs independently of this request
   send("step", { step: "upload", status: "done" });
 
-  runReviewPipeline(pdfBuffer, provider, {
+  runReviewPipeline(pdfBuffer, provider, mode, {
     onStep: (step, status) => send("step", { step, status }),
     onCheckStart: (groupId) => send("check-start", { groupId }),
     onCheckComplete: (groupId: CheckGroupId, findingCount: number, usage: TokenUsage | null) => {
@@ -184,7 +228,7 @@ export async function POST(request: NextRequest) {
       failReview(sessionId, sanitizedError, dbMeta)
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  });
+  }, selectedGroups);
 
   return new Response(JSON.stringify({ id: sessionId }), {
     status: 202,

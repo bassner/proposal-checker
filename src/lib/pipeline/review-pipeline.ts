@@ -1,5 +1,6 @@
-import type { ProviderType } from "@/types/review";
-import type { CheckGroupId, LLMPhase, MergedFeedback } from "@/types/review";
+import type { ProviderType, ReviewMode } from "@/types/review";
+import type { CheckGroupId, CheckGroupMeta, LLMPhase, MergedFeedback } from "@/types/review";
+import { getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { createModel } from "@/lib/llm/provider";
 import { extractPDFText } from "@/lib/pdf/extract";
@@ -7,7 +8,6 @@ import { renderPDFPages } from "@/lib/pdf/render";
 import { runAllChecks } from "@/lib/llm/parallel-runner";
 import { mergeFindings } from "@/lib/llm/merger";
 import { getCheckGroupPrompts } from "@/lib/llm/prompts";
-import { CHECK_GROUPS } from "@/types/review";
 import { countTokens } from "@/lib/llm/tokens";
 
 const PIPELINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -49,7 +49,9 @@ export interface PipelineCallbacks {
 export async function runReviewPipeline(
   pdfBuffer: ArrayBuffer,
   provider: ProviderType,
-  callbacks: PipelineCallbacks
+  mode: ReviewMode,
+  callbacks: PipelineCallbacks,
+  selectedGroups?: CheckGroupId[]
 ): Promise<void> {
   const maxPages = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
 
@@ -89,19 +91,24 @@ export async function runReviewPipeline(
     // Step 3: Run parallel checks
     callbacks.onStep("check", "active");
     const model = createModel(provider);
+    let checkGroups: CheckGroupMeta[] = getCheckGroups(mode);
+    if (selectedGroups && selectedGroups.length > 0) {
+      const selectedSet = new Set(selectedGroups);
+      checkGroups = checkGroups.filter((g) => selectedSet.has(g.id));
+    }
     const maxConcurrency = provider === "ollama" ? 2 : undefined; // undefined = all at once
-    console.log(`[pipeline] Using provider: ${provider}, concurrency: ${maxConcurrency ?? "unlimited"}`);
+    console.log(`[pipeline] Using provider: ${provider}, mode: ${mode}, checks: ${checkGroups.length}/${getCheckGroups(mode).length}, concurrency: ${maxConcurrency ?? "unlimited"}`);
 
     // Build prompts with guideline reference material (loaded once, cached)
-    const prompts = await getCheckGroupPrompts();
+    const prompts = await getCheckGroupPrompts(mode);
 
     // Count input tokens for all checks using tiktoken (text only).
     // NOTE: Image tokens (for groups receiving page images) are not included in this
     // estimate. The actual API token count will be higher for image-enabled groups.
     let cumulativeInputTokens = 0;
     const userMessage = `Here is the proposal text to review:\n\n${extraction.fullText}`;
-    const checkInputTokens = CHECK_GROUPS.reduce((sum, g) => {
-      return sum + countTokens(prompts[g.id]) + countTokens(userMessage);
+    const checkInputTokens = checkGroups.reduce((sum, g) => {
+      return sum + countTokens(prompts[g.id] ?? "") + countTokens(userMessage);
     }, 0);
     cumulativeInputTokens += checkInputTokens;
     callbacks.onInputEstimate(cumulativeInputTokens);
@@ -110,6 +117,7 @@ export async function runReviewPipeline(
       model,
       proposalText: extraction.fullText,
       pageImages,
+      checkGroups,
       prompts,
       maxConcurrency,
       signal: pipelineAbort.signal,

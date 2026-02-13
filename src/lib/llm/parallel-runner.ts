@@ -1,8 +1,7 @@
 import pLimit from "p-limit";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { CheckGroupId, LLMPhase } from "@/types/review";
+import type { CheckGroupId, CheckGroupMeta, LLMPhase } from "@/types/review";
 import type { CheckGroupResult } from "@/types/review";
-import { CHECK_GROUPS } from "@/types/review";
 import { runCheckGroup } from "./check-runner";
 import type { TokenUsage } from "./structured-invoke";
 import type { RenderedPage } from "@/lib/pdf/render";
@@ -15,8 +14,10 @@ interface ParallelRunnerOptions {
   model: BaseChatModel;
   proposalText: string;
   pageImages?: RenderedPage[];
+  /** Check groups to run. Determined by review mode (proposal vs thesis). */
+  checkGroups: CheckGroupMeta[];
   /** Pre-built prompts with guidelines appended. If not provided, check-runner uses static prompts. */
-  prompts?: Record<CheckGroupId, string>;
+  prompts?: Record<string, string>;
   maxConcurrency?: number;
   signal?: AbortSignal;
   onCheckStart?: (groupId: CheckGroupId) => void;
@@ -51,6 +52,7 @@ export async function runAllChecks(
     model,
     proposalText,
     pageImages,
+    checkGroups,
     prompts,
     maxConcurrency,
     onCheckStart,
@@ -61,12 +63,12 @@ export async function runAllChecks(
     signal: pipelineSignal,
   } = options;
 
-  const concurrency = maxConcurrency ?? CHECK_GROUPS.length;
-  console.log(`[parallel] Starting ${CHECK_GROUPS.length} checks (concurrency: ${concurrency})`);
+  const concurrency = maxConcurrency ?? checkGroups.length;
+  console.log(`[parallel] Starting ${checkGroups.length} checks (concurrency: ${concurrency})`);
 
   const limit = pLimit(concurrency);
 
-  const tasks = CHECK_GROUPS.map((group) =>
+  const tasks = checkGroups.map((group) =>
     limit(async (): Promise<CheckGroupResult> => {
       onCheckStart?.(group.id);
 
@@ -141,9 +143,9 @@ export async function runAllChecks(
       return r.value;
     }
     const errMsg = r.reason instanceof Error ? r.reason.message : "Unknown error";
-    console.error(`[parallel] Check ${CHECK_GROUPS[i].id} rejected: ${errMsg}`);
+    console.error(`[parallel] Check ${checkGroups[i].id} rejected: ${errMsg}`);
     return {
-      groupId: CHECK_GROUPS[i].id,
+      groupId: checkGroups[i].id,
       findings: [],
       error: errMsg,
     };
@@ -151,7 +153,7 @@ export async function runAllChecks(
 
   const successCount = mapped.filter((r) => !r.error).length;
   const totalFindings = mapped.reduce((sum, r) => sum + r.findings.length, 0);
-  console.log(`[parallel] All checks done: ${successCount}/${CHECK_GROUPS.length} succeeded, ${totalFindings} total findings`);
+  console.log(`[parallel] All checks done: ${successCount}/${checkGroups.length} succeeded, ${totalFindings} total findings`);
 
   return mapped;
 }

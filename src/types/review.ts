@@ -1,5 +1,8 @@
 export type Severity = "critical" | "major" | "minor" | "suggestion";
 
+export const REVIEW_MODES = ["proposal", "thesis"] as const;
+export type ReviewMode = (typeof REVIEW_MODES)[number];
+
 export type CheckGroupId =
   | "structure"
   | "problem-motivation-objectives"
@@ -9,24 +12,49 @@ export type CheckGroupId =
   | "writing-structure"
   | "writing-formatting"
   | "ai-transparency"
-  | "schedule";
+  | "schedule"
+  | "related-work"
+  | "methodology"
+  | "evaluation";
 
 export interface CheckGroupMeta {
   id: CheckGroupId;
   label: string;
 }
 
-export const CHECK_GROUPS: CheckGroupMeta[] = [
-  { id: "structure", label: "Structure & Completeness" },
-  { id: "problem-motivation-objectives", label: "Problem & Motivation & Objectives" },
-  { id: "bibliography", label: "Bibliography & Citations" },
-  { id: "figures", label: "Figures & Diagrams" },
-  { id: "writing-style", label: "Writing Style" },
-  { id: "writing-structure", label: "Paragraph Structure" },
-  { id: "writing-formatting", label: "Formatting & Terminology" },
-  { id: "ai-transparency", label: "AI Transparency Statement" },
-  { id: "schedule", label: "Schedule Quality" },
+/** Metadata for every known check group (both proposal and thesis). */
+export const ALL_CHECK_GROUP_META: Record<CheckGroupId, CheckGroupMeta> = {
+  "structure": { id: "structure", label: "Structure & Completeness" },
+  "problem-motivation-objectives": { id: "problem-motivation-objectives", label: "Problem & Motivation & Objectives" },
+  "bibliography": { id: "bibliography", label: "Bibliography & Citations" },
+  "figures": { id: "figures", label: "Figures & Diagrams" },
+  "writing-style": { id: "writing-style", label: "Writing Style" },
+  "writing-structure": { id: "writing-structure", label: "Paragraph Structure" },
+  "writing-formatting": { id: "writing-formatting", label: "Formatting & Terminology" },
+  "ai-transparency": { id: "ai-transparency", label: "AI Transparency Statement" },
+  "schedule": { id: "schedule", label: "Schedule Quality" },
+  "related-work": { id: "related-work", label: "Related Work" },
+  "methodology": { id: "methodology", label: "Methodology" },
+  "evaluation": { id: "evaluation", label: "Evaluation" },
+};
+
+const PROPOSAL_GROUP_IDS: CheckGroupId[] = [
+  "structure", "problem-motivation-objectives", "bibliography", "figures",
+  "writing-style", "writing-structure", "writing-formatting", "ai-transparency", "schedule",
 ];
+
+const THESIS_GROUP_IDS: CheckGroupId[] = [
+  ...PROPOSAL_GROUP_IDS, "related-work", "methodology", "evaluation",
+];
+
+/** Get check groups for a given review mode. */
+export function getCheckGroups(mode: ReviewMode): CheckGroupMeta[] {
+  const ids = mode === "thesis" ? THESIS_GROUP_IDS : PROPOSAL_GROUP_IDS;
+  return ids.map((id) => ALL_CHECK_GROUP_META[id]);
+}
+
+/** @deprecated Use getCheckGroups(mode) instead. Kept for backward compatibility. */
+export const CHECK_GROUPS: CheckGroupMeta[] = getCheckGroups("proposal");
 
 export interface SourceLocation {
   page: number | null;
@@ -96,6 +124,7 @@ export interface CheckGroupState {
 
 export interface ReviewState {
   status: "idle" | "running" | "done" | "error";
+  mode: ReviewMode | null;
   provider: ProviderType | null;
   currentStep: StepEvent["step"] | null;
   steps: Record<StepEvent["step"], StepStatus>;
@@ -122,4 +151,3 @@ export interface ModelConfig {
   label: string;
   model: string;
 }
-

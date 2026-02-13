@@ -1,5 +1,6 @@
 import "server-only";
-import type { CheckGroupId } from "@/types/review";
+import type { CheckGroupId, ReviewMode } from "@/types/review";
+import { getCheckGroups } from "@/types/review";
 import { loadAllGuidelines } from "@/lib/guidelines/loader";
 
 export const SHARED_ROLE_PROMPT = `You are an expert thesis proposal reviewer for a computer science research group at a top European university. You review student proposals against specific guidelines with surgical precision. You are strict but fair — only flag genuine issues, not stylistic preferences. Each finding must be actionable: the student should know exactly what to fix.
@@ -182,13 +183,121 @@ Review the proposal against these specific rules only:
 6. **Agile Principles**: The schedule should follow agile principles overall. It should reference the high-level goals from the Objectives section. Flag waterfall-style schedules.
 
 Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
+
+  "related-work": "",
+  "methodology": "",
+  "evaluation": "",
+};
+
+// ---------------------------------------------------------------------------
+// Thesis mode: shared role prompt + thesis-specific prompt overrides
+// ---------------------------------------------------------------------------
+
+const SHARED_THESIS_ROLE_PROMPT = `You are an expert thesis reviewer for a computer science research group at a top European university. You review completed theses against specific academic standards with surgical precision. You are strict but fair — only flag genuine issues, not stylistic preferences. Each finding must be actionable: the student should know exactly what to fix.
+
+When analyzing the thesis:
+- Consider both the extracted text AND page images (if provided) for visual elements
+- Distinguish between critical issues (must fix), major issues (should fix), minor issues (nice to fix), and suggestions (optional improvements)
+- Do NOT flag issues that are clearly outside the scope of the specific rules you are checking
+
+For each finding, provide a "locations" array with one or more source locations:
+- "page": the page number derived from the === PAGE N === markers in the text, or null if unknown
+- "section": the thesis section name (e.g. "Abstract", "Introduction", "Related Work", "Methodology"), or null if not section-specific
+- "quote": a verbatim excerpt from the thesis showing the issue (full sentence or clause, enough context to be meaningful), with the specific offending part wrapped in **bold** markers
+- Include multiple locations if the same issue appears in several places
+- Use an empty locations array only for structural absences (e.g. a missing section)`;
+
+/**
+ * Thesis-specific prompt overrides. Groups not listed here reuse the proposal
+ * prompt (from CHECK_GROUP_PROMPTS) which works well for both modes.
+ */
+const THESIS_PROMPT_OVERRIDES: Partial<Record<CheckGroupId, string>> = {
+  structure: `${SHARED_THESIS_ROLE_PROMPT}
+
+## Your Task: Check STRUCTURE & COMPLETENESS
+
+Review the thesis against these specific rules only:
+
+1. **Required Sections**: The thesis must contain ALL of these sections: Abstract, Introduction, Related Work (or Background), Methodology (or Approach), Implementation, Evaluation, Discussion, Conclusion, Bibliography. Flag any missing section as CRITICAL.
+
+2. **Abstract Quality**: The abstract should summarize the problem, approach, and key results. It should be approximately half a page. Too short or too long is an issue.
+
+3. **Introduction Quality**: The introduction should clearly state the problem, motivation, objectives, and provide a thesis outline (chapter overview).
+
+4. **Logical Flow**: Chapters should follow a logical progression from problem definition through solution to evaluation. Flag any structural gaps or misplaced content.
+
+5. **Consistent Numbering**: Sections and subsections should be numbered consistently (e.g. 1, 1.1, 1.1.1).
+
+Evaluate the thesis and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
+
+  "related-work": `${SHARED_THESIS_ROLE_PROMPT}
+
+## Your Task: Check RELATED WORK Section
+
+Review the thesis against these specific rules only:
+
+1. **Section Exists**: The thesis must have a Related Work (or Background/State of the Art) section. If missing, flag as CRITICAL.
+
+2. **Comprehensive Coverage**: The related work should cover the most relevant and recent publications in the field. Flag if the coverage appears superficial or misses obvious related areas.
+
+3. **Critical Analysis**: The section should not just list related work but critically compare approaches, identifying strengths, weaknesses, and gaps. Flag purely descriptive summaries without analysis.
+
+4. **Clear Positioning**: The section should clearly position the thesis contribution relative to existing work. The reader should understand what gap this thesis fills.
+
+5. **Structured Organization**: Related work should be organized thematically or chronologically with clear subsections, not presented as a random list of papers.
+
+6. **Recency**: The majority of cited work should be recent (within 5 years for a fast-moving CS field). Flag if most references are outdated unless the topic warrants historical coverage.
+
+Evaluate the thesis and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
+
+  methodology: `${SHARED_THESIS_ROLE_PROMPT}
+
+## Your Task: Check METHODOLOGY Section
+
+Review the thesis against these specific rules only:
+
+1. **Section Exists**: The thesis must have a Methodology (or Approach/Design) section. If missing, flag as CRITICAL.
+
+2. **Clear Description**: The methodology should be described clearly and in sufficient detail that another researcher could reproduce the approach.
+
+3. **Justified Choices**: Design decisions and technology choices should be justified — not just stated. Flag unjustified architectural or algorithmic choices.
+
+4. **Requirements Traceability**: The methodology should address the objectives stated in the introduction. Flag if objectives are not clearly mapped to the approach.
+
+5. **Appropriate Diagrams**: The methodology section should include relevant diagrams (architecture, class, activity, or sequence diagrams). Flag if no visual representation of the approach is provided.
+
+6. **Separation of Concerns**: The methodology should focus on the "what" and "why" (design), while implementation details (the "how") belong in a separate Implementation chapter. Flag mixing of design and implementation.
+
+Evaluate the thesis and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
+
+  evaluation: `${SHARED_THESIS_ROLE_PROMPT}
+
+## Your Task: Check EVALUATION Section
+
+Review the thesis against these specific rules only:
+
+1. **Section Exists**: The thesis must have an Evaluation (or Results/Experiments) section. If missing, flag as CRITICAL.
+
+2. **Clear Metrics**: The evaluation should define clear, measurable metrics or criteria. Flag vague evaluations without quantifiable measures.
+
+3. **Methodology Described**: The evaluation methodology (how experiments were designed and conducted) should be clearly described.
+
+4. **Sufficient Evidence**: Results should be presented with sufficient evidence (tables, charts, statistical significance). Flag if claims are not backed by data.
+
+5. **Threats to Validity**: The evaluation should discuss threats to validity (internal, external, construct). Flag if limitations are not acknowledged.
+
+6. **Objective Assessment**: The evaluation should include objective measures, not just subjective opinions. User studies should follow proper methodology (sample size, statistical tests).
+
+7. **Discussion of Results**: Results should be interpreted and discussed, not just presented. The student should explain what the results mean and how they relate to the research questions.
+
+Evaluate the thesis and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 };
 
 /**
  * Mapping from each check group to the guideline files it should receive as
  * reference material. Each entry is an array of keys from the guidelines object.
  */
-const GUIDELINE_MAPPING: Record<CheckGroupId, ("proposal" | "scientificWriting" | "aiTransparency")[]> = {
+const GUIDELINE_MAPPING: Partial<Record<CheckGroupId, ("proposal" | "scientificWriting" | "aiTransparency")[]>> = {
   structure: ["proposal"],
   "problem-motivation-objectives": ["proposal"],
   bibliography: ["proposal", "scientificWriting"],
@@ -198,6 +307,9 @@ const GUIDELINE_MAPPING: Record<CheckGroupId, ("proposal" | "scientificWriting" 
   "writing-formatting": ["scientificWriting"],
   "ai-transparency": ["aiTransparency"],
   schedule: ["proposal"],
+  "related-work": ["scientificWriting"],
+  methodology: ["scientificWriting"],
+  evaluation: ["scientificWriting"],
 };
 
 const GUIDELINE_LABELS: Record<string, string> = {
@@ -207,27 +319,52 @@ const GUIDELINE_LABELS: Record<string, string> = {
 };
 
 /**
+ * Get the base prompt for a check group, applying thesis overrides when needed.
+ */
+function getBasePrompt(mode: ReviewMode, groupId: CheckGroupId): string {
+  if (mode === "thesis" && THESIS_PROMPT_OVERRIDES[groupId]) {
+    return THESIS_PROMPT_OVERRIDES[groupId]!;
+  }
+  return CHECK_GROUP_PROMPTS[groupId];
+}
+
+/**
  * Build check group prompts with guideline reference material appended.
  * Guidelines are loaded once (cached by the loader) and included as additional
  * context below the focused rules. Falls back to static prompts on load failure.
+ *
+ * @param mode - Review mode determines which base prompts to use (thesis mode
+ *               overrides structure and adds thesis-only groups).
  */
-export async function getCheckGroupPrompts(): Promise<Record<CheckGroupId, string>> {
+export async function getCheckGroupPrompts(mode: ReviewMode = "proposal"): Promise<Record<string, string>> {
+  const groups = getCheckGroups(mode);
+
   try {
     const guidelines = await loadAllGuidelines();
 
-    const result = {} as Record<CheckGroupId, string>;
-    for (const [groupId, keys] of Object.entries(GUIDELINE_MAPPING) as [CheckGroupId, typeof GUIDELINE_MAPPING[CheckGroupId]][]) {
-      const basePrompt = CHECK_GROUP_PROMPTS[groupId];
-      const sections = keys
-        .map((key) => `### ${GUIDELINE_LABELS[key]}\n\n${guidelines[key]}`)
-        .join("\n\n");
+    const result: Record<string, string> = {};
+    for (const group of groups) {
+      const basePrompt = getBasePrompt(mode, group.id);
+      const keys = GUIDELINE_MAPPING[group.id];
 
-      result[groupId] = `${basePrompt}\n\n---\n\n## Reference Guidelines\n\nThe following are the official guidelines from the research group. Use them as additional context to inform your review, but keep your evaluation focused on the specific rules listed above.\n\n${sections}`;
+      if (keys && keys.length > 0) {
+        const sections = keys
+          .map((key) => `### ${GUIDELINE_LABELS[key]}\n\n${guidelines[key]}`)
+          .join("\n\n");
+
+        result[group.id] = `${basePrompt}\n\n---\n\n## Reference Guidelines\n\nThe following are the official guidelines from the research group. Use them as additional context to inform your review, but keep your evaluation focused on the specific rules listed above.\n\n${sections}`;
+      } else {
+        result[group.id] = basePrompt;
+      }
     }
 
     return result;
   } catch (error) {
     console.warn("[prompts] Failed to load guidelines, using static prompts:", error instanceof Error ? error.message : error);
-    return { ...CHECK_GROUP_PROMPTS };
+    const result: Record<string, string> = {};
+    for (const group of groups) {
+      result[group.id] = getBasePrompt(mode, group.id);
+    }
+    return result;
   }
 }
