@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Reply, CheckCircle2, RotateCcw, Trash2, Send, FileText } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { COMMENT_TEMPLATES } from "@/lib/comment-templates";
+import { CommentReactions } from "@/components/comment-reactions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,6 +27,10 @@ interface CommentThreadProps {
   onResolve?: (commentId: string, status: "resolved" | "open") => Promise<void>;
   /** Whether a reply is currently being submitted. */
   submitting?: boolean;
+  /** Review ID — required for reaction API calls. */
+  reviewId?: string;
+  /** Current user ID — for highlighting the user's own reactions. */
+  currentUserId?: string;
 }
 
 interface ThreadSummaryProps {
@@ -57,10 +62,14 @@ function CommentRow({
   comment,
   isReply,
   onDelete,
+  reviewId,
+  currentUserId,
 }: {
   comment: Comment;
   isReply?: boolean;
   onDelete?: (id: string) => Promise<void>;
+  reviewId?: string;
+  currentUserId?: string;
 }) {
   const [deleting, setDeleting] = useState(false);
 
@@ -85,6 +94,13 @@ function CommentRow({
         <p className="mt-0.5 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-slate-600 dark:text-white/60">
           {comment.text}
         </p>
+        {reviewId && (
+          <CommentReactions
+            commentId={comment.id}
+            reviewId={reviewId}
+            currentUserId={currentUserId}
+          />
+        )}
       </div>
       {onDelete && (
         <button
@@ -223,6 +239,8 @@ export function CommentThread({
   onDelete,
   onResolve,
   submitting,
+  reviewId,
+  currentUserId,
 }: CommentThreadProps) {
   const [replying, setReplying] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -267,7 +285,7 @@ export function CommentThread({
 
       {/* Top-level comment */}
       <div className="px-1 pt-1">
-        <CommentRow comment={comment} onDelete={onDelete} />
+        <CommentRow comment={comment} onDelete={onDelete} reviewId={reviewId} currentUserId={currentUserId} />
       </div>
 
       {/* Replies */}
@@ -279,6 +297,8 @@ export function CommentThread({
               comment={reply}
               isReply
               onDelete={onDelete}
+              reviewId={reviewId}
+              currentUserId={currentUserId}
             />
           ))}
         </div>
