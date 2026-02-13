@@ -388,6 +388,21 @@ async function ensureSchema(): Promise<void> {
         ON finding_sla(review_id);
       CREATE INDEX IF NOT EXISTS idx_finding_sla_deadline
         ON finding_sla(deadline);
+
+      -- Finding patterns (recurring issue detection across reviews)
+      CREATE TABLE IF NOT EXISTS finding_patterns (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        pattern_text TEXT NOT NULL,
+        category TEXT NOT NULL,
+        occurrence_count INT NOT NULL DEFAULT 1,
+        example_review_ids TEXT[] DEFAULT '{}',
+        suggested_template TEXT,
+        is_template BOOLEAN NOT NULL DEFAULT false,
+        created_by TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_finding_patterns_category ON finding_patterns(category);
     `);
     globalDb.__schemaInitialized = true;
     console.log("[db] Schema initialized");
@@ -3987,4 +4002,206 @@ export async function getSLAAnalytics(): Promise<SLAAnalytics | null> {
     })),
     complianceRate: totalSLAs > 0 ? Math.round((resolvedCount / totalSLAs) * 100) : 100,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Finding patterns (recurring issue detection across reviews)
+// ---------------------------------------------------------------------------
+
+export interface FindingPatternRow {
+  id: string;
+  patternText: string;
+  category: string;
+  occurrenceCount: number;
+  exampleReviewIds: string[];
+  suggestedTemplate: string | null;
+  isTemplate: boolean;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function rowToFindingPattern(row: Record<string, unknown>): FindingPatternRow {
+  return {
+    id: row.id as string,
+    patternText: row.pattern_text as string,
+    category: row.category as string,
+    occurrenceCount: Number(row.occurrence_count ?? 1),
+    exampleReviewIds: (row.example_review_ids as string[]) ?? [],
+    suggestedTemplate: (row.suggested_template as string) ?? null,
+    isTemplate: Boolean(row.is_template),
+    createdBy: (row.created_by as string) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+}
+
+/**
+ * Compute word-level Jaccard similarity between two strings.
+ * Returns a value between 0 (no overlap) and 1 (identical word sets).
+ */
+function jaccardSimilarity(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean));
+  const wordsB = new Set(b.toLowerCase().replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean));
+  if (wordsA.size === 0 && wordsB.size === 0) return 1;
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let intersection = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) intersection++;
+  }
+  const union = wordsA.size + wordsB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/** Similarity threshold for grouping findings together. */
+const SIMILARITY_THRESHOLD = 0.5;
+/** Minimum occurrences for a cluster to be considered a "pattern". */
+const MIN_PATTERN_OCCURRENCES = 3;
+/** Maximum example review IDs to store per pattern. */
+const MAX_EXAMPLE_REVIEWS = 5;
+
+/**
+ * Analyze all completed reviews to find recurring finding patterns.
+ * Groups findings by category, then clusters similar finding titles using
+ * word-level Jaccard similarity. Persists discovered patterns to the
+ * finding_patterns table (upserting by representative text + category).
+ */
+export async function detectFindingPatterns(): Promise<FindingPatternRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  // Step 1: Pull all findings from completed reviews
+  const result = await pool.query(`
+    SELECT r.id AS review_id, f.value AS finding
+    FROM reviews r, jsonb_array_elements(r.feedback->'findings') AS f(value)
+    WHERE r.status = 'done'
+      AND r.deleted_at IS NULL
+      AND r.feedback IS NOT NULL
+      AND jsonb_typeof(r.feedback->'findings') = 'array'
+  `);
+
+  if (result.rows.length === 0) return [];
+
+  // Step 2: Group findings by category
+  interface ExtractedFinding {
+    title: string;
+    category: string;
+    reviewId: string;
+  }
+
+  const findings: ExtractedFinding[] = result.rows.map((row) => ({
+    title: (row.finding as Record<string, unknown>).title as string ?? "",
+    category: (row.finding as Record<string, unknown>).category as string ?? "other",
+    reviewId: row.review_id as string,
+  }));
+
+  const byCategory = new Map<string, ExtractedFinding[]>();
+  for (const f of findings) {
+    const cat = f.category.toLowerCase();
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(f);
+  }
+
+  // Step 3: Cluster within each category using Jaccard similarity
+  interface Cluster {
+    representative: string;
+    category: string;
+    reviewIds: Set<string>;
+    count: number;
+  }
+
+  const allClusters: Cluster[] = [];
+
+  for (const [category, catFindings] of byCategory) {
+    const clusters: Cluster[] = [];
+
+    for (const f of catFindings) {
+      if (!f.title) continue;
+
+      // Find best matching cluster
+      let bestCluster: Cluster | null = null;
+      let bestSim = 0;
+      for (const c of clusters) {
+        const sim = jaccardSimilarity(f.title, c.representative);
+        if (sim > bestSim) {
+          bestSim = sim;
+          bestCluster = c;
+        }
+      }
+
+      if (bestCluster && bestSim >= SIMILARITY_THRESHOLD) {
+        bestCluster.count++;
+        bestCluster.reviewIds.add(f.reviewId);
+      } else {
+        clusters.push({
+          representative: f.title,
+          category,
+          reviewIds: new Set([f.reviewId]),
+          count: 1,
+        });
+      }
+    }
+
+    // Only keep clusters with MIN_PATTERN_OCCURRENCES+ hits
+    for (const c of clusters) {
+      if (c.count >= MIN_PATTERN_OCCURRENCES) {
+        allClusters.push(c);
+      }
+    }
+  }
+
+  // Step 4: Upsert patterns into the database
+  // First, remove old auto-detected patterns that are NOT promoted to templates
+  await pool.query(
+    "DELETE FROM finding_patterns WHERE is_template = false"
+  );
+
+  for (const cluster of allClusters) {
+    const exampleIds = Array.from(cluster.reviewIds).slice(0, MAX_EXAMPLE_REVIEWS);
+    await pool.query(
+      `INSERT INTO finding_patterns (pattern_text, category, occurrence_count, example_review_ids)
+       VALUES ($1, $2, $3, $4)`,
+      [cluster.representative, cluster.category, cluster.count, exampleIds]
+    );
+  }
+
+  // Return all patterns (both new detections and existing templates)
+  return listFindingPatterns();
+}
+
+/** List all finding patterns, ordered by occurrence count descending. */
+export async function listFindingPatterns(): Promise<FindingPatternRow[]> {
+  if (!pool) return [];
+  await ensureSchema();
+  const result = await pool.query(
+    "SELECT * FROM finding_patterns ORDER BY occurrence_count DESC, created_at DESC"
+  );
+  return result.rows.map(rowToFindingPattern);
+}
+
+/** Promote a detected pattern to a reusable template. */
+export async function promoteFindingPatternToTemplate(
+  id: string,
+  templateText: string,
+  userId: string
+): Promise<FindingPatternRow | null> {
+  if (!pool) throw new Error("Database pool not initialized");
+  await ensureSchema();
+  const result = await pool.query(
+    `UPDATE finding_patterns
+     SET is_template = true, suggested_template = $2, created_by = $3, updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, templateText, userId]
+  );
+  if (result.rows.length === 0) return null;
+  return rowToFindingPattern(result.rows[0]);
+}
+
+/** Delete a finding pattern. Returns true if deleted. */
+export async function deleteFindingPattern(id: string): Promise<boolean> {
+  if (!pool) return false;
+  await ensureSchema();
+  const result = await pool.query("DELETE FROM finding_patterns WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
 }
