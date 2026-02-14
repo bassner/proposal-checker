@@ -116,6 +116,15 @@ export async function POST(
     );
   }
 
+  // Validate findingIndex is within bounds of the review's findings
+  const feedback = review.feedback as { findings?: unknown[] } | null;
+  if (feedback?.findings && findingIndex >= feedback.findings.length) {
+    return Response.json(
+      { error: `findingIndex ${findingIndex} is out of bounds (review has ${feedback.findings.length} findings)` },
+      { status: 400 }
+    );
+  }
+
   // Validate originalSeverity
   const originalSeverity =
     typeof body.originalSeverity === "string" ? body.originalSeverity : "";

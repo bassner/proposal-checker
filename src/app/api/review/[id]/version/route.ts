@@ -14,6 +14,7 @@ import {
   getVersionGroup,
   generateRevisionSummary,
   getPreviousVersionReviewId,
+  getAdjudicationsForReview,
 } from "@/lib/db";
 import { savePdf } from "@/lib/uploads";
 import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
@@ -244,10 +245,13 @@ export async function POST(
     parentReviewId: parentId, provider, mode, fileName: file.name,
   }, session.user.name);
 
-  // Get previous findings for diff-aware pipeline
+  // Get previous findings and adjudications for diff-aware pipeline
   const parentFeedback = parentReview.feedback as MergedFeedback | null;
   const previousFindings: Finding[] | undefined = parentFeedback?.findings;
   const previousAssessment: string | undefined = parentFeedback?.summary;
+  const previousAdjudications = previousFindings?.length
+    ? await getAdjudicationsForReview(parentId)
+    : undefined;
 
   // Throttle and SSE setup
   const lastSend: Record<string, number> = {};
@@ -358,7 +362,7 @@ export async function POST(
         })
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, resolvedGroups, sessionId, previousFindings ? { previousFindings, previousAssessment } : undefined);
+  }, resolvedGroups, sessionId, previousFindings ? { previousFindings, previousAssessment, previousReviewId: parentId, previousAdjudications } : undefined);
 
   return Response.json({ id: sessionId }, { status: 202 });
 }

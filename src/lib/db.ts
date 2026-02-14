@@ -1,7 +1,7 @@
 import "server-only";
 import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
-import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus, FindingCategory, Finding, MergedFeedback } from "@/types/review";
+import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus, FindingCategory, Finding, MergedFeedback, FindingAdjudication } from "@/types/review";
 import { FINDING_CATEGORY_VALUES } from "@/types/review";
 
 // ---------------------------------------------------------------------------
@@ -5104,6 +5104,66 @@ export interface SeverityOverrideStats {
 }
 
 // ---------------------------------------------------------------------------
+// Finding adjudications (aggregated user decisions for version comparison)
+// ---------------------------------------------------------------------------
+
+/**
+ * Aggregate user adjudication data for all findings in a review.
+ * Combines annotation statuses (dismissed/fixed) with severity overrides
+ * and comment presence into a single map for the LLM pipeline.
+ */
+export async function getAdjudicationsForReview(
+  reviewId: string
+): Promise<Map<number, FindingAdjudication>> {
+  const result = new Map<number, FindingAdjudication>();
+  if (!pool) return result;
+  await ensureSchema();
+
+  // 1. Fetch annotations JSONB from the review
+  const reviewResult = await pool.query(
+    `SELECT annotations FROM reviews WHERE id = $1`,
+    [reviewId]
+  );
+  if (reviewResult.rows.length > 0 && reviewResult.rows[0].annotations) {
+    const annotations = reviewResult.rows[0].annotations as Record<
+      string,
+      { status?: string; comments?: unknown[] }
+    >;
+    for (const [key, entry] of Object.entries(annotations)) {
+      const idx = parseInt(key, 10);
+      if (isNaN(idx) || idx < 0) continue;
+      const adj: FindingAdjudication = {};
+      if (entry.status === "dismissed" || entry.status === "fixed") {
+        adj.annotationStatus = entry.status;
+      }
+      if (entry.comments && Array.isArray(entry.comments) && entry.comments.length > 0) {
+        adj.hasComments = true;
+      }
+      if (adj.annotationStatus || adj.hasComments) {
+        result.set(idx, adj);
+      }
+    }
+  }
+
+  // 2. Fetch latest severity override per finding index
+  const overridesResult = await pool.query(
+    `SELECT DISTINCT ON (finding_index) finding_index, new_severity
+     FROM severity_overrides
+     WHERE review_id = $1
+     ORDER BY finding_index, created_at DESC`,
+    [reviewId]
+  );
+  for (const row of overridesResult.rows) {
+    const idx = row.finding_index as number;
+    const existing = result.get(idx) ?? {};
+    existing.overriddenSeverity = row.new_severity as FindingAdjudication["overriddenSeverity"];
+    result.set(idx, existing);
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Proposal relationships
 // ---------------------------------------------------------------------------
 
@@ -6189,11 +6249,14 @@ export async function updatePairingStatus(
 }
 
 /**
- * Compare two reviews' findings using word-level Jaccard similarity and persist
- * the result as a revision summary. If a summary already exists for this pair
- * it is replaced (upsert).
+ * Generate a revision summary comparing two reviews and persist it.
+ *
+ * Priority 1: Read `versionComparison` from the new review's feedback (LLM-powered).
+ * Priority 2: Fall back to Jaccard word-overlap matching (legacy).
  *
  * Both reviews must be completed (status = 'done') with feedback.
+ * If `versionComparison` is present, validates that `previousReviewId` matches
+ * `oldReviewId` (for arbitrary pair comparisons, falls back to Jaccard).
  */
 export async function generateRevisionSummary(
   oldReviewId: string,
@@ -6217,20 +6280,63 @@ export async function generateRevisionSummary(
   const oldFindings: Finding[] = oldFeedback.findings;
   const newFindings: Finding[] = newFeedback.findings;
 
-  // --- Match findings using Jaccard similarity ---
+  // Try to use LLM-powered versionComparison from the new review's feedback
+  const vc = newFeedback.versionComparison;
+  if (vc && vc.previousReviewId === oldReviewId) {
+    const fixedCount = vc.resolvedFindings.length;
+    const newCount = vc.newFindings.length;
+    const persistentCount = vc.persistentFindings.length;
+
+    const summaryData: RevisionSummaryData = {
+      fixedFindings: vc.resolvedFindings.map((f) => ({
+        title: f.title,
+        category: f.category,
+        severity: f.severity,
+      })),
+      newFindings: vc.newFindings.map((f) => ({
+        title: f.title,
+        category: f.category,
+        severity: f.severity,
+      })),
+      persistentFindings: vc.persistentFindings.map((f) => ({
+        oldTitle: f.previousTitle,
+        newTitle: f.currentTitle,
+        category: f.category,
+        similarity: 1.0, // LLM-matched — semantic similarity
+      })),
+      improvementPct: (fixedCount + persistentCount) > 0
+        ? Math.round((fixedCount / (fixedCount + persistentCount)) * 100)
+        : 0,
+    };
+
+    // Upsert
+    const result = await pool.query(
+      `INSERT INTO revision_summaries (old_review_id, new_review_id, fixed_count, new_count, persistent_count, summary)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (old_review_id, new_review_id) DO UPDATE SET
+         fixed_count = $3,
+         new_count = $4,
+         persistent_count = $5,
+         summary = $6,
+         created_at = NOW()
+       RETURNING *`,
+      [oldReviewId, newReviewId, fixedCount, newCount, persistentCount, JSON.stringify(summaryData)]
+    );
+
+    return rowToRevisionSummary(result.rows[0]);
+  }
+
+  // Fallback: Jaccard word-overlap matching (for legacy reviews or arbitrary pair comparisons)
   const matchedOldIndices = new Set<number>();
   const matchedNewIndices = new Set<number>();
   const persistentPairs: { oldIdx: number; newIdx: number; similarity: number }[] = [];
 
-  // For each new finding, find the best-matching old finding
   for (let ni = 0; ni < newFindings.length; ni++) {
     let bestScore = 0;
     let bestOldIdx = -1;
 
     for (let oi = 0; oi < oldFindings.length; oi++) {
       if (matchedOldIndices.has(oi)) continue;
-
-      // Category must match
       if (oldFindings[oi].category.toLowerCase() !== newFindings[ni].category.toLowerCase()) continue;
 
       const score = jaccardSimilarity(oldFindings[oi].title, newFindings[ni].title);
@@ -6247,17 +6353,14 @@ export async function generateRevisionSummary(
     }
   }
 
-  // Fixed = old findings that didn't match any new finding
   const fixedFindings = oldFindings
     .filter((_, i) => !matchedOldIndices.has(i))
     .map((f) => ({ title: f.title, category: f.category, severity: f.severity }));
 
-  // New = new findings that didn't match any old finding
   const newFindingsUnmatched = newFindings
     .filter((_, i) => !matchedNewIndices.has(i))
     .map((f) => ({ title: f.title, category: f.category, severity: f.severity }));
 
-  // Persistent = matched pairs
   const persistentFindings = persistentPairs.map((p) => ({
     oldTitle: oldFindings[p.oldIdx].title,
     newTitle: newFindings[p.newIdx].title,
@@ -6269,7 +6372,6 @@ export async function generateRevisionSummary(
   const newCount = newFindingsUnmatched.length;
   const persistentCount = persistentFindings.length;
 
-  // Improvement = fixed / (fixed + persistent), or 0 if no old findings
   const denominator = fixedCount + persistentCount;
   const improvementPct = denominator > 0
     ? Math.round((fixedCount / denominator) * 100)
@@ -6282,7 +6384,6 @@ export async function generateRevisionSummary(
     improvementPct,
   };
 
-  // Upsert
   const result = await pool.query(
     `INSERT INTO revision_summaries (old_review_id, new_review_id, fixed_count, new_count, persistent_count, summary)
      VALUES ($1, $2, $3, $4, $5, $6)

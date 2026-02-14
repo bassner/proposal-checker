@@ -1,7 +1,7 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessageLike } from "@langchain/core/messages";
 import { HumanMessage } from "@langchain/core/messages";
-import type { CheckGroupId, Finding, LLMPhase } from "@/types/review";
+import type { CheckGroupId, Finding, FindingAdjudication, LLMPhase, ResolvedPreviousFinding } from "@/types/review";
 import type { CheckGroupOutput } from "./schemas";
 import { checkGroupOutputSchema } from "./schemas";
 import { CHECK_GROUP_PROMPTS } from "./prompts";
@@ -11,6 +11,7 @@ import type { RenderedPage } from "@/lib/pdf/render";
 
 export interface CheckGroupRunResult extends CheckGroupOutput {
   usage: TokenUsage | null;
+  resolvedPreviousFindings?: ResolvedPreviousFinding[];
 }
 
 interface RunCheckGroupOptions {
@@ -22,6 +23,10 @@ interface RunCheckGroupOptions {
   systemPrompt?: string;
   /** Findings from the previous version of this document, relevant to this check group. */
   previousFindings?: Finding[];
+  /** Original indices of previousFindings in the previous review's findings array. */
+  previousFindingIndices?: number[];
+  /** User adjudication decisions on previous findings. */
+  previousAdjudications?: ReadonlyMap<number, FindingAdjudication>;
   signal?: AbortSignal;
   onToken?: (count: number, phase: LLMPhase) => void;
   onThinking?: (text: string) => void;
@@ -32,14 +37,27 @@ const IMAGE_CHECK_GROUPS = new Set<CheckGroupId>(["figures", "writing-structure"
 
 /**
  * Sanitize previous findings for injection into the user message.
- * Strips quote, location, details — only passes title, severity, category.
+ * Strips quote, location, details — only passes index, title, severity, category,
+ * and any user adjudication data (dismissed/fixed status, overridden severity, comments).
  */
-function sanitizePreviousFindings(findings: Finding[]): string {
-  const sanitized = findings.map((f) => ({
-    title: f.title,
-    severity: f.severity,
-    category: f.category,
-  }));
+function sanitizePreviousFindings(
+  findings: Finding[],
+  startIndices?: number[],
+  adjudications?: ReadonlyMap<number, FindingAdjudication>,
+): string {
+  const sanitized = findings.map((f, i) => {
+    const idx = startIndices ? startIndices[i] : i;
+    const adj = adjudications?.get(idx);
+    return {
+      index: idx,
+      title: f.title,
+      severity: f.severity,
+      category: f.category,
+      ...(adj?.annotationStatus ? { userStatus: adj.annotationStatus } : {}),
+      ...(adj?.overriddenSeverity ? { overriddenSeverity: adj.overriddenSeverity } : {}),
+      ...(adj?.hasComments ? { hasComments: true } : {}),
+    };
+  });
   return JSON.stringify(sanitized, null, 2);
 }
 
@@ -50,6 +68,8 @@ export async function runCheckGroup({
   pageImages,
   systemPrompt: systemPromptOverride,
   previousFindings,
+  previousFindingIndices,
+  previousAdjudications,
   signal,
   onToken,
   onThinking,
@@ -58,15 +78,25 @@ export async function runCheckGroup({
   const messages: BaseMessageLike[] = [["system", systemPrompt]];
 
   // Build the previous findings context block (if any)
+  const hasAdjudications = previousAdjudications && previousAdjudications.size > 0;
   const prevFindingsBlock = previousFindings && previousFindings.length > 0
     ? `\n\n=== PREVIOUS VERSION FINDINGS (DATA — DO NOT COPY VERBATIM) ===
-The previous version of this document had these findings relevant to your check area:
-${sanitizePreviousFindings(previousFindings)}
+The previous version of this document had these findings relevant to your check area.
+Each finding includes an "index" for tracking:
+${sanitizePreviousFindings(previousFindings, previousFindingIndices, previousAdjudications)}
 
 Instructions:
-- Determine which previous findings have been addressed in this version
-- Identify NEW issues not present before
-- Mark persistent issues with previouslyFlagged: true
+- For each previous finding, determine if it has been RESOLVED or is STILL PRESENT in this version
+- If RESOLVED in this version → add to resolvedPreviousFindings with the index + brief reasoning
+- If STILL PRESENT → mark the corresponding new finding with previouslyFlagged: true AND include the index in matchedPreviousFindingIndices
+- Identify NEW issues not present before (no previouslyFlagged, no matchedPreviousFindingIndices)${hasAdjudications ? `
+
+Previous findings may include user adjudication data:
+- userStatus "dismissed": The user/supervisor deemed this not applicable or irrelevant. Do NOT re-flag unless you have very strong evidence it remains a critical issue in the current version.
+- userStatus "fixed": The user claims to have addressed this finding. Verify whether it was actually fixed in the current version.
+- overriddenSeverity: A supervisor adjusted the severity level. Use the overridden severity for your assessment.
+- hasComments: There is supervisor discussion on this finding — treat it as actively reviewed.
+- No userStatus means the user has not acted on this finding.` : ""}
 === END PREVIOUS VERSION FINDINGS ===`
     : "";
 
@@ -133,8 +163,9 @@ Instructions:
 
   const { data, usage } = result;
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const resolvedCount = data.resolvedPreviousFindings?.length ?? 0;
   const usageStr = usage ? ` (${usage.inputTokens} in / ${usage.outputTokens} out)` : "";
-  console.log(`[check:${groupId}] Completed in ${elapsed}s — ${data.findings.length} findings${usageStr}`);
+  console.log(`[check:${groupId}] Completed in ${elapsed}s — ${data.findings.length} findings, ${resolvedCount} resolved${usageStr}`);
 
   return { ...data, usage };
 }

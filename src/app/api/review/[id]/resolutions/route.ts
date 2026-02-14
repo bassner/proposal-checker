@@ -111,6 +111,15 @@ export async function PUT(
     );
   }
 
+  // Validate findingIndex is within bounds of the review's findings
+  const feedback = review.feedback as { findings?: unknown[] } | null;
+  if (feedback?.findings && findingIndex >= feedback.findings.length) {
+    return Response.json(
+      { error: `findingIndex ${findingIndex} is out of bounds (review has ${feedback.findings.length} findings)` },
+      { status: 400 }
+    );
+  }
+
   // Validate status
   const status = typeof body.status === "string" ? body.status : "";
   if (!RESOLUTION_STATUSES.includes(status as ResolutionStatus)) {

@@ -1,4 +1,4 @@
-import type { MergedFeedback, Severity, Finding } from "@/types/review";
+import type { MergedFeedback, Severity, Finding, VersionComparison } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -190,5 +190,66 @@ export function compareReviews(
     improvementScore,
     previousDate,
     previousReviewId,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// LLM-powered version comparison → ImprovementSummary converter
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a VersionComparison (from LLM-powered pipeline) to an ImprovementSummary.
+ * This allows the existing ImprovementSummaryCard to render LLM-sourced data.
+ */
+export function fromVersionComparison(
+  vc: VersionComparison,
+  previousFindings: Finding[],
+  currentFindings: Finding[],
+  previousDate: string,
+): ImprovementSummary {
+  const previousCounts = countBySeverity(previousFindings);
+  const currentCounts = countBySeverity(currentFindings);
+
+  const fixed: IssueComparison[] = vc.resolvedFindings.map((f) => ({
+    title: f.title,
+    severity: f.severity,
+    category: f.category,
+  }));
+
+  const newIssues: IssueComparison[] = vc.newFindings.map((f) => ({
+    title: f.title,
+    severity: f.severity,
+    category: f.category,
+  }));
+
+  const persistent: IssueComparison[] = vc.persistentFindings.map((f) => ({
+    title: f.currentTitle,
+    severity: f.severity,
+    category: f.category,
+  }));
+
+  // Calculate improvement score from weighted severity
+  const prevWeighted = previousFindings.reduce((sum, f) => sum + SEVERITY_WEIGHTS[f.severity], 0);
+  const currWeighted = currentFindings.reduce((sum, f) => sum + SEVERITY_WEIGHTS[f.severity], 0);
+
+  let improvementScore: number;
+  if (prevWeighted === 0) {
+    improvementScore = currWeighted === 0 ? 100 : 0;
+  } else {
+    const reduction = (prevWeighted - currWeighted) / prevWeighted;
+    improvementScore = Math.round(Math.max(0, Math.min(100, reduction * 100)));
+  }
+
+  return {
+    previousCounts,
+    currentCounts,
+    previousTotal: previousFindings.length,
+    currentTotal: currentFindings.length,
+    fixed,
+    newIssues,
+    persistent,
+    improvementScore,
+    previousDate,
+    previousReviewId: vc.previousReviewId,
   };
 }

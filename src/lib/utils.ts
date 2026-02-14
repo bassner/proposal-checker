@@ -23,14 +23,3 @@ export function estimateCost(inputTokens: number, outputTokens: number): string 
   return `~$${cost.toFixed(2)}`;
 }
 
-/** Calculate tokens per second given token count and start/end timestamps */
-export function calcTokPerSec(
-  tokens: number,
-  startTime: number,
-  endTime?: number
-): string {
-  const elapsed = ((endTime ?? Date.now()) - startTime) / 1000;
-  if (elapsed <= 0) return "–";
-  const rate = tokens / elapsed;
-  return rate < 10 ? rate.toFixed(1) : Math.round(rate).toString();
-}

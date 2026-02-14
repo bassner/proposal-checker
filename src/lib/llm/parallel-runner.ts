@@ -1,6 +1,6 @@
 import pLimit from "p-limit";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { CheckGroupId, CheckGroupMeta, Finding, LLMPhase } from "@/types/review";
+import type { CheckGroupId, CheckGroupMeta, Finding, FindingAdjudication, LLMPhase } from "@/types/review";
 import type { CheckGroupResult } from "@/types/review";
 import { normalizeFindingCategory } from "@/types/review";
 import { runCheckGroup } from "./check-runner";
@@ -40,6 +40,8 @@ interface ParallelRunnerOptions {
   prompts?: Record<string, string>;
   /** Findings from the previous version of this document. Filtered by category per check group. */
   previousFindings?: Finding[];
+  /** User adjudication decisions on previous findings. */
+  previousAdjudications?: ReadonlyMap<number, FindingAdjudication>;
   maxConcurrency?: number;
   /** Review ID for persisting per-check performance metrics. */
   reviewId?: string;
@@ -69,9 +71,15 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export interface AllChecksResult {
+  results: CheckGroupResult[];
+  /** Union of all previous finding indices that were sent to successful check groups. */
+  sentPreviousFindingIndices: Set<number>;
+}
+
 export async function runAllChecks(
   options: ParallelRunnerOptions
-): Promise<CheckGroupResult[]> {
+): Promise<AllChecksResult> {
   const {
     model,
     proposalText,
@@ -79,6 +87,7 @@ export async function runAllChecks(
     checkGroups,
     prompts,
     previousFindings,
+    previousAdjudications,
     maxConcurrency,
     reviewId,
     onCheckStart,
@@ -93,6 +102,9 @@ export async function runAllChecks(
   console.log(`[parallel] Starting ${checkGroups.length} checks (concurrency: ${concurrency})`);
 
   const limit = pLimit(concurrency);
+
+  // Track which previous finding indices were sent to successful check groups
+  const sentPreviousFindingIndices = new Set<number>();
 
   const tasks = checkGroups.map((group) =>
     limit(async (): Promise<CheckGroupResult> => {
@@ -118,19 +130,30 @@ export async function runAllChecks(
         try {
           // Filter previous findings by category for this check group
           let groupPrevFindings: Finding[] | undefined;
+          let groupPrevFindingIndices: number[] | undefined;
+          let groupPrevAdjudications: ReadonlyMap<number, FindingAdjudication> | undefined;
           if (previousFindings && previousFindings.length > 0) {
             const relevantCategories = new Set(CHECK_GROUP_CATEGORIES[group.id] ?? []);
-            const filtered = previousFindings.filter((f) =>
-              relevantCategories.has(normalizeFindingCategory(f.category))
-            );
-            // If no category-specific findings, pass nothing (avoid noisy irrelevant context)
-            const candidates = filtered;
-            // Truncate by severity (most severe first): critical > major > minor > suggestion
-            const severityOrder = { critical: 0, major: 1, minor: 2, suggestion: 3 };
-            const sorted = [...candidates].sort((a, b) =>
-              (severityOrder[a.severity] ?? 4) - (severityOrder[b.severity] ?? 4)
-            );
-            groupPrevFindings = sorted.slice(0, MAX_PREV_FINDINGS_PER_GROUP);
+            // Build [finding, originalIndex] pairs for tracking
+            const indexedFiltered = previousFindings
+              .map((f, i) => ({ finding: f, originalIndex: i }))
+              .filter(({ finding }) =>
+                relevantCategories.has(normalizeFindingCategory(finding.category))
+              );
+            // Truncate by effective severity (overridden if present): critical > major > minor > suggestion
+            const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, suggestion: 3 };
+            const sorted = [...indexedFiltered].sort((a, b) => {
+              const effSevA = previousAdjudications?.get(a.originalIndex)?.overriddenSeverity ?? a.finding.severity;
+              const effSevB = previousAdjudications?.get(b.originalIndex)?.overriddenSeverity ?? b.finding.severity;
+              return (severityOrder[effSevA] ?? 4) - (severityOrder[effSevB] ?? 4);
+            });
+            const truncated = sorted.slice(0, MAX_PREV_FINDINGS_PER_GROUP);
+            groupPrevFindings = truncated.map(({ finding }) => finding);
+            groupPrevFindingIndices = truncated.map(({ originalIndex }) => originalIndex);
+            // Pass only adjudications relevant to this group's findings
+            if (previousAdjudications && previousAdjudications.size > 0) {
+              groupPrevAdjudications = previousAdjudications;
+            }
           }
 
           const result = await runCheckGroup({
@@ -140,6 +163,8 @@ export async function runAllChecks(
             pageImages,
             systemPrompt: prompts?.[group.id],
             previousFindings: groupPrevFindings,
+            previousFindingIndices: groupPrevFindingIndices,
+            previousAdjudications: groupPrevAdjudications,
             signal: controller.signal,
             onToken: onCheckTokens
               ? (count, phase) => onCheckTokens(group.id, count, phase)
@@ -152,6 +177,13 @@ export async function runAllChecks(
           clearTimeout(timeout);
           pipelineSignal?.removeEventListener("abort", onPipelineAbort);
           onCheckComplete?.(group.id, result.findings.length, result.usage);
+
+          // Track which previous finding indices were sent to this successful group
+          if (groupPrevFindingIndices) {
+            for (const idx of groupPrevFindingIndices) {
+              sentPreviousFindingIndices.add(idx);
+            }
+          }
 
           // Record performance metrics (fire-and-forget)
           if (reviewId) {
@@ -170,6 +202,7 @@ export async function runAllChecks(
           return {
             groupId: group.id,
             findings: result.findings,
+            ...(result.resolvedPreviousFindings?.length ? { resolvedPreviousFindings: result.resolvedPreviousFindings } : {}),
           };
         } catch (error) {
           clearTimeout(timeout);
@@ -227,7 +260,7 @@ export async function runAllChecks(
 
   const successCount = mapped.filter((r) => !r.error).length;
   const totalFindings = mapped.reduce((sum, r) => sum + r.findings.length, 0);
-  console.log(`[parallel] All checks done: ${successCount}/${checkGroups.length} succeeded, ${totalFindings} total findings`);
+  console.log(`[parallel] All checks done: ${successCount}/${checkGroups.length} succeeded, ${totalFindings} total findings, ${sentPreviousFindingIndices.size} prev finding indices sent`);
 
-  return mapped;
+  return { results: mapped, sentPreviousFindingIndices };
 }

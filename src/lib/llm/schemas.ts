@@ -29,6 +29,17 @@ export const findingSchema = z.object({
     .boolean()
     .optional()
     .describe("Set to true if this issue was also present in the previous version of the document. Only set when reviewing a revised document."),
+  matchedPreviousFindingIndices: z
+    .array(z.number().int().nonnegative())
+    .optional()
+    .describe("Indices of previous findings this finding corresponds to (for version tracking)"),
+});
+
+export const resolvedPreviousFindingSchema = z.object({
+  previousFindingIndex: z.number().int().nonnegative()
+    .describe("Index of the resolved finding in the previous review's findings array"),
+  title: z.string().describe("Title of the previous finding (for cross-check)"),
+  reasoning: z.string().max(200).describe("1-2 sentence explanation of how this was resolved"),
 });
 
 export const checkGroupOutputSchema = z.object({
@@ -37,7 +48,45 @@ export const checkGroupOutputSchema = z.object({
     .describe(
       "List of issues found. Return an empty array if no issues were detected for this check group."
     ),
+  resolvedPreviousFindings: z
+    .array(resolvedPreviousFindingSchema)
+    .optional()
+    .describe("Previous findings addressed in this version. Only for revision reviews."),
 });
+
+export const versionComparisonSchema = z.object({
+  previousReviewId: z.string().uuid().describe("ID of the previous review being compared against"),
+  resolvedFindings: z.array(z.object({
+    previousFindingIndex: z.number().int().nonnegative(),
+    title: z.string(),
+    severity: severitySchema,
+    category: findingCategorySchema,
+    reasoning: z.string().max(200),
+  })),
+  persistentFindings: z.array(z.object({
+    previousFindingIndex: z.number().int().nonnegative(),
+    previousTitle: z.string(),
+    currentTitle: z.string(),
+    severity: severitySchema,
+    category: findingCategorySchema,
+    conflicted: z.boolean().optional().describe("True if check groups disagreed on resolution status"),
+  })),
+  unreviewedFindings: z.array(z.object({
+    previousFindingIndex: z.number().int().nonnegative(),
+    title: z.string(),
+    severity: severitySchema,
+    category: findingCategorySchema,
+    reason: z.string().describe("Why this finding couldn't be evaluated (e.g. check group failed)"),
+  })),
+  newFindings: z.array(z.object({
+    title: z.string(),
+    severity: severitySchema,
+    category: findingCategorySchema,
+  })),
+  improvementSummary: z.string().describe("1-2 sentence narrative of what improved and what regressed"),
+});
+
+export const mergedFindingSchema = findingSchema;
 
 export const mergedFeedbackSchema = z.object({
   overallAssessment: z
@@ -52,6 +101,8 @@ export const mergedFeedbackSchema = z.object({
     .array(findingSchema)
     .max(25)
     .describe("Deduplicated, consolidated list of 0-25 actionable feedback items, sorted by severity (critical first). Empty array if no issues found."),
+  versionComparison: versionComparisonSchema.optional()
+    .describe("Version comparison data. Only present when reviewing a revised document."),
 });
 
 export type CheckGroupOutput = z.infer<typeof checkGroupOutputSchema>;

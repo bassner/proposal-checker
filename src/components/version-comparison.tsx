@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import type { Finding, MergedFeedback, Severity } from "@/types/review";
+import type { Finding, MergedFeedback, Severity, VersionComparison as VersionComparisonData } from "@/types/review";
 import { cn } from "@/lib/utils";
 import {
   GitCompareArrows,
@@ -37,6 +37,10 @@ interface ComparedFinding {
   finding: Finding;
   /** For persistent findings, the matching finding from the other version. */
   matchedFinding?: Finding;
+  /** LLM-generated reasoning for why this finding was resolved. */
+  reasoning?: string;
+  /** True if check groups disagreed on resolution status. */
+  conflicted?: boolean;
 }
 
 interface VersionComparisonProps {
@@ -147,6 +151,70 @@ function compareFindings(
   return result;
 }
 
+/**
+ * Convert LLM-powered VersionComparison data into ComparedFinding[] for rendering.
+ * Uses the structured data directly instead of client-side similarity matching.
+ */
+function fromVersionComparisonData(
+  vc: VersionComparisonData,
+  oldFindings: Finding[],
+  newFindings: Finding[],
+): ComparedFinding[] {
+  const result: ComparedFinding[] = [];
+
+  // Resolved = previous findings addressed in the new version
+  for (const rf of vc.resolvedFindings) {
+    const prevFinding = oldFindings[rf.previousFindingIndex];
+    if (prevFinding) {
+      result.push({
+        status: "resolved",
+        finding: prevFinding,
+        reasoning: rf.reasoning,
+      });
+    }
+  }
+
+  // Persistent = findings present in both versions
+  for (const pf of vc.persistentFindings) {
+    const prevFinding = oldFindings[pf.previousFindingIndex];
+    // Try to find the current finding by title match
+    const currentFinding = newFindings.find((f) => f.title === pf.currentTitle);
+    result.push({
+      status: "persistent",
+      finding: currentFinding ?? {
+        title: pf.currentTitle,
+        severity: pf.severity,
+        category: pf.category,
+        description: "",
+        locations: [],
+      },
+      matchedFinding: prevFinding,
+      conflicted: pf.conflicted,
+    });
+  }
+
+  // New = findings only in the current version
+  for (const nf of vc.newFindings) {
+    const currentFinding = newFindings.find((f) => f.title === nf.title);
+    result.push({
+      status: "new",
+      finding: currentFinding ?? {
+        title: nf.title,
+        severity: nf.severity,
+        category: nf.category,
+        description: "",
+        locations: [],
+      },
+    });
+  }
+
+  // Sort: persistent first, then new, then resolved
+  const ORDER: Record<ComparisonStatus, number> = { persistent: 0, new: 1, resolved: 2 };
+  result.sort((a, b) => ORDER[a.status] - ORDER[b.status]);
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -235,11 +303,22 @@ function ComparedFindingCard({ item }: { item: ComparedFinding }) {
           <p className="text-sm text-slate-300 dark:text-slate-400">
             {item.finding.description}
           </p>
+          {item.status === "resolved" && item.reasoning && (
+            <div className="rounded-md bg-emerald-500/5 border border-emerald-500/10 p-2">
+              <p className="text-xs font-medium text-emerald-400 mb-1">Resolution:</p>
+              <p className="text-xs text-slate-400">{item.reasoning}</p>
+            </div>
+          )}
           {item.status === "persistent" && item.matchedFinding && (
             <div className="rounded-md bg-amber-500/5 border border-amber-500/10 p-2">
               <p className="text-xs font-medium text-amber-400 mb-1">Previous version:</p>
               <p className="text-xs text-slate-400">{item.matchedFinding.description}</p>
             </div>
+          )}
+          {item.conflicted && (
+            <p className="text-[10px] text-amber-500/70 italic">
+              Note: Check groups disagreed on whether this was resolved.
+            </p>
           )}
         </div>
       )}
@@ -368,8 +447,16 @@ export function VersionComparison(props: VersionComparisonProps) {
 
   const comparison = useMemo(() => {
     if (!leftFeedback?.findings || !rightFeedback?.findings) return null;
+
+    // Prefer LLM-powered version comparison when available and matching
+    const vc = rightFeedback.versionComparison;
+    if (vc && vc.previousReviewId === leftVersion?.reviewId) {
+      return fromVersionComparisonData(vc, leftFeedback.findings, rightFeedback.findings);
+    }
+
+    // Fall back to client-side similarity matching for legacy reviews
     return compareFindings(leftFeedback.findings, rightFeedback.findings);
-  }, [leftFeedback, rightFeedback]);
+  }, [leftFeedback, rightFeedback, leftVersion?.reviewId]);
 
   const stats = useMemo(() => {
     if (!comparison) return { resolved: 0, persistent: 0, new: 0 };
@@ -426,6 +513,16 @@ export function VersionComparison(props: VersionComparisonProps) {
             <p className="text-lg font-bold text-red-400">{stats.new}</p>
             <p className="text-xs text-red-400/70">New</p>
           </div>
+        </div>
+      )}
+
+      {/* LLM improvement summary */}
+      {rightFeedback?.versionComparison?.previousReviewId === leftVersion?.reviewId &&
+        rightFeedback.versionComparison.improvementSummary && (
+        <div className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3">
+          <p className="text-sm text-slate-300">
+            {rightFeedback.versionComparison.improvementSummary}
+          </p>
         </div>
       )}
 

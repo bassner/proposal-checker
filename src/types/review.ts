@@ -180,12 +180,81 @@ export interface Finding {
   addedBy?: string;
   /** When true, this finding was also present in the previous version of the document. */
   previouslyFlagged?: boolean;
+  /** Indices of previous findings this finding corresponds to (for version tracking). */
+  matchedPreviousFindingIndices?: number[];
+}
+
+// ── Finding adjudication (user decisions for version comparison) ─────────
+
+export interface FindingAdjudication {
+  /** User-set status from annotations (dismissed = not applicable, fixed = addressed). */
+  annotationStatus?: "dismissed" | "fixed";
+  /** Admin-overridden severity (latest override). */
+  overriddenSeverity?: Severity;
+  /** Whether supervisor comments exist on this finding. */
+  hasComments?: boolean;
+}
+
+// ── Version comparison (LLM-powered) ────────────────────────────────────
+
+export interface ResolvedPreviousFinding {
+  /** Index of the resolved finding in the previous review's findings array. */
+  previousFindingIndex: number;
+  /** Title of the previous finding (for cross-check). */
+  title: string;
+  /** 1-2 sentence explanation of how this was resolved. */
+  reasoning: string;
+}
+
+export interface VersionComparisonResolved {
+  previousFindingIndex: number;
+  title: string;
+  severity: Severity;
+  category: FindingCategory;
+  reasoning: string;
+}
+
+export interface VersionComparisonPersistent {
+  previousFindingIndex: number;
+  previousTitle: string;
+  currentTitle: string;
+  severity: Severity;
+  category: FindingCategory;
+  /** True if check groups disagreed on resolution status. */
+  conflicted?: boolean;
+}
+
+export interface VersionComparisonUnreviewed {
+  previousFindingIndex: number;
+  title: string;
+  severity: Severity;
+  category: FindingCategory;
+  /** Why this finding couldn't be evaluated (e.g. check group failed). */
+  reason: string;
+}
+
+export interface VersionComparisonNew {
+  title: string;
+  severity: Severity;
+  category: FindingCategory;
+}
+
+export interface VersionComparison {
+  previousReviewId: string;
+  resolvedFindings: VersionComparisonResolved[];
+  persistentFindings: VersionComparisonPersistent[];
+  unreviewedFindings: VersionComparisonUnreviewed[];
+  newFindings: VersionComparisonNew[];
+  /** 1-2 sentence narrative of what improved and what regressed. */
+  improvementSummary: string;
 }
 
 export interface CheckGroupResult {
   groupId: CheckGroupId;
   findings: Finding[];
   error?: string;
+  /** Previous findings that were resolved in this version (per-check LLM output). */
+  resolvedPreviousFindings?: ResolvedPreviousFinding[];
 }
 
 export interface FailedGroupInfo {
@@ -200,6 +269,8 @@ export interface MergedFeedback {
   findings: Finding[];
   /** Check groups that failed during the review. Present only when partial results are returned. */
   failedGroups?: FailedGroupInfo[];
+  /** LLM-powered version comparison data. Only present when reviewing a revised document. */
+  versionComparison?: VersionComparison;
 }
 
 export type LLMPhase = "thinking" | "generating";

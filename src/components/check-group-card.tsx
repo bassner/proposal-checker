@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, Circle, Loader2, X } from "lucide-react";
 import type { CheckGroupState, ProviderType } from "@/types/review";
-import { cn, formatTokensK, calcTokPerSec } from "@/lib/utils";
+import { cn, formatTokensK } from "@/lib/utils";
 import { LiveTimer } from "./live-timer";
 
 interface CheckGroupCardProps {
@@ -86,7 +86,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
           {group.label}
         </span>
 
-        {/* Right-aligned stats: findings → phase → tokens → tok/s → time */}
+        {/* Right-aligned stats: findings → phase → tokens → time */}
         {group.status === "done" && group.findingCount !== undefined && (
           <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-xs text-slate-500 dark:text-white/40">
             {group.findingCount} {group.findingCount === 1 ? "finding" : "findings"}
@@ -112,30 +112,6 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
           </span>
         )}
 
-        {((group.tokenCount !== undefined && group.tokenCount > 0) || group.status === "active") && group.startTime && (
-          <span className={cn(
-            "hidden w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs sm:inline",
-            group.status === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
-          )}>
-            {hasNoTokensYet
-              ? "–"
-              : group.status === "active"
-                ? calcTokPerSec(
-                    isOllama
-                      ? group.tokenCount!
-                      : group.generatingStartTime ? group.tokenCount! - (group.generatingStartTokenCount ?? 0) : group.tokenCount!,
-                    isOllama
-                      ? group.startTime
-                      : group.generatingStartTime ?? group.startTime,
-                    group.endTime
-                  ) + " t/s"
-                : (isOllama
-                  ? calcTokPerSec(group.tokenCount!, group.startTime, group.endTime) + " t/s"
-                  : group.generatingStartTime
-                    ? calcTokPerSec(group.tokenCount! - (group.generatingStartTokenCount ?? 0), group.generatingStartTime, group.endTime) + " t/s"
-                    : "")}
-          </span>
-        )}
 
         {group.status === "active" && group.startTime && (
           <LiveTimer startTime={group.startTime} className="w-[3rem] shrink-0 whitespace-nowrap text-right text-xs text-blue-400/60" />

@@ -1,9 +1,9 @@
-import type { CheckGroupId, LLMPhase } from "@/types/review";
+import type { CheckGroupId, LLMPhase, Finding, MergedFeedback } from "@/types/review";
 import { getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSessionWithId, emitEvent, setSessionStatus } from "@/lib/sessions";
-import { getReviewById, claimReviewForRetry, completeReview, failReview, logAuditEvent, generateRevisionSummary, getPreviousVersionReviewId } from "@/lib/db";
+import { getReviewById, claimReviewForRetry, completeReview, failReview, logAuditEvent, generateRevisionSummary, getPreviousVersionReviewId, getAdjudicationsForReview } from "@/lib/db";
 import { readPdf } from "@/lib/uploads";
 import { requireAuth } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
@@ -159,6 +159,23 @@ export async function POST(
     retryCount, provider, mode,
   }, session.user.name);
 
+  // Step 6.5: Fetch previous version findings for diff-aware retry (if in a version group)
+  let previousFindings: Finding[] | undefined;
+  let previousAssessment: string | undefined;
+  let previousReviewId: string | undefined;
+  let previousAdjudications: Map<number, import("@/types/review").FindingAdjudication> | undefined;
+  const prevVersionId = await getPreviousVersionReviewId(id).catch(() => null);
+  if (prevVersionId) {
+    const prevReview = await getReviewById(prevVersionId);
+    if (prevReview?.status === "done" && prevReview.feedback) {
+      const prevFeedback = prevReview.feedback as MergedFeedback;
+      previousFindings = prevFeedback.findings;
+      previousAssessment = prevFeedback.summary;
+      previousReviewId = prevVersionId;
+      previousAdjudications = await getAdjudicationsForReview(prevVersionId);
+    }
+  }
+
   // Step 7: Throttle setup + fire pipeline (same pattern as initial submit)
   const lastSend: Record<string, number> = {};
   const THROTTLE_MS = 200;
@@ -221,7 +238,7 @@ export async function POST(
       failReview(id, sanitizedError, dbMeta, retryCount)
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, selectedGroups, id);
+  }, selectedGroups, id, previousFindings ? { previousFindings, previousAssessment, previousReviewId, previousAdjudications } : undefined);
 
   return Response.json({ id }, { status: 202 });
 }

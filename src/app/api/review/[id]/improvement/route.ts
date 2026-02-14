@@ -1,6 +1,6 @@
 import { requireAuth } from "@/lib/auth/helpers";
 import { isAvailable, getReviewById, getPreviousReviewsForFile, getPreviousVersionReviewId } from "@/lib/db";
-import { compareReviews } from "@/lib/review-improvement";
+import { compareReviews, fromVersionComparison } from "@/lib/review-improvement";
 import type { MergedFeedback } from "@/types/review";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -9,6 +9,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * GET /api/review/[id]/improvement — Compare this review to the previous
  * review of the same file by the same user. Returns an improvement summary
  * or { available: false } if no previous review exists.
+ *
+ * Priority 1: Use LLM-powered versionComparison from feedback (if present).
+ * Priority 2: Fall back to token-overlap compareReviews() for legacy reviews.
  */
 export async function GET(
   _request: Request,
@@ -54,7 +57,31 @@ export async function GET(
     return Response.json({ available: false });
   }
 
-  // Priority 1: Version chain lookup (more reliable than filename matching)
+  // Priority 1: Use LLM-powered versionComparison from feedback
+  // Validate that the LLM-produced previousReviewId matches the actual version chain
+  // to prevent data leakage from hallucinated/poisoned IDs.
+  if (currentFeedback.versionComparison) {
+    const vc = currentFeedback.versionComparison;
+    const chainPrevId = await getPreviousVersionReviewId(id);
+    if (chainPrevId && chainPrevId === vc.previousReviewId) {
+      const prevReview = await getReviewById(vc.previousReviewId);
+      if (prevReview && prevReview.userId === review.userId) {
+        const prevFeedback = prevReview.feedback as MergedFeedback;
+        if (prevFeedback?.findings) {
+          const summary = fromVersionComparison(
+            vc,
+            prevFeedback.findings,
+            currentFeedback.findings,
+            prevReview.createdAt,
+          );
+          return Response.json({ available: true, ...summary });
+        }
+      }
+    }
+    // Chain mismatch or access failure — fall through to legacy matching
+  }
+
+  // Priority 2: Version chain lookup with token-overlap fallback
   const prevVersionId = await getPreviousVersionReviewId(id);
   if (prevVersionId) {
     const prevReview = await getReviewById(prevVersionId);
@@ -72,7 +99,7 @@ export async function GET(
     }
   }
 
-  // Priority 2: Fall back to filename matching (legacy compat for unlinked reviews)
+  // Priority 3: Fall back to filename matching (legacy compat for unlinked reviews)
   if (!review.fileName) {
     return Response.json({ available: false });
   }

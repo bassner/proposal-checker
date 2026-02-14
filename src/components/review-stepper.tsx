@@ -6,7 +6,7 @@ import { StepItem } from "./step-item";
 import { CheckGroupCard } from "./check-group-card";
 import { LiveTimer } from "./live-timer";
 import { Loader2 } from "lucide-react";
-import { cn, formatTokensK, calcTokPerSec, estimateCost } from "@/lib/utils";
+import { cn, formatTokensK, estimateCost } from "@/lib/utils";
 
 interface ReviewStepperProps {
   state: ReviewState;
@@ -86,7 +86,7 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
               </div>
             )}
 
-          {/* Merge token count + tok/s + timer while active or after finish */}
+          {/* Merge token count + timer while active or after finish */}
           {step === "merge" && state.mergeStartTime && (
             <div>
               <div className="flex items-center gap-2 text-xs">
@@ -108,30 +108,6 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
                   )}>
                     {mergeHasNoTokensYet ? "–" : formatTokensK(state.mergeTokens + state.mergeReasoningTokens)}
-                  </span>
-                )}
-                {(state.mergeTokens > 0 || state.steps.merge === "active") && (
-                  <span className={cn(
-                    "hidden w-[3.5rem] text-right tabular-nums sm:inline",
-                    state.steps.merge === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
-                  )}>
-                    {mergeHasNoTokensYet
-                      ? "–"
-                      : state.steps.merge === "active"
-                        ? calcTokPerSec(
-                            isOllama
-                              ? state.mergeTokens
-                              : state.mergeGeneratingStartTime ? state.mergeTokens - state.mergeGeneratingStartTokenCount : state.mergeTokens,
-                            isOllama
-                              ? state.mergeStartTime
-                              : state.mergeGeneratingStartTime ?? state.mergeStartTime,
-                            state.mergeEndTime ?? undefined
-                          ) + " t/s"
-                        : (isOllama
-                          ? calcTokPerSec(state.mergeTokens, state.mergeStartTime, state.mergeEndTime ?? undefined) + " t/s"
-                          : state.mergeGeneratingStartTime
-                            ? calcTokPerSec(state.mergeTokens - state.mergeGeneratingStartTokenCount, state.mergeGeneratingStartTime, state.mergeEndTime ?? undefined) + " t/s"
-                            : "")}
                   </span>
                 )}
                 {state.steps.merge === "active" && (

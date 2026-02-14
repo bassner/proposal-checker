@@ -25,6 +25,7 @@ import { ImprovementSummaryCard } from "@/components/improvement-summary";
 import { FindingsHeatmap } from "@/components/findings-heatmap";
 import { ReviewTags } from "@/components/review-tags";
 import { UploadVersionModal } from "@/components/upload-version-modal";
+import { VersionComparison } from "@/components/version-comparison";
 
 /**
  * Review progress/results page at `/review/[id]`.
@@ -365,6 +366,16 @@ function ResultsView({ feedback: initialFeedback, fileName, reviewId, shareToken
             pageFilter={pageFilter}
             onAddFinding={handleAddFinding}
           />
+          {/* Version comparison — shown when review has version history */}
+          {versionInfo && versionInfo.versions.length >= 2 && (
+            <div className="mt-6">
+              <VersionComparison
+                reviewId={reviewId}
+                versions={versionInfo.versions}
+                groupId={versionInfo.groupId}
+              />
+            </div>
+          )}
         </main>
         {role === "admin" && (
           <div className="no-print">

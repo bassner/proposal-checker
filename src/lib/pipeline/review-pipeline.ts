@@ -1,16 +1,20 @@
-import type { ProviderType, ReviewMode, Finding } from "@/types/review";
-import type { CheckGroupId, CheckGroupMeta, LLMPhase, MergedFeedback, FailedGroupInfo } from "@/types/review";
-import { getCheckGroups, ALL_CHECK_GROUP_META } from "@/types/review";
+import type { ProviderType, ReviewMode, Finding, ResolvedPreviousFinding, FindingAdjudication } from "@/types/review";
+import type { CheckGroupId, CheckGroupMeta, LLMPhase, MergedFeedback, FailedGroupInfo, VersionComparison } from "@/types/review";
+import { getCheckGroups, ALL_CHECK_GROUP_META, normalizeFindingCategory } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { createModel } from "@/lib/llm/provider";
 import { extractPDFText } from "@/lib/pdf/extract";
 import { renderPDFPages } from "@/lib/pdf/render";
 import { runAllChecks } from "@/lib/llm/parallel-runner";
 import { mergeFindings } from "@/lib/llm/merger";
+import type { MergerRevisionContext } from "@/lib/llm/merger";
 import { getCheckGroupPrompts } from "@/lib/llm/prompts";
 import { countTokens } from "@/lib/llm/tokens";
 
 const PIPELINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+/** Max serialized chars for resolution reports passed to the merger. */
+const MAX_RESOLUTION_REPORT_CHARS = 4000;
 
 /**
  * Event callbacks from the review pipeline, wired to SSE emission in the route handler.
@@ -58,6 +62,10 @@ export async function runReviewPipeline(
     previousFindings?: Finding[];
     /** Previous version's overall assessment. */
     previousAssessment?: string;
+    /** Previous review ID (for version comparison tracking). */
+    previousReviewId?: string;
+    /** User adjudication decisions on previous findings. */
+    previousAdjudications?: ReadonlyMap<number, FindingAdjudication>;
   }
 ): Promise<void> {
   const maxPages = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
@@ -120,13 +128,14 @@ export async function runReviewPipeline(
     cumulativeInputTokens += checkInputTokens;
     callbacks.onInputEstimate(cumulativeInputTokens);
 
-    const checkResults = await runAllChecks({
+    const { results: checkResults, sentPreviousFindingIndices } = await runAllChecks({
       model,
       proposalText: extraction.fullText,
       pageImages,
       checkGroups,
       prompts,
       previousFindings: options?.previousFindings,
+      previousAdjudications: options?.previousAdjudications,
       maxConcurrency,
       reviewId,
       signal: pipelineAbort.signal,
@@ -157,6 +166,139 @@ export async function runReviewPipeline(
       return;
     }
 
+    // Step 3.5: Build revision context for the merger (if reviewing a revised document)
+    const isRevision = options?.previousFindings && options.previousFindings.length > 0 && options.previousReviewId;
+    let revisionContext: MergerRevisionContext | undefined;
+
+    if (isRevision) {
+      const prevFindings = options!.previousFindings!;
+      const previousReviewId = options!.previousReviewId!;
+
+      // Aggregate resolvedPreviousFindings from all check groups, deduped by index.
+      // If multiple groups report the same index as resolved, keep the first one.
+      // Apply conflict resolution: if any successful group maps a current finding to a
+      // previous finding (via matchedPreviousFindingIndices), it stays persistent
+      // regardless of resolution reports from other groups.
+      // Special case: if a finding was dismissed by the user, don't auto-add to persistent.
+      // If the LLM still flags a dismissed finding, mark it as conflicted.
+      const adjudications = options!.previousAdjudications;
+      const persistentIndices = new Set<number>();
+      const conflictedIndices = new Set<number>();
+      for (const cr of checkResults) {
+        if (cr.error) continue; // skip failed groups
+        for (const f of cr.findings) {
+          // Any finding with matched previous indices is persistence evidence,
+          // regardless of whether previouslyFlagged is also set.
+          if (f.matchedPreviousFindingIndices?.length) {
+            for (const idx of f.matchedPreviousFindingIndices) {
+              // Bounds check
+              if (idx >= 0 && idx < prevFindings.length) {
+                const adj = adjudications?.get(idx);
+                if (adj?.annotationStatus === "dismissed") {
+                  // User dismissed this finding — if LLM re-flags it, mark conflicted
+                  // but still add to persistent (LLM evidence overrides user dismissal)
+                  console.log(`[pipeline] Conflict: index ${idx} was dismissed by user but re-flagged by LLM — marking conflicted`);
+                  conflictedIndices.add(idx);
+                }
+                persistentIndices.add(idx);
+              } else {
+                console.warn(`[pipeline] matchedPreviousFindingIndex ${idx} out of range (${prevFindings.length}), ignoring`);
+              }
+            }
+          }
+        }
+      }
+
+      const resolutionsByIndex = new Map<number, ResolvedPreviousFinding>();
+      for (const cr of checkResults) {
+        if (cr.error || !cr.resolvedPreviousFindings) continue;
+        for (const rpf of cr.resolvedPreviousFindings) {
+          // Validate index is in range
+          if (rpf.previousFindingIndex < 0 || rpf.previousFindingIndex >= prevFindings.length) {
+            console.warn(`[pipeline] resolvedPreviousFinding index ${rpf.previousFindingIndex} out of range (${prevFindings.length}), skipping`);
+            continue;
+          }
+          // Validate title matches (log warning on mismatch)
+          const expectedTitle = prevFindings[rpf.previousFindingIndex].title;
+          if (rpf.title !== expectedTitle) {
+            console.warn(`[pipeline] resolvedPreviousFinding title mismatch at index ${rpf.previousFindingIndex}: expected "${expectedTitle}", got "${rpf.title}"`);
+          }
+          // Conflict resolution: persistent wins over resolved
+          if (persistentIndices.has(rpf.previousFindingIndex)) {
+            console.log(`[pipeline] Conflict: index ${rpf.previousFindingIndex} reported as both resolved and persistent — marking persistent (conflicted)`);
+            conflictedIndices.add(rpf.previousFindingIndex);
+            continue; // skip this resolution
+          }
+          // Dedupe by index (keep first)
+          if (!resolutionsByIndex.has(rpf.previousFindingIndex)) {
+            resolutionsByIndex.set(rpf.previousFindingIndex, {
+              ...rpf,
+              reasoning: rpf.reasoning.slice(0, 200),
+            });
+          }
+        }
+      }
+
+      // Token trimming: if total serialized resolution reports > budget, drop lowest-severity first
+      const aggregatedResolutions = [...resolutionsByIndex.values()];
+      if (JSON.stringify(aggregatedResolutions).length > MAX_RESOLUTION_REPORT_CHARS) {
+        const severityOrder: Record<string, number> = { critical: 0, major: 1, minor: 2, suggestion: 3 };
+        // Sort by previous finding severity (lowest first = drop first from end)
+        aggregatedResolutions.sort((a, b) => {
+          const sevA = prevFindings[a.previousFindingIndex]?.severity ?? "suggestion";
+          const sevB = prevFindings[b.previousFindingIndex]?.severity ?? "suggestion";
+          return (severityOrder[sevB] ?? 4) - (severityOrder[sevA] ?? 4);
+        });
+        // Pre-compute per-entry sizes and trim from the front (lowest severity)
+        const entrySizes = aggregatedResolutions.map((r) => JSON.stringify(r).length);
+        // Account for array brackets and commas: [entry1,entry2,...] = 2 + (n-1) commas
+        let totalSize = 2 + entrySizes.reduce((s, v) => s + v, 0) + Math.max(0, entrySizes.length - 1);
+        while (aggregatedResolutions.length > 0 && totalSize > MAX_RESOLUTION_REPORT_CHARS) {
+          const removed = entrySizes.shift()!;
+          aggregatedResolutions.shift();
+          totalSize -= removed + (aggregatedResolutions.length > 0 ? 1 : 0); // remove entry + comma
+        }
+        console.log(`[pipeline] Trimmed resolution reports to ${aggregatedResolutions.length} entries to fit token budget`);
+      }
+
+      // Build successful category set from non-failed check groups
+      const successfulCategories = new Set<string>();
+      const CHECK_GROUP_CATEGORIES: Record<string, string[]> = {
+        "structure": ["structure", "completeness"],
+        "problem-motivation-objectives": ["logic", "completeness"],
+        "bibliography": ["citation"],
+        "figures": ["figures"],
+        "writing-style": ["writing"],
+        "writing-structure": ["writing", "structure"],
+        "writing-formatting": ["formatting"],
+        "ai-transparency": ["completeness", "other"],
+        "schedule": ["completeness", "other"],
+        "related-work": ["citation", "completeness"],
+        "methodology": ["methodology"],
+        "evaluation": ["methodology", "completeness"],
+      };
+      for (const cr of checkResults) {
+        if (cr.error) continue;
+        const cats = CHECK_GROUP_CATEGORIES[cr.groupId] ?? [];
+        for (const cat of cats) {
+          successfulCategories.add(cat);
+        }
+      }
+
+      revisionContext = {
+        previousReviewId,
+        previousFindings: prevFindings,
+        previousAssessment: options!.previousAssessment,
+        aggregatedResolutions,
+        successfulCategories,
+        conflictedIndices,
+        previousAdjudications: options!.previousAdjudications,
+        sentPreviousFindingIndices,
+      };
+
+      console.log(`[pipeline] Revision context: ${prevFindings.length} prev findings, ${aggregatedResolutions.length} resolved, ${persistentIndices.size} persistent (by conflict), ${successfulCategories.size} categories covered`);
+    }
+
     // Step 4: Merge results
     callbacks.onStep("merge", "active");
 
@@ -173,6 +315,7 @@ export async function runReviewPipeline(
       onThinking: callbacks.onMergeThinking,
       previousFindings: options?.previousFindings,
       previousAssessment: options?.previousAssessment,
+      revisionContext,
     });
 
     if (mergeUsage) {
@@ -181,10 +324,38 @@ export async function runReviewPipeline(
 
     callbacks.onStep("merge", "done");
 
+    // Post-parse assertion: if this is a revision but the merger didn't produce
+    // versionComparison, generate a server-side fallback from check group data.
+    let versionComparison = mergedFeedback.versionComparison;
+
+    // Validate merger-produced indices are in bounds
+    if (isRevision && versionComparison && revisionContext) {
+      const maxIdx = revisionContext.previousFindings.length;
+      const hasInvalidIndex = [
+        ...versionComparison.resolvedFindings.map((f) => f.previousFindingIndex),
+        ...versionComparison.persistentFindings.map((f) => f.previousFindingIndex),
+        ...versionComparison.unreviewedFindings.map((f) => f.previousFindingIndex),
+      ].some((idx) => idx < 0 || idx >= maxIdx);
+
+      if (hasInvalidIndex) {
+        console.warn("[pipeline] Merger versionComparison contains out-of-bounds indices — falling back to deterministic builder");
+        versionComparison = undefined;
+      }
+    }
+
+    if (isRevision && !versionComparison && revisionContext) {
+      console.log("[pipeline] Merger did not produce versionComparison — generating server-side fallback");
+      versionComparison = buildFallbackVersionComparison(
+        revisionContext,
+        mergedFeedback.findings,
+      );
+    }
+
     // Step 5: Deliver results (attach failed groups info for partial results)
     const result: MergedFeedback = {
       ...(mergedFeedback as MergedFeedback),
       ...(failedGroups.length > 0 ? { failedGroups } : {}),
+      ...(versionComparison ? { versionComparison: versionComparison as VersionComparison } : {}),
     };
     callbacks.onResult(result);
   } catch (error) {
@@ -200,4 +371,115 @@ export async function runReviewPipeline(
   } finally {
     clearTimeout(pipelineTimeout);
   }
+}
+
+/**
+ * Build a deterministic fallback versionComparison from check group data
+ * when the merger LLM doesn't produce one.
+ */
+function buildFallbackVersionComparison(
+  revCtx: MergerRevisionContext,
+  mergedFindings: Finding[],
+): VersionComparison {
+  const prevFindings = revCtx.previousFindings;
+  const resolvedIndices = new Set(revCtx.aggregatedResolutions.map((r) => r.previousFindingIndex));
+
+  // Persistent = current findings that reference previous findings via matchedPreviousFindingIndices
+  const persistentIndices = new Set<number>();
+  const persistentFindings: VersionComparison["persistentFindings"] = [];
+  for (const f of mergedFindings) {
+    if (f.matchedPreviousFindingIndices) {
+      for (const idx of f.matchedPreviousFindingIndices) {
+        if (idx >= 0 && idx < prevFindings.length && !persistentIndices.has(idx)) {
+          persistentIndices.add(idx);
+          // Check if any group also reported it resolved (conflict), or if it was
+          // already flagged as conflicted during pipeline aggregation
+          const conflicted = resolvedIndices.has(idx) || (revCtx.conflictedIndices?.has(idx) ?? false);
+          if (resolvedIndices.has(idx)) resolvedIndices.delete(idx); // persistent wins
+          persistentFindings.push({
+            previousFindingIndex: idx,
+            previousTitle: prevFindings[idx].title,
+            currentTitle: f.title,
+            severity: prevFindings[idx].severity,
+            category: normalizeFindingCategory(prevFindings[idx].category),
+            ...(conflicted ? { conflicted: true } : {}),
+          });
+        }
+      }
+    }
+  }
+
+  // Resolved = from aggregated resolutions (minus any that became persistent via conflict)
+  const resolvedFindings: VersionComparison["resolvedFindings"] = revCtx.aggregatedResolutions
+    .filter((r) => resolvedIndices.has(r.previousFindingIndex))
+    .map((r) => ({
+      previousFindingIndex: r.previousFindingIndex,
+      title: r.title,
+      severity: prevFindings[r.previousFindingIndex].severity,
+      category: normalizeFindingCategory(prevFindings[r.previousFindingIndex].category),
+      reasoning: r.reasoning,
+    }));
+
+  // Unreviewed = previous findings not resolved, not persistent, and either:
+  // 1. In categories not covered by successful check groups (group failed)
+  // 2. In covered categories but not sent (truncated by per-group cap)
+  const accountedFor = new Set([...resolvedIndices, ...persistentIndices]);
+  const unreviewedFindings: VersionComparison["unreviewedFindings"] = [];
+  for (let i = 0; i < prevFindings.length; i++) {
+    if (accountedFor.has(i)) continue;
+    const cat = normalizeFindingCategory(prevFindings[i].category);
+    if (!revCtx.successfulCategories.has(cat)) {
+      // Category not covered — check group failed
+      unreviewedFindings.push({
+        previousFindingIndex: i,
+        title: prevFindings[i].title,
+        severity: prevFindings[i].severity,
+        category: cat,
+        reason: `Check group covering "${cat}" category failed`,
+      });
+      accountedFor.add(i);
+    } else if (revCtx.sentPreviousFindingIndices && !revCtx.sentPreviousFindingIndices.has(i)) {
+      // Category covered but this finding was truncated (exceeded per-group cap)
+      unreviewedFindings.push({
+        previousFindingIndex: i,
+        title: prevFindings[i].title,
+        severity: prevFindings[i].severity,
+        category: cat,
+        reason: "Exceeded per-group context limit",
+      });
+      accountedFor.add(i);
+    }
+  }
+
+  // Remaining unaccounted previous findings → treat as resolved with generic reasoning
+  // (the check group reviewed the category AND was sent this finding but didn't flag it as persistent)
+  for (let i = 0; i < prevFindings.length; i++) {
+    if (accountedFor.has(i)) continue;
+    resolvedFindings.push({
+      previousFindingIndex: i,
+      title: prevFindings[i].title,
+      severity: prevFindings[i].severity,
+      category: normalizeFindingCategory(prevFindings[i].category),
+      reasoning: "Not flagged by any check group in the new version",
+    });
+  }
+
+  // New = current findings with no matchedPreviousFindingIndices
+  const newFindings: VersionComparison["newFindings"] = mergedFindings
+    .filter((f) => !f.matchedPreviousFindingIndices || f.matchedPreviousFindingIndices.length === 0)
+    .filter((f) => !f.previouslyFlagged) // extra safety: if previouslyFlagged but no indices, don't count as new
+    .map((f) => ({
+      title: f.title,
+      severity: f.severity,
+      category: normalizeFindingCategory(f.category),
+    }));
+
+  return {
+    previousReviewId: revCtx.previousReviewId,
+    resolvedFindings,
+    persistentFindings,
+    unreviewedFindings,
+    newFindings,
+    improvementSummary: `${resolvedFindings.length} issue(s) resolved, ${persistentFindings.length} persistent, ${newFindings.length} new issue(s) found.`,
+  };
 }
