@@ -38,8 +38,8 @@ export const findingSchema = z.object({
 export const resolvedPreviousFindingSchema = z.object({
   previousFindingIndex: z.number().int().nonnegative()
     .describe("Index of the resolved finding in the previous review's findings array"),
-  title: z.string().describe("Title of the previous finding (for cross-check)"),
-  reasoning: z.string().max(200).describe("1-2 sentence explanation of how this was resolved"),
+  title: z.string().default("").describe("Title of the previous finding (for cross-check)"),
+  reasoning: z.string().max(200).default("").describe("1-2 sentence explanation of how this was resolved"),
 });
 
 export const checkGroupOutputSchema = z.object({
@@ -58,32 +58,32 @@ export const versionComparisonSchema = z.object({
   previousReviewId: z.string().uuid().describe("ID of the previous review being compared against"),
   resolvedFindings: z.array(z.object({
     previousFindingIndex: z.number().int().nonnegative(),
-    title: z.string(),
-    severity: severitySchema,
-    category: findingCategorySchema,
-    reasoning: z.string().max(200),
+    title: z.string().default("(resolved finding)"),
+    severity: severitySchema.default("minor"),
+    category: findingCategorySchema.default("other"),
+    reasoning: z.string().max(200).default(""),
   })),
   persistentFindings: z.array(z.object({
     previousFindingIndex: z.number().int().nonnegative(),
-    previousTitle: z.string(),
-    currentTitle: z.string(),
-    severity: severitySchema,
-    category: findingCategorySchema,
+    previousTitle: z.string().default(""),
+    currentTitle: z.string().default(""),
+    severity: severitySchema.default("minor"),
+    category: findingCategorySchema.default("other"),
     conflicted: z.boolean().optional().describe("True if check groups disagreed on resolution status"),
   })),
   unreviewedFindings: z.array(z.object({
     previousFindingIndex: z.number().int().nonnegative(),
-    title: z.string(),
-    severity: severitySchema,
-    category: findingCategorySchema,
-    reason: z.string().describe("Why this finding couldn't be evaluated (e.g. check group failed)"),
+    title: z.string().default("(unreviewed finding)"),
+    severity: severitySchema.default("minor"),
+    category: findingCategorySchema.default("other"),
+    reason: z.string().default("Check group did not evaluate this finding"),
   })),
   newFindings: z.array(z.object({
-    title: z.string(),
-    severity: severitySchema,
-    category: findingCategorySchema,
+    title: z.string().default("(new finding)"),
+    severity: severitySchema.default("minor"),
+    category: findingCategorySchema.default("other"),
   })),
-  improvementSummary: z.string().describe("1-2 sentence narrative of what improved and what regressed"),
+  improvementSummary: z.string().default("").describe("1-2 sentence narrative of what improved and what regressed"),
 });
 
 export const mergedFindingSchema = findingSchema;

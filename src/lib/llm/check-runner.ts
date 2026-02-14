@@ -33,7 +33,7 @@ interface RunCheckGroupOptions {
 }
 
 /** Check groups that receive rendered page images for visual inspection. */
-const IMAGE_CHECK_GROUPS = new Set<CheckGroupId>(["figures", "writing-structure"]);
+const IMAGE_CHECK_GROUPS = new Set<CheckGroupId>(["figures", "writing-structure", "structure"]);
 
 /**
  * Sanitize previous findings for injection into the user message.

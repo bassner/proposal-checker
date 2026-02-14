@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["@napi-rs/canvas", "pg"],
+  serverExternalPackages: ["pg"],
 };
 
 export default nextConfig;

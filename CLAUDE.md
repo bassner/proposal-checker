@@ -39,7 +39,7 @@ Configured via `.env.local` (see `docker/docker-compose.yml` for docker). Key va
 `POST /api/review` receives a PDF + provider choice, creates a UUID session, starts the pipeline in the background, and returns `{ id }` (HTTP 202). Clients connect to `GET /api/review/[id]/stream` for SSE events (supports reconnection with full event replay).
 
 1. **PDF extraction** (`src/lib/pdf/extract.ts`) — uses `unpdf` to extract per-page text with `=== PAGE N ===` markers
-2. **PDF rendering** (`src/lib/pdf/render.ts`) — renders pages as PNG images via `@napi-rs/canvas` (used for the figures check group's visual inspection)
+2. **PDF rendering** (`src/lib/pdf/render.ts`) — renders pages as PNG images via `pdftoppm` (Poppler) (used for visual inspection by the figures, writing-structure, and structure check groups)
 3. **7 parallel LLM checks** (`src/lib/llm/parallel-runner.ts` → `check-runner.ts`) — each check group runs independently with its own system prompt from `prompts.ts`. Uses `p-limit` for concurrency control (unlimited for Azure, 2 for Ollama)
 4. **Merge step** (`src/lib/llm/merger.ts`) — an 8th LLM call deduplicates, consolidates, ranks findings, and produces final 0-25 feedback items with an overall assessment
 
@@ -85,7 +85,7 @@ Two providers, both using `ChatOpenAI` from LangChain:
 
 ### Key Design Decisions
 
-- `next.config.ts` uses `output: "standalone"` for Docker deployment and `serverExternalPackages: ["@napi-rs/canvas"]` for native binary support
+- `next.config.ts` uses `output: "standalone"` for Docker deployment
 - `unpdf` can detach ArrayBuffers — the pipeline copies the buffer before passing to both extract and render
 - Token counting uses `js-tiktoken` with `o200k_base` encoding (server-only in `src/lib/llm/tokens.ts`)
 - Pipeline has a 15-minute timeout via AbortController

@@ -21,14 +21,16 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
+# Install poppler-utils for pdftoppm (PDF page rendering)
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 # Create upload directory owned by nextjs user so PDF saves work with Docker volumes
 RUN mkdir -p /data/uploads && chown nextjs:nodejs /data/uploads
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# @napi-rs/canvas native binary needs to be available at runtime
-COPY --from=builder /app/node_modules/@napi-rs ./node_modules/@napi-rs
 
 USER nextjs
 

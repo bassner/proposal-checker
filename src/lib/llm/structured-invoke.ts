@@ -330,8 +330,9 @@ function zodToJsonDescription(schema: z.ZodTypeAny): string {
 
 /**
  * Minimal Zod-to-JSON-schema converter for LLM prompt instructions.
- * Supported: ZodObject, ZodArray, ZodEnum, ZodOptional, ZodNullable, ZodString, ZodNumber.
- * Unsupported types (ZodDefault, ZodEffects, ZodUnion, etc.) fall through to "unknown".
+ * Supported: ZodObject, ZodArray, ZodEnum, ZodOptional, ZodNullable,
+ *            ZodString, ZodNumber, ZodBoolean, ZodDefault.
+ * Unsupported types (ZodEffects, ZodUnion, etc.) fall through to "unknown".
  */
 function zodToSimpleSchema(schema: z.ZodTypeAny): unknown {
   const def = schema._def;
@@ -353,12 +354,22 @@ function zodToSimpleSchema(schema: z.ZodTypeAny): unknown {
     return def.values.join("|");
   }
 
-  if (def.typeName === "ZodOptional") {
-    return zodToSimpleSchema(def.innerType) + " (optional)";
+  if (def.typeName === "ZodOptional" || def.typeName === "ZodDefault") {
+    const inner = zodToSimpleSchema(def.innerType);
+    // Only append "(optional)" for primitive types — for objects/arrays,
+    // string concatenation would produce "[object Object] (optional)".
+    if (typeof inner === "string") {
+      return inner + " (optional)";
+    }
+    return inner;
   }
 
   if (def.typeName === "ZodNullable") {
-    return zodToSimpleSchema(def.innerType) + " | null";
+    const inner = zodToSimpleSchema(def.innerType);
+    if (typeof inner === "string") {
+      return inner + " | null";
+    }
+    return inner;
   }
 
   if (def.typeName === "ZodString") {
@@ -367,6 +378,10 @@ function zodToSimpleSchema(schema: z.ZodTypeAny): unknown {
 
   if (def.typeName === "ZodNumber") {
     return "number";
+  }
+
+  if (def.typeName === "ZodBoolean") {
+    return "boolean";
   }
 
   return "unknown";
