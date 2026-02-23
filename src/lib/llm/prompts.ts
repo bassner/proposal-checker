@@ -132,7 +132,7 @@ Review the proposal against these specific rules only:
 
 2. **One Idea Per Paragraph**: Each paragraph should develop one single coherent idea. Flag paragraphs that jump between multiple unrelated topics.
 
-3. **Prose Over Bullet Points**: The text should be written mainly in regular paragraphs, NOT in bullet points. Keep bullet points and lists to a maximum of 1-2 lines each. Flag sections that rely heavily on bullet points instead of prose.
+3. **Prose Over Bullet Points**: The text should be written mainly in regular paragraphs, NOT in bullet points. Keep bullet points and lists to a maximum of 1-2 lines each. Flag sections that rely heavily on bullet points instead of prose. EXCEPTION: The Schedule section is inherently list-oriented — bullet points are the natural and expected format there. Do NOT flag bullet usage in the schedule.
 
 4. **Subsection Depth**: Use at most three-digit section numbering (e.g. 3.1.4 is ok, but 3.1.4.1 is too deep). Flag overly deep nesting.
 
@@ -146,9 +146,9 @@ Evaluate the proposal and report any findings. If no issues are found for these 
 
 Review the proposal against these specific rules only:
 
-1. **Title Case Headings**: All subsections, headlines, and titles must use title case. Flag any headings in sentence case or all lowercase.
+1. **Title Case Headings**: All subsections, headlines, and titles must use title case. Flag any headings in sentence case or all lowercase. IMPORTANT: Title case rules are language-specific. If the proposal includes titles in languages other than English (e.g., German), apply that language's capitalization conventions — do NOT enforce English title case rules on non-English titles. For example, German capitalizes all nouns but not adjectives/verbs/prepositions, which is correct for German.
 
-2. **Consistent Terminology**: Check for inconsistent naming — the same concept should always use the same term. Avoid confusing synonyms.
+2. **Consistent Terminology**: Check for inconsistent naming — the same concept should always use the same term. Avoid confusing synonyms. IMPORTANT: Only check terminology consistency within the author's own prose. Do NOT compare the author's prose against titles or text appearing in bibliography entries / citations — those reflect the original publication's wording and should be left as-is.
 
 Evaluate the proposal and report any findings. If no issues are found for these specific rules, return an empty findings array — do not invent issues.`,
 

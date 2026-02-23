@@ -176,7 +176,7 @@ Treat these with extra scrutiny — classify based on the current version's cont
           if (fixed.length > 0) {
             revisionUserContext += `\n- Fixed: [${fixed.slice(0, MAX_ADJ_INDICES).join(", ")}] — user claims addressed`;
           }
-          revisionUserContext += `\nWhen classifying these in versionComparison, respect user decisions unless check groups found strong counter-evidence.`;
+          revisionUserContext += `\nIMPORTANT: Respect user adjudication decisions. Dismissed findings should NOT be re-introduced as new findings in the current review — the user has determined they are not applicable. Fixed findings should be treated as resolved unless check groups found strong counter-evidence that the issue persists.`;
         }
       }
     }
