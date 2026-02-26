@@ -1,0 +1,26 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "helm/**"
+      - "**.md"
+      - ".gitignore"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "helm/**"
+      - "**.md"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    uses: ls1intum/.github/.github/workflows/build-and-push-docker-image.yml@main
+    with:
+      image-name: bassner/proposal-checker
+      docker-file: docker/Dockerfile
+      docker-context: .

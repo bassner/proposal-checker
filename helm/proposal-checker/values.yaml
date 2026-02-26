@@ -1,0 +1,109 @@
+# -- Number of replicas (keep 1 — sessions are in-memory)
+replicaCount: 1
+
+image:
+  repository: ghcr.io/bassner/proposal-checker
+  pullPolicy: Always
+  # -- Overrides the image tag (default: chart appVersion)
+  tag: ""
+
+# -- Pull secret for private GHCR. Create once with:
+#   kubectl create secret docker-registry ghcr-pull-secret \
+#     --namespace proposal-checker \
+#     --docker-server=ghcr.io \
+#     --docker-username=<github-username> \
+#     --docker-password=<PAT-with-read:packages>
+imagePullSecrets:
+  - name: ghcr-pull-secret
+nameOverride: ""
+fullnameOverride: ""
+
+# -- Application environment variables (non-secret)
+env:
+  MAX_PDF_SIZE_MB: "20"
+  MAX_PDF_PAGES: "20"
+  AUTH_KEYCLOAK_ID: "proposal-checker"
+  AUTH_KEYCLOAK_ISSUER: "https://keycloak.aet.cit.tum.de/realms/tum"
+  AUTH_TRUST_HOST: "true"
+  UPLOAD_DIR: "/data/uploads"
+
+# -- Sensitive environment variables (stored in a Kubernetes Secret)
+# Set these via --set or a secrets values file — don't commit real values!
+secrets:
+  AZURE_OPENAI_API_KEY: ""
+  AZURE_OPENAI_ENDPOINT: ""
+  AZURE_OPENAI_DEPLOYMENT: "gpt-5.2"
+  OLLAMA_BASE_URL: ""
+  OLLAMA_API_KEY: ""
+  OLLAMA_MODEL: "gpt-oss:120b"
+  AUTH_SECRET: ""
+  AUTH_KEYCLOAK_SECRET: ""
+  # -- SMTP (optional, leave empty to disable)
+  SMTP_HOST: ""
+  SMTP_PORT: "587"
+  SMTP_USER: ""
+  SMTP_PASS: ""
+  SMTP_FROM: ""
+
+# -- Persistent volume for uploaded PDFs
+persistence:
+  enabled: true
+  storageClass: rbg-rbd
+  size: 5Gi
+  accessModes:
+    - ReadWriteOnce
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  # -- Set to a cert-manager ClusterIssuer name to auto-provision TLS certs.
+  # Common values: "letsencrypt-prod", "letsencrypt-staging".
+  # Leave empty to manage the TLS secret manually.
+  certManager:
+    clusterIssuer: letsencrypt-production
+  host: proposal.aet.cit.tum.de
+  tls:
+    enabled: true
+    # -- If empty, a secret name is auto-generated (<release>-tls)
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+# -- Liveness and readiness probes hitting /api/health
+probes:
+  liveness:
+    path: /api/health
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+  readiness:
+    path: /api/health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+
+# -- Bitnami PostgreSQL subchart
+postgresql:
+  enabled: true
+  auth:
+    database: proposal_checker
+    username: proposal_checker
+    # -- Set via --set postgresql.auth.password=...
+    password: ""
+  primary:
+    persistence:
+      enabled: true
+      storageClass: rbg-rbd
+      size: 100Gi
