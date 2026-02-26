@@ -11,10 +11,12 @@ spec:
   selector:
     matchLabels:
       {{- include "proposal-checker.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
   template:
     metadata:
       labels:
         {{- include "proposal-checker.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: app
       annotations:
         # Roll pods when secrets change
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
@@ -44,7 +46,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ include "proposal-checker.fullname" . }}-postgresql
-                  key: password
+                  key: postgresql-password
             - name: DATABASE_URL
               value: {{ include "proposal-checker.databaseUrl" . | quote }}
             {{- end }}

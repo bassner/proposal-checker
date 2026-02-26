@@ -40,10 +40,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Database URL — points to the Bitnami PostgreSQL subchart service.
+Database URL — points to our PostgreSQL service.
 */}}
 {{- define "proposal-checker.databaseUrl" -}}
 {{- if .Values.postgresql.enabled -}}
-postgres://{{ .Values.postgresql.auth.username }}:$(DATABASE_PASSWORD)@{{ include "proposal-checker.fullname" . }}-postgresql:5432/{{ .Values.postgresql.auth.database }}
+postgres://{{ .Values.postgresql.username }}:$(DATABASE_PASSWORD)@{{ include "proposal-checker.fullname" . }}-postgresql:5432/{{ .Values.postgresql.database }}
 {{- end -}}
 {{- end }}

@@ -25,6 +25,7 @@ env:
   AUTH_KEYCLOAK_ID: "proposal-checker"
   AUTH_KEYCLOAK_ISSUER: "https://keycloak.aet.cit.tum.de/realms/tum"
   AUTH_TRUST_HOST: "true"
+  AUTH_URL: "https://proposal.aet.cit.tum.de"
   UPLOAD_DIR: "/data/uploads"
 
 # -- Sensitive environment variables (stored in a Kubernetes Secret)
@@ -33,6 +34,7 @@ secrets:
   AZURE_OPENAI_API_KEY: ""
   AZURE_OPENAI_ENDPOINT: ""
   AZURE_OPENAI_DEPLOYMENT: "gpt-5.2"
+  AZURE_OPENAI_API_VERSION: "2025-04-01-preview"
   OLLAMA_BASE_URL: ""
   OLLAMA_API_KEY: ""
   OLLAMA_MODEL: "gpt-oss:120b"
@@ -94,16 +96,14 @@ probes:
     periodSeconds: 10
     timeoutSeconds: 5
 
-# -- Bitnami PostgreSQL subchart
+# -- PostgreSQL
 postgresql:
   enabled: true
-  auth:
-    database: proposal_checker
-    username: proposal_checker
-    # -- Set via --set postgresql.auth.password=...
-    password: ""
-  primary:
-    persistence:
-      enabled: true
-      storageClass: rbg-rbd
-      size: 100Gi
+  image: postgres:18-alpine
+  database: proposal_checker
+  username: proposal_checker
+  # -- Set in values-secrets.yaml
+  password: ""
+  storage:
+    storageClass: rbg-rbd
+    size: 100Gi
