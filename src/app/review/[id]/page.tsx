@@ -13,6 +13,7 @@ import { ShareButton } from "@/components/share-button";
 import { PrintButton, CopyMarkdownButton, DownloadCsvButton, DownloadJsonButton } from "@/components/export-button";
 import { GraduationCap, RotateCcw, RefreshCw, Upload, ChevronLeft, ChevronRight, Info } from "lucide-react";
 import Link from "next/link";
+import { Footer } from "@/components/footer";
 import type { MergedFeedback, ReviewMode, Annotations, CheckGroupState, ProviderType } from "@/types/review";
 import { useAnnotations } from "@/hooks/use-annotations";
 import { useComments } from "@/hooks/use-comments";
@@ -525,13 +526,3 @@ function BackgroundOrbs() {
   );
 }
 
-function Footer() {
-  return (
-    <footer className="mt-12 pb-4 text-center text-xs text-slate-300 dark:text-white/20" role="contentinfo">
-      Created with &#10084;&#65039; by{" "}
-      <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition-colors hover:text-slate-600 dark:text-white/30 dark:hover:text-white/50">
-        @bassner
-      </a>
-    </footer>
-  );
-}

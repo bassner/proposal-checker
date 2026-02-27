@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { PrintButton, CopyMarkdownButton } from "@/components/export-button";
 import { GraduationCap, ArrowLeft, Lock, Clock } from "lucide-react";
 import Link from "next/link";
+import { Footer } from "@/components/footer";
 import type { MergedFeedback, Annotations } from "@/types/review";
 import { useComments } from "@/hooks/use-comments";
 
@@ -288,12 +289,7 @@ function SharedResultsView({ review }: { review: SharedReview }) {
             reviewId={review.id}
           />
         </main>
-        <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">
-          Created with &#10084;&#65039; by{" "}
-          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
-            @bassner
-          </a>
-        </footer>
+        <Footer />
       </div>
     </div>
   );

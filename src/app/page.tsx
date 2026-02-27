@@ -37,6 +37,7 @@ import {
   FileStack,
 } from "lucide-react";
 import { PreflightWarnings } from "@/components/preflight-warnings";
+import { Footer } from "@/components/footer";
 import { OnboardingTour } from "@/components/onboarding-tour";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { UserSearchSelect } from "@/components/user-search-select";
@@ -142,12 +143,7 @@ function SignInLanding() {
           View proposal guidelines
         </Link>
 
-        <footer className="mt-12 text-center text-xs text-slate-300 dark:text-white/20" role="contentinfo">
-          Created with ❤️ by{" "}
-          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition-colors hover:text-slate-600 dark:text-white/30 dark:hover:text-white/50">
-            @bassner
-          </a>
-        </footer>
+        <Footer />
       </main>
     </div>
   );
@@ -695,12 +691,7 @@ function UploadPage() {
           View proposal guidelines
         </Link>
 
-        <footer className="mt-12 pb-4 text-center text-xs text-slate-300 dark:text-white/20" role="contentinfo">
-          Created with ❤️ by{" "}
-          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-slate-400 transition-colors hover:text-slate-600 dark:text-white/30 dark:hover:text-white/50">
-            @bassner
-          </a>
-        </footer>
+        <Footer />
       </div>
 
       <OnboardingTour tour={tour} />

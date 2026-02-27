@@ -1,5 +1,6 @@
 import { loadAllGuidelines } from "@/lib/guidelines/loader";
 import { GuidelinesViewer } from "./guidelines-viewer";
+import { Footer } from "@/components/footer";
 import { GraduationCap, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -43,12 +44,7 @@ export default async function GuidelinesPage() {
           <GuidelinesViewer guidelines={guidelines} />
         </main>
 
-        <footer className="mt-12 pb-4 text-center text-xs text-white/20" role="contentinfo">
-          Created with &#10084;&#65039; by{" "}
-          <a href="https://github.com/bassner" target="_blank" rel="noopener noreferrer" className="text-white/30 transition-colors hover:text-white/50">
-            @bassner
-          </a>
-        </footer>
+        <Footer />
       </div>
     </div>
   );
