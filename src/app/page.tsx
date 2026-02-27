@@ -194,7 +194,7 @@ const MODE_LABELS: Record<ReviewMode, string> = {
 
 const MODE_DESCRIPTIONS: Record<ReviewMode, string> = {
   proposal: "4-6 page thesis proposal (9 checks)",
-  thesis: "Full thesis document (12 checks)",
+  thesis: "Full thesis document, up to 100 pages (12 checks)",
 };
 
 const STORAGE_KEY_GROUPS = "proposal-checker:selectedGroups";

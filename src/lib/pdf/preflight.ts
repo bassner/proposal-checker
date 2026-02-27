@@ -36,7 +36,9 @@ export function runPreflightChecks(fullText: string, pageCount: number, mode: Re
       severity: "warning",
       message: "Document appears very short (fewer than 3 pages of text content)",
       suggestion:
-        "Thesis proposals typically require 4-6 pages. Ensure your document is complete before submitting.",
+        mode === "thesis"
+          ? "A thesis is expected to be a substantial document. Ensure your document is complete before submitting."
+          : "Thesis proposals typically require 4-6 pages. Ensure your document is complete before submitting.",
     });
   }
 

@@ -1,19 +1,21 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessageLike } from "@langchain/core/messages";
-import type { CheckGroupResult, Finding, FindingAdjudication, LLMPhase, ResolvedPreviousFinding } from "@/types/review";
+import type { CheckGroupResult, Finding, FindingAdjudication, LLMPhase, ResolvedPreviousFinding, ReviewMode } from "@/types/review";
 import { normalizeFindingCategory } from "@/types/review";
 import type { MergedFeedbackOutput } from "./schemas";
 import { mergedFeedbackSchema } from "./schemas";
 import { safeStructuredInvoke } from "./structured-invoke";
 import type { TokenUsage } from "./structured-invoke";
 
-const MERGER_SYSTEM_PROMPT = `You are an expert thesis proposal reviewer performing a final consolidation step. You have received findings from multiple independent check groups that reviewed the same thesis proposal. Your job is to:
+function getMergerSystemPrompt(mode: ReviewMode = "proposal"): string {
+  const docType = mode === "thesis" ? "thesis" : "thesis proposal";
+  return `You are an expert ${docType} reviewer performing a final consolidation step. You have received findings from multiple independent check groups that reviewed the same ${docType}. Your job is to:
 
 1. DEDUPLICATE: Remove findings that say the same thing in different words (keep the best-worded version)
 2. CONSOLIDATE: Merge closely related findings into single, comprehensive feedback items
-3. FILTER: Remove any findings that are not actionable or are actually positive observations (e.g. "The proposal clearly explains the research question" or "Bibliography meets requirements")
+3. FILTER: Remove any findings that are not actionable or are actually positive observations (e.g. "The ${docType} clearly explains the research question" or "Bibliography meets requirements")
 4. RANK: Sort by severity (critical → major → minor → suggestion)
-5. ASSESS: Provide an overall assessment of the proposal quality
+5. ASSESS: Provide an overall assessment of the ${docType} quality
 6. LIMIT: Produce 0-25 actionable feedback items total. If all check groups returned zero findings (or only positive observations), return an empty findings array. Do not invent issues to fill a quota.
 
 Rules:
@@ -23,10 +25,11 @@ Rules:
 - When deduplicating or consolidating findings, UNION all locations from the source findings. Preserve every page, section, and quote detail — do not discard locations during merging.
 - Assign each finding a "category" from this exact set: "formatting", "structure", "citation", "methodology", "writing", "figures", "logic", "completeness", "other". Choose the single best-fitting category based on the finding's content. Use "other" only as a last resort.
 - The overall assessment should be:
-  - "good" = proposal is ready to submit with only minor tweaks (mostly suggestions/minor issues, or no issues at all)
-  - "acceptable" = proposal needs some work but is on the right track (mix of minor and major issues)
+  - "good" = ${docType} is ready to submit with only minor tweaks (mostly suggestions/minor issues, or no issues at all)
+  - "acceptable" = ${docType} needs some work but is on the right track (mix of minor and major issues)
   - "needs-work" = significant issues that must be addressed before submission (critical/major issues)
 - Write a 2-3 sentence summary capturing the key strengths and weaknesses`;
+}
 
 export interface MergerRevisionContext {
   /** Previous review's ID (for versionComparison output). */
@@ -73,6 +76,8 @@ export async function mergeFindings(
     previousAssessment?: string;
     /** Full revision context for LLM-powered version comparison. */
     revisionContext?: MergerRevisionContext;
+    /** Review mode (proposal vs thesis) for mode-appropriate prompting. */
+    mode?: ReviewMode;
   }
 ): Promise<{ data: MergedFeedbackOutput; usage: TokenUsage | null }> {
   const allFindings = results.flatMap((r) =>
@@ -187,7 +192,7 @@ Treat these with extra scrutiny — classify based on the current version's cont
   console.log(`[merger] Merging ${allFindings.length} total findings from ${results.length} groups (${failedGroups.length} failed)${isRevision ? " [revision]" : ""}${revCtx ? " [with version comparison]" : ""}`);
 
   const messages: BaseMessageLike[] = [
-    ["system", MERGER_SYSTEM_PROMPT + revisionSystemAddendum],
+    ["system", getMergerSystemPrompt(options?.mode) + revisionSystemAddendum],
     [
       "user",
       `Here are all the raw findings from ${results.length} check groups (${allFindings.length} total findings):

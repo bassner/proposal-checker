@@ -68,7 +68,9 @@ export async function runReviewPipeline(
     previousAdjudications?: ReadonlyMap<number, FindingAdjudication>;
   }
 ): Promise<void> {
-  const maxPages = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
+  const maxPagesProposal = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
+  const maxPagesThesis = parseInt(process.env.MAX_PDF_PAGES_THESIS || "100", 10);
+  const maxPages = mode === "thesis" ? maxPagesThesis : maxPagesProposal;
 
   const pipelineAbort = new AbortController();
   const pipelineTimeout = setTimeout(() => pipelineAbort.abort(), PIPELINE_TIMEOUT_MS);
@@ -85,8 +87,11 @@ export async function runReviewPipeline(
     console.log(`[pipeline] Extracted ${extraction.pageCount} pages, ${extraction.fullText.length} characters`);
 
     if (extraction.pageCount > maxPages) {
+      const hint = mode === "thesis"
+        ? "Consider splitting very large documents or reducing appendix content."
+        : "Thesis proposals should be 4-6 pages. If this is a full thesis, select the 'Thesis' review mode instead.";
       callbacks.onError(
-        `PDF has ${extraction.pageCount} pages, but the maximum allowed is ${maxPages}. Thesis proposals should be 4-6 pages.`
+        `PDF has ${extraction.pageCount} pages, but the maximum allowed for ${mode} mode is ${maxPages}. ${hint}`
       );
       return;
     }
@@ -316,6 +321,7 @@ export async function runReviewPipeline(
       previousFindings: options?.previousFindings,
       previousAssessment: options?.previousAssessment,
       revisionContext,
+      mode,
     });
 
     if (mergeUsage) {
