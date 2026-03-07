@@ -1,12 +1,16 @@
 import { GraduationCap, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Footer } from "@/components/footer";
+import { GdprActions } from "@/components/gdpr-actions";
+import { auth } from "@/auth";
 
 export const metadata = {
   title: "Datenschutzerklärung - Proposal Checker",
 };
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const session = await auth();
+  const isAuthenticated = !!session?.user?.id;
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
@@ -734,6 +738,8 @@ export default function PrivacyPage() {
           <p>
             <em>Stand: März 2026</em>
           </p>
+
+          <GdprActions isAuthenticated={isAuthenticated} />
         </main>
 
         <Footer />

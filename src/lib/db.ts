@@ -2263,6 +2263,170 @@ export async function getCheckGroupMetrics(): Promise<CheckGroupMetrics[] | null
 }
 
 // ---------------------------------------------------------------------------
+// GDPR: Data export & erasure
+// ---------------------------------------------------------------------------
+
+/**
+ * Export ALL data associated with a user across every table.
+ * Returns a JSON-serializable object grouped by table name.
+ */
+export async function exportAllUserData(userId: string): Promise<Record<string, unknown[]>> {
+  if (!pool) return {};
+  await ensureSchema();
+
+  // 1. Find all review IDs where user is owner, supervisor, or student
+  const reviewIdsResult = await pool.query(
+    `SELECT id FROM reviews WHERE user_id = $1 OR supervisor_id = $1 OR student_id = $1`,
+    [userId]
+  );
+  const reviewIds = reviewIdsResult.rows.map((r) => r.id as string);
+
+  const data: Record<string, unknown[]> = {};
+
+  // User record
+  const userResult = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
+  data.users = userResult.rows;
+
+  // Reviews
+  const reviewsResult = await pool.query(
+    "SELECT * FROM reviews WHERE user_id = $1 OR supervisor_id = $1 OR student_id = $1",
+    [userId]
+  );
+  data.reviews = reviewsResult.rows;
+
+  if (reviewIds.length > 0) {
+    const ids = reviewIds;
+    // Tables linked by review_id (CASCADE or not)
+    for (const table of [
+      "check_performance", "review_audit_log", "annotation_history",
+      "review_notes", "review_tags", "review_assignments",
+      "finding_resolutions", "token_usage", "review_versions",
+      "finding_sla", "severity_overrides", "finding_approvals",
+      "proposal_relationships", "revision_summaries",
+    ] as const) {
+      const col = table === "proposal_relationships" ? "source_review_id" : "review_id";
+      const result = await pool.query(
+        `SELECT * FROM ${table} WHERE ${col} = ANY($1::uuid[])`,
+        [ids]
+      );
+      if (result.rows.length > 0) data[table] = result.rows;
+    }
+    // proposal_relationships where target
+    const prTarget = await pool.query(
+      "SELECT * FROM proposal_relationships WHERE target_review_id = ANY($1::uuid[])",
+      [ids]
+    );
+    if (prTarget.rows.length > 0) {
+      data.proposal_relationships = [
+        ...(data.proposal_relationships ?? []),
+        ...prTarget.rows,
+      ];
+    }
+  }
+
+  // Tables linked directly by user_id (not via review)
+  for (const [table, col] of [
+    ["notifications", "user_id"],
+    ["pinned_reviews", "user_id"],
+    ["readiness_checklists", "user_id"],
+    ["comment_reactions", "user_id"],
+  ] as const) {
+    const result = await pool.query(
+      `SELECT * FROM ${table} WHERE ${col} = $1`,
+      [userId]
+    );
+    if (result.rows.length > 0) data[table] = result.rows;
+  }
+
+  // Peer pairings
+  const pairings = await pool.query(
+    "SELECT * FROM peer_pairings WHERE student_a_id = $1 OR student_b_id = $1",
+    [userId]
+  );
+  if (pairings.rows.length > 0) data.peer_pairings = pairings.rows;
+
+  // Audit log entries where user acted (even on others' reviews)
+  const auditByUser = await pool.query(
+    "SELECT * FROM review_audit_log WHERE user_id = $1",
+    [userId]
+  );
+  if (auditByUser.rows.length > 0) {
+    const existing = new Set((data.review_audit_log ?? []).map((r) => (r as { id: string }).id));
+    data.review_audit_log = [
+      ...(data.review_audit_log ?? []),
+      ...auditByUser.rows.filter((r) => !existing.has(r.id)),
+    ];
+  }
+
+  return data;
+}
+
+/**
+ * Permanently erase ALL data associated with a user. No trace remains.
+ * Returns the list of review IDs that were deleted (for PDF cleanup).
+ */
+export async function eraseAllUserData(userId: string): Promise<string[]> {
+  if (!pool) return [];
+  await ensureSchema();
+
+  // 1. Find all review IDs where user is owner, supervisor, or student
+  const reviewIdsResult = await pool.query(
+    `SELECT id FROM reviews WHERE user_id = $1 OR supervisor_id = $1 OR student_id = $1`,
+    [userId]
+  );
+  const reviewIds = reviewIdsResult.rows.map((r) => r.id as string);
+
+  // 2. Delete user traces from tables NOT connected via CASCADE
+  //    (these reference user_id directly, not through reviews FK)
+  await pool.query("DELETE FROM comment_reactions WHERE user_id = $1", [userId]);
+  await pool.query("DELETE FROM peer_pairings WHERE student_a_id = $1 OR student_b_id = $1", [userId]);
+  await pool.query("DELETE FROM readiness_checklists WHERE user_id = $1", [userId]);
+  await pool.query("DELETE FROM pinned_reviews WHERE user_id = $1", [userId]);
+  await pool.query("DELETE FROM notifications WHERE user_id = $1", [userId]);
+
+  // 3. Delete user traces from review-linked tables without CASCADE
+  if (reviewIds.length > 0) {
+    await pool.query("DELETE FROM check_performance WHERE review_id = ANY($1::uuid[])", [reviewIds]);
+    await pool.query("DELETE FROM review_audit_log WHERE review_id = ANY($1::uuid[])", [reviewIds]);
+    await pool.query("DELETE FROM annotation_history WHERE review_id = ANY($1::uuid[])", [reviewIds]);
+  }
+
+  // Also clean audit log entries where user acted on other people's reviews
+  await pool.query("DELETE FROM review_audit_log WHERE user_id = $1", [userId]);
+  // Clean annotation history where user acted on other people's reviews
+  await pool.query("DELETE FROM annotation_history WHERE user_id = $1", [userId]);
+  // Clean review notes on other people's reviews
+  await pool.query("DELETE FROM review_notes WHERE user_id = $1", [userId]);
+  // Clean finding resolutions where user acted
+  await pool.query("DELETE FROM finding_resolutions WHERE changed_by = $1", [userId]);
+  // Clean severity overrides where user acted
+  await pool.query("DELETE FROM severity_overrides WHERE changed_by = $1", [userId]);
+  // Clean finding approvals where user acted
+  await pool.query("DELETE FROM finding_approvals WHERE approved_by = $1", [userId]);
+  // Clean review assignments where user is involved
+  await pool.query("DELETE FROM review_assignments WHERE assigned_to = $1 OR assigned_by = $1", [userId]);
+  // Clean finding SLAs set by user
+  await pool.query("DELETE FROM finding_sla WHERE set_by = $1", [userId]);
+  // Clean review tags created by user
+  await pool.query("DELETE FROM review_tags WHERE created_by = $1", [userId]);
+  // Clean proposal relationships created by user
+  await pool.query("DELETE FROM proposal_relationships WHERE created_by = $1", [userId]);
+
+  // 4. Hard-delete all reviews (CASCADE handles: notifications, pinned_reviews,
+  //    review_notes, review_tags, review_assignments, finding_resolutions,
+  //    token_usage, review_versions, finding_sla, severity_overrides,
+  //    finding_approvals, proposal_relationships, revision_summaries)
+  if (reviewIds.length > 0) {
+    await pool.query("DELETE FROM reviews WHERE id = ANY($1::uuid[])", [reviewIds]);
+  }
+
+  // 5. Delete user record
+  await pool.query("DELETE FROM users WHERE id = $1", [userId]);
+
+  return reviewIds;
+}
+
+// ---------------------------------------------------------------------------
 // Pinned reviews (bookmarks)
 // ---------------------------------------------------------------------------
 
