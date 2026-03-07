@@ -32,6 +32,8 @@ export default async function PrivacyPage() {
           </div>
         </header>
 
+        <GdprActions isAuthenticated={isAuthenticated} />
+
         <main className="prose prose-invert prose-sm max-w-none rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl sm:p-8 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:text-white/90 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-white/80 [&_p]:text-white/60 [&_li]:text-white/60 [&_strong]:text-white/70 [&_table]:text-white/60 [&_th]:text-white/70 [&_td]:border-white/10 [&_th]:border-white/10 [&_a]:text-blue-400 [&_a:hover]:text-blue-300">
           <p>
             Die{" "}
@@ -738,8 +740,6 @@ export default async function PrivacyPage() {
           <p>
             <em>Stand: März 2026</em>
           </p>
-
-          <GdprActions isAuthenticated={isAuthenticated} />
         </main>
 
         <Footer />

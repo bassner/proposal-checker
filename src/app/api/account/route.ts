@@ -1,31 +1,9 @@
 import { requireAuth } from "@/lib/auth/helpers";
-import { exportAllUserData, eraseAllUserData, logAuditEvent } from "@/lib/db";
+import { eraseAllUserData, logAuditEvent } from "@/lib/db";
 import { unlink, rm } from "fs/promises";
 import path from "path";
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || "/tmp/proposal-checker-uploads";
-
-/**
- * GET /api/account — Export all user data as JSON (GDPR Art. 20).
- */
-export async function GET() {
-  let session;
-  try {
-    session = await requireAuth();
-  } catch (response) {
-    return response as Response;
-  }
-
-  const data = await exportAllUserData(session.user.id);
-
-  return new Response(JSON.stringify(data, null, 2), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Content-Disposition": `attachment; filename="proposal-checker-data-export-${new Date().toISOString().slice(0, 10)}.json"`,
-    },
-  });
-}
 
 /**
  * DELETE /api/account — Erase all user data (GDPR Art. 17).

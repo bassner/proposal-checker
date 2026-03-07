@@ -11,7 +11,7 @@ export function GdprActions({ isAuthenticated }: { isAuthenticated: boolean }) {
 
   if (!isAuthenticated) {
     return (
-      <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+      <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
           <div>
@@ -32,7 +32,7 @@ export function GdprActions({ isAuthenticated }: { isAuthenticated: boolean }) {
     setExporting(true);
     setError(null);
     try {
-      const res = await fetch("/api/account");
+      const res = await fetch("/api/account/export");
       if (!res.ok) throw new Error("Export fehlgeschlagen");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -64,7 +64,7 @@ export function GdprActions({ isAuthenticated }: { isAuthenticated: boolean }) {
   }
 
   return (
-    <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+    <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
         <div className="w-full">
