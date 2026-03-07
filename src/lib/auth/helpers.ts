@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import type { Session } from "next-auth";
 import type { AppRole } from "@/lib/auth/roles";
 import { ROLE_HIERARCHY } from "@/lib/auth/roles";
-import { upsertUser } from "@/lib/db";
+import { upsertUser, erasedUserIds } from "@/lib/db";
 
 /**
  * Require an authenticated user with a recognized role.
@@ -50,12 +50,15 @@ export async function requireAuth(): Promise<Session> {
 
   // Fire-and-forget: sync user to the users directory table.
   // Uses in-memory dedup to avoid DB calls on every request.
-  upsertUser(
-    session.user.id,
-    session.user.email ?? "",
-    session.user.name ?? "",
-    session.user.role,
-  ).catch((err) => console.error("[auth] User upsert failed:", err));
+  // Skip for erased users to prevent re-creation after GDPR deletion.
+  if (!erasedUserIds.has(session.user.id)) {
+    upsertUser(
+      session.user.id,
+      session.user.email ?? "",
+      session.user.name ?? "",
+      session.user.role,
+    ).catch((err) => console.error("[auth] User upsert failed:", err));
+  }
 
   return session;
 }

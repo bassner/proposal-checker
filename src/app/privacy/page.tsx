@@ -9,8 +9,13 @@ export const metadata = {
 };
 
 export default async function PrivacyPage() {
-  const session = await auth();
-  const isAuthenticated = !!session?.user?.id;
+  let isAuthenticated = false;
+  try {
+    const session = await auth();
+    isAuthenticated = !!session?.user?.id;
+  } catch {
+    // Auth may throw on public page — default to unauthenticated
+  }
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">

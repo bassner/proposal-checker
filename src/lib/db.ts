@@ -703,6 +703,13 @@ export interface UserRow {
 const upsertedUsers = new Set<string>();
 
 /**
+ * Set of user IDs that have been erased via GDPR Art. 17 deletion.
+ * Prevents re-creation of user records by in-flight requests or auth callbacks.
+ * Persists for the lifetime of this server instance.
+ */
+export const erasedUserIds = new Set<string>();
+
+/**
  * Upsert a user into the users table. Called from requireAuth() on every API request,
  * but the in-memory set prevents redundant DB calls after the first one.
  */
@@ -713,10 +720,13 @@ export async function upsertUser(
   role: AppRole,
 ): Promise<void> {
   if (!pool || !id) return;
+  if (erasedUserIds.has(id)) return;
   // Skip if already upserted in this server instance
   const cacheKey = `${id}:${role}`;
   if (upsertedUsers.has(cacheKey)) return;
   await ensureSchema();
+  // Re-check after async ensureSchema — erasure may have started during await
+  if (erasedUserIds.has(id)) return;
 
   // If a user with this email already exists under a different id (Keycloak sub changed),
   // migrate their reviews and delete the old row before upserting with the new id.
@@ -767,6 +777,14 @@ export async function getUserById(id: string): Promise<UserRow | null> {
     createdAt: row.created_at?.toISOString?.() ?? row.created_at,
     updatedAt: row.updated_at?.toISOString?.() ?? row.updated_at,
   };
+}
+
+/** Count users with admin role (for last-admin guard). */
+export async function getAdminCount(): Promise<number> {
+  if (!pool) return 0;
+  await ensureSchema();
+  const result = await pool.query("SELECT COUNT(*)::int AS count FROM users WHERE role = 'admin'");
+  return result.rows[0]?.count ?? 0;
 }
 
 /** Get all users with a specific role. */
@@ -921,7 +939,10 @@ export async function insertReview(review: {
   contentHash?: string;
 }): Promise<void> {
   if (!pool) return;
+  if (erasedUserIds.has(review.userId)) return;
   await ensureSchema();
+  // Re-check after async ensureSchema — erasure may have started during await
+  if (erasedUserIds.has(review.userId)) return;
   await pool.query(
     `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id, content_hash)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -937,7 +958,10 @@ export async function completeReview(
   expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
+  if (meta?.userId && erasedUserIds.has(meta.userId)) return;
   await ensureSchema();
+  // Re-check after async ensureSchema — erasure may have started during await
+  if (meta?.userId && erasedUserIds.has(meta.userId)) return;
   // UPSERT: handles the case where the initial INSERT was lost (e.g. DB was down briefly)
   // When expectedRetryCount is provided, only update if the review is still on that attempt
   // (prevents stale pipeline callbacks from overwriting a newer retry's state)
@@ -1003,7 +1027,10 @@ export async function failReview(
   expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
+  if (meta?.userId && erasedUserIds.has(meta.userId)) return;
   await ensureSchema();
+  // Re-check after async ensureSchema — erasure may have started during await
+  if (meta?.userId && erasedUserIds.has(meta.userId)) return;
   const retryGuard = expectedRetryCount != null ? ` AND reviews.retry_count = ${Number(expectedRetryCount)}` : "";
   const result = await pool.query(
     `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, error_message, file_name, completed_at, updated_at, supervisor_id, student_id)
@@ -2274,54 +2301,61 @@ export async function exportAllUserData(userId: string): Promise<Record<string, 
   if (!pool) return {};
   await ensureSchema();
 
-  // 1. Find all review IDs where user is owner, supervisor, or student
-  const reviewIdsResult = await pool.query(
-    `SELECT id FROM reviews WHERE user_id = $1 OR supervisor_id = $1 OR student_id = $1`,
-    [userId]
-  );
-  const reviewIds = reviewIdsResult.rows.map((r) => r.id as string);
-
   const data: Record<string, unknown[]> = {};
 
   // User record
   const userResult = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
   data.users = userResult.rows;
 
-  // Reviews
-  const reviewsResult = await pool.query(
-    "SELECT * FROM reviews WHERE user_id = $1 OR supervisor_id = $1 OR student_id = $1",
+  // Split reviews into full-access (owner/student) and supervisor-only
+  const fullReviewsResult = await pool.query(
+    "SELECT * FROM reviews WHERE user_id = $1 OR student_id = $1",
     [userId]
   );
-  data.reviews = reviewsResult.rows;
+  const supervisorOnlyResult = await pool.query(
+    `SELECT id, user_id, status, provider, review_mode, file_name, created_at, updated_at, completed_at, supervisor_id, student_id
+     FROM reviews WHERE supervisor_id = $1 AND user_id != $1 AND (student_id IS NULL OR student_id != $1)`,
+    [userId]
+  );
+  data.reviews = [...fullReviewsResult.rows, ...supervisorOnlyResult.rows];
 
-  if (reviewIds.length > 0) {
-    const ids = reviewIds;
-    // Tables linked by review_id (CASCADE or not)
+  // Full review IDs — used for review-linked table exports
+  const fullReviewIds = fullReviewsResult.rows.map((r) => r.id as string);
+
+  if (fullReviewIds.length > 0) {
+    // Tables linked by review_id — only for fully-owned reviews
     for (const table of [
       "check_performance", "review_audit_log", "annotation_history",
       "review_notes", "review_tags", "review_assignments",
       "finding_resolutions", "token_usage", "review_versions",
       "finding_sla", "severity_overrides", "finding_approvals",
-      "proposal_relationships", "revision_summaries",
     ] as const) {
-      const col = table === "proposal_relationships" ? "source_review_id" : "review_id";
       const result = await pool.query(
-        `SELECT * FROM ${table} WHERE ${col} = ANY($1::uuid[])`,
-        [ids]
+        `SELECT * FROM ${table} WHERE review_id = ANY($1::uuid[])`,
+        [fullReviewIds]
       );
       if (result.rows.length > 0) data[table] = result.rows;
     }
-    // proposal_relationships where target
+    // proposal_relationships where source or target
+    const prSource = await pool.query(
+      "SELECT * FROM proposal_relationships WHERE source_review_id = ANY($1::uuid[])",
+      [fullReviewIds]
+    );
     const prTarget = await pool.query(
       "SELECT * FROM proposal_relationships WHERE target_review_id = ANY($1::uuid[])",
-      [ids]
+      [fullReviewIds]
     );
-    if (prTarget.rows.length > 0) {
-      data.proposal_relationships = [
-        ...(data.proposal_relationships ?? []),
-        ...prTarget.rows,
-      ];
-    }
+    const prAll = [...prSource.rows, ...prTarget.rows];
+    const prSeen = new Set<string>();
+    const prDeduped = prAll.filter((r) => { if (prSeen.has(r.id)) return false; prSeen.add(r.id); return true; });
+    if (prDeduped.length > 0) data.proposal_relationships = prDeduped;
+
+    // revision_summaries: linked by old_review_id OR new_review_id (Issue 1 fix)
+    const revSummaries = await pool.query(
+      "SELECT * FROM revision_summaries WHERE old_review_id = ANY($1::uuid[]) OR new_review_id = ANY($1::uuid[])",
+      [fullReviewIds]
+    );
+    if (revSummaries.rows.length > 0) data.revision_summaries = revSummaries.rows;
   }
 
   // Tables linked directly by user_id (not via review)
@@ -2345,16 +2379,60 @@ export async function exportAllUserData(userId: string): Promise<Record<string, 
   );
   if (pairings.rows.length > 0) data.peer_pairings = pairings.rows;
 
-  // Audit log entries where user acted (even on others' reviews)
-  const auditByUser = await pool.query(
-    "SELECT * FROM review_audit_log WHERE user_id = $1",
+  // Actor-scoped records: user acted on OTHER people's reviews
+  const actorTables: [string, string][] = [
+    ["review_audit_log", "user_id"],
+    ["annotation_history", "user_id"],
+    ["review_notes", "user_id"],
+    ["finding_resolutions", "changed_by"],
+    ["severity_overrides", "changed_by"],
+    ["finding_approvals", "approved_by"],
+    ["review_assignments", "assigned_to"],
+    ["review_assignments", "assigned_by"],
+    ["review_tags", "created_by"],
+    ["finding_sla", "set_by"],
+    ["proposal_relationships", "created_by"],
+  ];
+  for (const [table, col] of actorTables) {
+    const result = await pool.query(
+      `SELECT * FROM ${table} WHERE ${col} = $1`,
+      [userId]
+    );
+    if (result.rows.length > 0) {
+      const existing = new Set((data[table] ?? []).map((r) => (r as { id: string }).id));
+      data[table] = [
+        ...(data[table] ?? []),
+        ...result.rows.filter((r) => !existing.has(r.id)),
+      ];
+    }
+  }
+
+  // Admin config tables where user is creator/updater (Issue 4)
+  for (const [table, col] of [
+    ["review_templates", "created_by"],
+    ["prompt_snippets", "created_by"],
+    ["custom_prompts", "updated_by"],
+    ["submission_deadlines", "created_by"],
+    ["review_schedules", "created_by"],
+    ["finding_patterns", "created_by"],
+  ] as const) {
+    const result = await pool.query(
+      `SELECT * FROM ${table} WHERE ${col} = $1`,
+      [userId]
+    );
+    if (result.rows.length > 0) data[table] = result.rows;
+  }
+
+  // Review schedules where user is in target_users array
+  const schedulesTarget = await pool.query(
+    "SELECT * FROM review_schedules WHERE $1 = ANY(target_users)",
     [userId]
   );
-  if (auditByUser.rows.length > 0) {
-    const existing = new Set((data.review_audit_log ?? []).map((r) => (r as { id: string }).id));
-    data.review_audit_log = [
-      ...(data.review_audit_log ?? []),
-      ...auditByUser.rows.filter((r) => !existing.has(r.id)),
+  if (schedulesTarget.rows.length > 0) {
+    const existing = new Set((data.review_schedules ?? []).map((r) => (r as { id: string }).id));
+    data.review_schedules = [
+      ...(data.review_schedules ?? []),
+      ...schedulesTarget.rows.filter((r) => !existing.has(r.id)),
     ];
   }
 
@@ -2362,68 +2440,174 @@ export async function exportAllUserData(userId: string): Promise<Record<string, 
 }
 
 /**
- * Permanently erase ALL data associated with a user. No trace remains.
- * Returns the list of review IDs that were deleted (for PDF cleanup).
+ * Permanently erase ALL data associated with a user (GDPR Art. 17).
+ *
+ * Ownership rules:
+ * - DELETE reviews where user is the student (student_id = userId)
+ * - DELETE reviews uploaded by user with no assigned student
+ * - KEEP reviews where user is only supervisor: nullify supervisor_id/student_id
+ * - TRANSFER reviews uploaded by user for another student: reassign to student
+ *
+ * Returns { deletedPdfPaths } — actual stored paths for file cleanup.
  */
-export async function eraseAllUserData(userId: string): Promise<string[]> {
-  if (!pool) return [];
+export async function eraseAllUserData(userId: string): Promise<{ deletedPdfPaths: string[] }> {
+  if (!pool) return { deletedPdfPaths: [] };
   await ensureSchema();
 
-  // 1. Find all review IDs where user is owner, supervisor, or student
-  const reviewIdsResult = await pool.query(
-    `SELECT id FROM reviews WHERE user_id = $1 OR supervisor_id = $1 OR student_id = $1`,
-    [userId]
-  );
-  const reviewIds = reviewIdsResult.rows.map((r) => r.id as string);
+  // Add to erasedUserIds BEFORE the transaction to block in-flight writes.
+  // Removed on rollback to avoid false positives.
+  erasedUserIds.add(userId);
 
-  // 2. Delete user traces from tables NOT connected via CASCADE
-  //    (these reference user_id directly, not through reviews FK)
-  await pool.query("DELETE FROM comment_reactions WHERE user_id = $1", [userId]);
-  await pool.query("DELETE FROM peer_pairings WHERE student_a_id = $1 OR student_b_id = $1", [userId]);
-  await pool.query("DELETE FROM readiness_checklists WHERE user_id = $1", [userId]);
-  await pool.query("DELETE FROM pinned_reviews WHERE user_id = $1", [userId]);
-  await pool.query("DELETE FROM notifications WHERE user_id = $1", [userId]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  // 3. Delete user traces from review-linked tables without CASCADE
-  if (reviewIds.length > 0) {
-    await pool.query("DELETE FROM check_performance WHERE review_id = ANY($1::uuid[])", [reviewIds]);
-    await pool.query("DELETE FROM review_audit_log WHERE review_id = ANY($1::uuid[])", [reviewIds]);
-    await pool.query("DELETE FROM annotation_history WHERE review_id = ANY($1::uuid[])", [reviewIds]);
+    // ── Collect PDF paths BEFORE deleting reviews ──
+    // Reviews to delete: student's thesis, or user's own uploads without another student
+    const toDeleteResult = await client.query(
+      `SELECT id, pdf_path FROM reviews
+       WHERE student_id = $1
+          OR (user_id = $1 AND (student_id IS NULL OR student_id = $1))`,
+      [userId]
+    );
+    const deletedReviewIds = toDeleteResult.rows.map((r) => r.id as string);
+    const deletedPdfPaths = toDeleteResult.rows
+      .map((r) => r.pdf_path as string | null)
+      .filter((p): p is string => !!p);
+
+    // ── Transfer reviews uploaded by user for another student ──
+    // user_id=userId AND student_id IS NOT NULL AND student_id != userId
+    // Transfer ownership to the student, clear supervisor/student pair
+    await client.query(
+      `UPDATE reviews SET
+         user_id = student_id,
+         user_email = COALESCE((SELECT email FROM users WHERE users.id = reviews.student_id), user_email),
+         user_name = COALESCE((SELECT name FROM users WHERE users.id = reviews.student_id), user_name),
+         supervisor_id = NULL,
+         student_id = NULL,
+         updated_at = NOW()
+       WHERE user_id = $1 AND student_id IS NOT NULL AND student_id != $1`,
+      [userId]
+    );
+
+    // ── Nullify supervisor on other users' reviews ──
+    // supervisor_id=userId AND user_id != userId (reviews we're not deleting)
+    await client.query(
+      `UPDATE reviews SET supervisor_id = NULL, student_id = NULL, updated_at = NOW()
+       WHERE supervisor_id = $1 AND user_id != $1`,
+      [userId]
+    );
+
+    // ── Scrub JSONB annotations on surviving reviews (Issue 5) ──
+    // Find reviews not being deleted that have annotations containing user's comments
+    const survivingWithAnnotations = await client.query(
+      `SELECT id, annotations FROM reviews
+       WHERE annotations IS NOT NULL
+         AND id != ALL($1::uuid[])
+         AND annotations::text LIKE $2`,
+      [deletedReviewIds.length > 0 ? deletedReviewIds : ["00000000-0000-0000-0000-000000000000"], `%${userId}%`]
+    );
+    for (const row of survivingWithAnnotations.rows) {
+      const annotations = row.annotations as Annotations;
+      let changed = false;
+      for (const [, entry] of Object.entries(annotations)) {
+        if (entry.comments?.length) {
+          // Remove comments authored by the erased user
+          const filtered = entry.comments.filter((c: Comment) => c.authorId !== userId);
+          // Scrub resolvedBy on remaining comments
+          for (const c of filtered) {
+            if (c.resolvedBy === userId) {
+              c.resolvedBy = undefined;
+              c.resolvedByName = undefined;
+              changed = true;
+            }
+          }
+          if (filtered.length !== entry.comments.length) {
+            changed = true;
+            entry.comments = filtered.length > 0 ? filtered : undefined;
+          }
+        }
+      }
+      if (changed) {
+        await client.query(
+          "UPDATE reviews SET annotations = $1, updated_at = NOW() WHERE id = $2",
+          [JSON.stringify(annotations), row.id]
+        );
+      }
+    }
+
+    // ── Delete user traces from non-CASCADE tables ──
+    await client.query("DELETE FROM comment_reactions WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM peer_pairings WHERE student_a_id = $1 OR student_b_id = $1", [userId]);
+    await client.query("DELETE FROM readiness_checklists WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM pinned_reviews WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM notifications WHERE user_id = $1", [userId]);
+
+    // ── Delete user traces from review-linked tables without CASCADE ──
+    if (deletedReviewIds.length > 0) {
+      await client.query("DELETE FROM check_performance WHERE review_id = ANY($1::uuid[])", [deletedReviewIds]);
+      await client.query("DELETE FROM review_audit_log WHERE review_id = ANY($1::uuid[])", [deletedReviewIds]);
+      await client.query("DELETE FROM annotation_history WHERE review_id = ANY($1::uuid[])", [deletedReviewIds]);
+      // revision_summaries: linked by old_review_id OR new_review_id (Issue 1 fix)
+      await client.query(
+        "DELETE FROM revision_summaries WHERE old_review_id = ANY($1::uuid[]) OR new_review_id = ANY($1::uuid[])",
+        [deletedReviewIds]
+      );
+    }
+
+    // ── Actor-scoped cleanup: user acted on OTHER people's reviews ──
+    await client.query("DELETE FROM review_audit_log WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM annotation_history WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM review_notes WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM finding_resolutions WHERE changed_by = $1", [userId]);
+    await client.query("DELETE FROM severity_overrides WHERE changed_by = $1", [userId]);
+    await client.query("DELETE FROM finding_approvals WHERE approved_by = $1", [userId]);
+    await client.query("DELETE FROM review_assignments WHERE assigned_to = $1 OR assigned_by = $1", [userId]);
+    await client.query("DELETE FROM finding_sla WHERE set_by = $1", [userId]);
+    await client.query("DELETE FROM review_tags WHERE created_by = $1", [userId]);
+    await client.query("DELETE FROM proposal_relationships WHERE created_by = $1", [userId]);
+
+    // ── Anonymize admin config tables (Issue 4 — institutional config survives) ──
+    await client.query("UPDATE review_templates SET created_by = 'deleted-user' WHERE created_by = $1", [userId]);
+    await client.query("UPDATE prompt_snippets SET created_by = 'deleted-user' WHERE created_by = $1", [userId]);
+    await client.query("UPDATE custom_prompts SET updated_by = 'deleted-user' WHERE updated_by = $1", [userId]);
+    await client.query("UPDATE submission_deadlines SET created_by = 'deleted-user' WHERE created_by = $1", [userId]);
+    await client.query("UPDATE review_schedules SET created_by = 'deleted-user' WHERE created_by = $1", [userId]);
+    await client.query("UPDATE finding_patterns SET created_by = 'deleted-user' WHERE created_by = $1", [userId]);
+    // Remove userId from review_schedules.target_users arrays
+    await client.query(
+      "UPDATE review_schedules SET target_users = array_remove(target_users, $1) WHERE $1 = ANY(target_users)",
+      [userId]
+    );
+
+    // ── Hard-delete reviews to be removed ──
+    // CASCADE handles: notifications, pinned_reviews, review_notes, review_tags,
+    // review_assignments, finding_resolutions, token_usage, review_versions,
+    // finding_sla, severity_overrides, finding_approvals, proposal_relationships,
+    // revision_summaries, readiness_checklists
+    if (deletedReviewIds.length > 0) {
+      await client.query("DELETE FROM reviews WHERE id = ANY($1::uuid[])", [deletedReviewIds]);
+    }
+
+    // ── Delete user record ──
+    await client.query("DELETE FROM users WHERE id = $1", [userId]);
+
+    await client.query("COMMIT");
+
+    // Clear upsertedUsers cache so any stale cache entry doesn't interfere
+    for (const key of upsertedUsers) {
+      if (key.startsWith(`${userId}:`)) upsertedUsers.delete(key);
+    }
+
+    return { deletedPdfPaths };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    // Remove from erasedUserIds on rollback — erasure didn't succeed
+    erasedUserIds.delete(userId);
+    throw err;
+  } finally {
+    client.release();
   }
-
-  // Also clean audit log entries where user acted on other people's reviews
-  await pool.query("DELETE FROM review_audit_log WHERE user_id = $1", [userId]);
-  // Clean annotation history where user acted on other people's reviews
-  await pool.query("DELETE FROM annotation_history WHERE user_id = $1", [userId]);
-  // Clean review notes on other people's reviews
-  await pool.query("DELETE FROM review_notes WHERE user_id = $1", [userId]);
-  // Clean finding resolutions where user acted
-  await pool.query("DELETE FROM finding_resolutions WHERE changed_by = $1", [userId]);
-  // Clean severity overrides where user acted
-  await pool.query("DELETE FROM severity_overrides WHERE changed_by = $1", [userId]);
-  // Clean finding approvals where user acted
-  await pool.query("DELETE FROM finding_approvals WHERE approved_by = $1", [userId]);
-  // Clean review assignments where user is involved
-  await pool.query("DELETE FROM review_assignments WHERE assigned_to = $1 OR assigned_by = $1", [userId]);
-  // Clean finding SLAs set by user
-  await pool.query("DELETE FROM finding_sla WHERE set_by = $1", [userId]);
-  // Clean review tags created by user
-  await pool.query("DELETE FROM review_tags WHERE created_by = $1", [userId]);
-  // Clean proposal relationships created by user
-  await pool.query("DELETE FROM proposal_relationships WHERE created_by = $1", [userId]);
-
-  // 4. Hard-delete all reviews (CASCADE handles: notifications, pinned_reviews,
-  //    review_notes, review_tags, review_assignments, finding_resolutions,
-  //    token_usage, review_versions, finding_sla, severity_overrides,
-  //    finding_approvals, proposal_relationships, revision_summaries)
-  if (reviewIds.length > 0) {
-    await pool.query("DELETE FROM reviews WHERE id = ANY($1::uuid[])", [reviewIds]);
-  }
-
-  // 5. Delete user record
-  await pool.query("DELETE FROM users WHERE id = $1", [userId]);
-
-  return reviewIds;
 }
 
 // ---------------------------------------------------------------------------
@@ -4188,7 +4372,10 @@ export async function createVersionedReview(
   }
 ): Promise<{ versionNumber: number; groupId: string }> {
   if (!pool) throw new Error("Database pool not initialized");
+  if (erasedUserIds.has(newReview.userId)) throw new Error("User account has been erased");
   await ensureSchema();
+  // Re-check after async ensureSchema — erasure may have started during await
+  if (erasedUserIds.has(newReview.userId)) throw new Error("User account has been erased");
 
   const client = await pool.connect();
   try {

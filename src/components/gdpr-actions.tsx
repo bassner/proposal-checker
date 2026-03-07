@@ -53,10 +53,17 @@ export function GdprActions({ isAuthenticated }: { isAuthenticated: boolean }) {
     setDeleting(true);
     setError(null);
     try {
-      const res = await fetch("/api/account", { method: "DELETE" });
-      if (!res.ok) throw new Error("Löschung fehlgeschlagen");
-      // Redirect to sign-out (clears session cookie)
-      window.location.href = "/api/auth/signout?callbackUrl=/privacy";
+      const res = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "DELETE" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Löschung fehlgeschlagen");
+      }
+      // Redirect to federated sign-out (clears Keycloak SSO session + cookies)
+      window.location.href = "/api/auth/federated-signout";
     } catch {
       setError("Datenlöschung fehlgeschlagen. Bitte versuchen Sie es erneut.");
       setDeleting(false);
@@ -98,8 +105,9 @@ export function GdprActions({ isAuthenticated }: { isAuthenticated: boolean }) {
           <div className="mt-4 border-t border-amber-500/20 pt-4">
             <p className="text-xs text-amber-200/60">
               Die Löschung entfernt <strong className="text-amber-200/80">unwiderruflich</strong> alle
-              Ihre Daten: Reviews, hochgeladene PDFs, Annotationen, Kommentare,
-              Audit-Einträge und Ihr Benutzerkonto. Geben
+              Ihre Daten aus der Datenbank: Reviews, Annotationen, Kommentare,
+              Audit-Einträge und Ihr Benutzerkonto. Hochgeladene PDF-Dateien
+              werden innerhalb von 24&nbsp;Stunden vom Server entfernt. Geben
               Sie <strong className="text-amber-200/80">LÖSCHEN</strong> ein,
               um zu bestätigen.
             </p>

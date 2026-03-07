@@ -20,7 +20,7 @@ async function ensureUploadDir(): Promise<string> {
  * Validate that a file path is within the upload directory.
  * Prevents directory traversal attacks if DB data is tampered with.
  */
-async function validatePath(filePath: string): Promise<string> {
+export async function validatePath(filePath: string): Promise<string> {
   const uploadDir = await ensureUploadDir();
   const resolved = path.resolve(filePath);
   // Ensure the resolved path starts with the upload dir + separator
