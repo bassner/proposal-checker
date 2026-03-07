@@ -54,8 +54,8 @@ export async function DELETE(request: Request) {
     session.user.name
   ).catch(() => {});
 
-  // Erase all DB data, get PDF paths for file cleanup
-  const { deletedPdfPaths } = await eraseAllUserData(userId);
+  // Erase all DB data, get review count and PDF paths for file cleanup
+  const { deletedReviewCount, deletedPdfPaths } = await eraseAllUserData(userId);
 
   // Delete PDFs and rendered page images from disk using stored paths
   let filesDeleted = 0;
@@ -79,12 +79,12 @@ export async function DELETE(request: Request) {
   }
 
   console.log(
-    `[account] User ${userId} erased: ${deletedPdfPaths.length} reviews, ${filesDeleted} PDFs deleted`
+    `[account] User ${userId} erased: ${deletedReviewCount} reviews, ${filesDeleted} PDFs deleted`
   );
 
   return Response.json({
     ok: true,
-    reviewsDeleted: deletedPdfPaths.length,
+    reviewsDeleted: deletedReviewCount,
     ...(fileErrors.length > 0 && { warnings: [`${fileErrors.length} PDF file(s) could not be deleted`] }),
   });
 }

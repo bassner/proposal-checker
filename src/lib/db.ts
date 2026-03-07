@@ -2450,8 +2450,8 @@ export async function exportAllUserData(userId: string): Promise<Record<string, 
  *
  * Returns { deletedPdfPaths } — actual stored paths for file cleanup.
  */
-export async function eraseAllUserData(userId: string): Promise<{ deletedPdfPaths: string[] }> {
-  if (!pool) return { deletedPdfPaths: [] };
+export async function eraseAllUserData(userId: string): Promise<{ deletedReviewCount: number; deletedPdfPaths: string[] }> {
+  if (!pool) return { deletedReviewCount: 0, deletedPdfPaths: [] };
   await ensureSchema();
 
   // Add to erasedUserIds BEFORE the transaction to block in-flight writes.
@@ -2599,7 +2599,7 @@ export async function eraseAllUserData(userId: string): Promise<{ deletedPdfPath
       if (key.startsWith(`${userId}:`)) upsertedUsers.delete(key);
     }
 
-    return { deletedPdfPaths };
+    return { deletedReviewCount: deletedReviewIds.length, deletedPdfPaths };
   } catch (err) {
     await client.query("ROLLBACK");
     // Remove from erasedUserIds on rollback — erasure didn't succeed
