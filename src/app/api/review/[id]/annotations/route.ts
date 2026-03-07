@@ -1,6 +1,5 @@
 import { requireAuth } from "@/lib/auth/helpers";
 import { isAvailable, getReviewById, saveAnnotations, logAuditEvent, logAnnotationChange } from "@/lib/db";
-import { dispatchWebhookEvent } from "@/lib/webhooks";
 import { cacheInvalidate } from "@/lib/cache";
 import type { AnnotationStatus, Annotations, MergedFeedback } from "@/types/review";
 
@@ -144,11 +143,6 @@ export async function POST(
       ).catch((err) => console.error("[api] Annotation history log failed:", err));
     }
   }
-
-  dispatchWebhookEvent("annotation.updated", {
-    reviewId: id,
-    annotations: validated,
-  }).catch((err) => console.error("[api] Webhook dispatch failed:", err));
 
   return Response.json({ ok: true });
 }

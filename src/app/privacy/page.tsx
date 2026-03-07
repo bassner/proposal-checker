@@ -334,30 +334,7 @@ export default function PrivacyPage() {
             angeforderten Analyse ist zur Aufgabenerfüllung erforderlich.
           </p>
 
-          <h3>4.9 Webhooks (Benachrichtigung externer Systeme)</h3>
-          <p>
-            Administrierende können Webhooks konfigurieren, um externe Systeme
-            bei bestimmten Ereignissen (z.&nbsp;B. Review abgeschlossen, Review
-            fehlgeschlagen, Annotation geändert) automatisch zu
-            benachrichtigen. Dabei wird ein JSON-Payload mit Ereignisdaten
-            (inklusive Review-ID, Zeitstempel und ggf. kontextbezogener
-            Informationen) an die konfigurierte URL übermittelt. Die
-            Übermittlung erfolgt mit einer HMAC-SHA256-Signatur zur
-            Integritätssicherung.
-          </p>
-          <p>
-            <strong>Hinweis:</strong> Sofern personenbezogene Daten in den
-            Ereignisdaten enthalten sind (z.&nbsp;B. Nutzerkennungen), werden
-            diese an das konfigurierte Zielsystem übertragen. Die
-            Administration trägt die Verantwortung, sicherzustellen, dass die
-            Empfängersysteme datenschutzkonform betrieben werden.
-          </p>
-          <p>
-            <strong>Rechtsgrundlage:</strong> Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;e
-            DSGVO i.&nbsp;V.&nbsp;m. Art.&nbsp;4 Abs.&nbsp;1 BayDSG.
-          </p>
-
-          <h3>4.10 Leistungsmetriken (Check Performance)</h3>
+          <h3>4.9 Leistungsmetriken (Check Performance)</h3>
           <p>
             Für jede KI-Prüfgruppe werden technische Leistungskennzahlen
             erfasst (Dauer, Token-Verbrauch, Status). Diese Daten sind
@@ -428,8 +405,7 @@ export default function PrivacyPage() {
           <h3>5.4 Sonstige Empfänger</h3>
           <p>
             Darüber hinaus werden keine personenbezogenen Daten an Dritte
-            weitergegeben, soweit nicht im Rahmen von Webhooks
-            (Abschnitt&nbsp;4.9) konfiguriert.
+            weitergegeben.
           </p>
           <p>
             Gegebenenfalls werden Ihre Daten an die zuständigen Aufsichts- und
@@ -733,10 +709,6 @@ export default function PrivacyPage() {
               Share-Links können mit Ablaufdatum und optionalem Passwortschutz
               versehen werden. Passwörter werden nur als kryptographischer Hash
               gespeichert.
-            </li>
-            <li>
-              Webhook-Payloads werden mit HMAC-SHA256 signiert, um die
-              Integrität und Authentizität der Daten sicherzustellen.
             </li>
             <li>
               Die Löschung von Reviews erfolgt als Soft-Delete, um
