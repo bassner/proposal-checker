@@ -2,7 +2,7 @@
 
 AI-powered thesis proposal reviewer for computer science students. Upload a PDF proposal and get structured, actionable feedback based on specific academic guidelines — covering structure, writing quality, bibliography, figures, objectives, schedule, and AI transparency.
 
-> **Note:** This is an MVP / proof-of-concept. Not intended for production use.
+> **Note:** This is an MVP / proof-of-concept.
 
 ## How It Works
 
