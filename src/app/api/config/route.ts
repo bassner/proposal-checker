@@ -19,10 +19,11 @@ export async function GET() {
   const models = [];
 
   if (allowedProviders.includes("azure") && process.env.AZURE_OPENAI_API_KEY) {
+    const azureModel = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4";
     models.push({
       provider: "azure",
-      label: "Azure OpenAI (GPT-5.2)",
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.2",
+      label: `Azure OpenAI (${azureModel})`,
+      model: azureModel,
     });
   }
 
@@ -38,7 +39,7 @@ export async function GET() {
   // (they'll fail at runtime with a clear error)
   if (models.length === 0) {
     if (allowedProviders.includes("azure")) {
-      models.push({ provider: "azure", label: "Azure OpenAI (GPT-5.2)", model: "gpt-5.2" });
+      models.push({ provider: "azure", label: `Azure OpenAI (${process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4"})`, model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4" });
     }
     if (allowedProviders.includes("ollama")) {
       models.push({ provider: "ollama", label: "Ollama (GPT-OSS 120B)", model: "gpt-oss:120b" });
