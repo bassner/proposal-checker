@@ -8,7 +8,7 @@ export function createModel(provider: ProviderType): BaseChatModel {
   if (provider === "azure") {
     // Use ChatOpenAI directly with Azure v1 API endpoint
     return new ChatOpenAI({
-      model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.2",
+      model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4",
       apiKey: process.env.AZURE_OPENAI_API_KEY,
       streaming: true,
       useResponsesApi: true,
