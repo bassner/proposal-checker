@@ -20,17 +20,25 @@ export const ROLE_HIERARCHY: Record<AppRole, number> = Object.fromEntries(
  * Defaults to the app role name itself if not set.
  */
 export function getKeycloakRoleMapping(): Record<string, AppRole> {
-  const mapping: Record<string, AppRole> = {};
+  const mapping = Object.create(null) as Record<string, AppRole>;
   // Iterate lowest-priority first so higher-priority roles win on collision
   for (const role of [...APP_ROLES].reverse()) {
     const envKey = `AUTH_ROLE_${role.toUpperCase()}`;
-    const keycloakName = process.env[envKey] || role;
-    if (mapping[keycloakName] && mapping[keycloakName] !== role) {
-      console.warn(
-        `[auth] Role mapping collision: Keycloak role "${keycloakName}" maps to both "${mapping[keycloakName]}" and "${role}". Using higher-priority role "${role}".`
-      );
+    const raw = process.env[envKey] || role;
+    // Support comma-separated Keycloak role names, e.g. AUTH_ROLE_ADMIN="itg-admin,super-admin"
+    const keycloakNames = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    if (keycloakNames.length === 0) {
+      console.warn(`[auth] ${envKey} is set but contains no valid role names, falling back to "${role}"`);
+      keycloakNames.push(role);
     }
-    mapping[keycloakName] = role;
+    for (const keycloakName of keycloakNames) {
+      if (keycloakName in mapping && mapping[keycloakName] !== role) {
+        console.warn(
+          `[auth] Role mapping collision: Keycloak role "${keycloakName}" maps to both "${mapping[keycloakName]}" and "${role}". Using higher-priority role "${role}".`
+        );
+      }
+      mapping[keycloakName] = role;
+    }
   }
   return mapping;
 }
