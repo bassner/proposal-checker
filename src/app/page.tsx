@@ -220,6 +220,9 @@ function UploadPage() {
   const [preflightDismissed, setPreflightDismissed] = useState(false);
   // Supervisor/student assignment
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
+  // GDPR consent — required before every submission, not persisted across sessions
+  // (Art. 7 GDPR: consent must be a clear, affirmative act and cannot be pre-ticked)
+  const [gdprConsent, setGdprConsent] = useState(false);
   const setMode = useCallback((v: ReviewMode) => {
     setModeRaw(v);
     localStorage.setItem("proposal-checker:mode", v);
@@ -398,6 +401,7 @@ function UploadPage() {
     : undefined;
 
   const handleStart = async () => {
+    if (!gdprConsent) return;
     if (isBatchMode) {
       // Batch mode: submit all queued files sequentially
       if (batch.files.length === 0 || noneSelected) return;
@@ -648,6 +652,41 @@ function UploadPage() {
             )}
           </div>
 
+          {/* GDPR consent — required before every submission */}
+          <label
+            className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 text-sm transition-colors ${
+              gdprConsent
+                ? "border-blue-500/40 bg-blue-50 dark:bg-blue-500/10"
+                : "border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/[0.03]"
+            } ${isAnySubmitting ? "pointer-events-none opacity-40" : "hover:border-slate-300 dark:hover:border-white/20"}`}
+          >
+            <input
+              type="checkbox"
+              checked={gdprConsent}
+              onChange={(e) => setGdprConsent(e.target.checked)}
+              disabled={isAnySubmitting}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-blue-600"
+              aria-describedby="gdpr-consent-text"
+            />
+            <span id="gdpr-consent-text" className="text-slate-600 dark:text-white/60">
+              I consent to the processing of the uploaded document and my account data
+              (name, email, TUM ID, role) for the purpose of generating an automated review.
+              I understand that the document content will be sent to the selected language model
+              provider ({provider === "azure" ? "Microsoft Azure OpenAI, EU region" : "a self-hosted open-source model running on TUM infrastructure"})
+              and that review results are stored on the chair&apos;s servers.
+              I have read and accept the{" "}
+              <Link
+                href="/privacy"
+                target="_blank"
+                className="underline decoration-dotted underline-offset-2 hover:text-blue-600 dark:hover:text-blue-400"
+                onClick={(e) => e.stopPropagation()}
+              >
+                data privacy policy
+              </Link>
+              , and I understand that I can export or permanently delete all my data at any time from that page.
+            </span>
+          </label>
+
           <Button
             data-tour="submit-button"
             onClick={handleStart}
@@ -655,6 +694,7 @@ function UploadPage() {
               isAnySubmitting ||
               models.length === 0 ||
               noneSelected ||
+              !gdprConsent ||
               (isBatchMode ? batch.files.length === 0 : !file)
             }
             className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
