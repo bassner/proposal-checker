@@ -94,16 +94,11 @@ async function ensureSchema(): Promise<void> {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
-      -- Seed with current hardcoded defaults
-      INSERT INTO role_provider_config (role, providers) VALUES
-        ('admin', ARRAY['azure', 'local']::TEXT[]),
-        ('phd', ARRAY['azure', 'local']::TEXT[]),
-        ('student', ARRAY['local']::TEXT[])
-      ON CONFLICT (role) DO NOTHING;
-
       -- Provider rename migration (April 2026): 'ollama' → 'local'.
-      -- Idempotent: on fresh DBs the drop/add pair simply replaces the just-created constraint;
-      -- on existing DBs it migrates legacy rows before re-adding the constraint with the new allowed set.
+      -- MUST run BEFORE the seed INSERT below so existing DBs with the old CHECK
+      -- constraint don't reject the new 'local' values during seed/upsert.
+      -- Idempotent: on fresh DBs this replaces the just-created constraint with an
+      -- identical one; on existing DBs it migrates legacy rows first.
       DO $migrate$
       BEGIN
         ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_provider_check;
@@ -120,6 +115,13 @@ async function ensureSchema(): Promise<void> {
         ALTER TABLE role_provider_config ADD CONSTRAINT role_provider_config_providers_check
           CHECK (cardinality(providers) > 0 AND providers <@ ARRAY['azure', 'local']::text[]);
       END $migrate$;
+
+      -- Seed with current hardcoded defaults
+      INSERT INTO role_provider_config (role, providers) VALUES
+        ('admin', ARRAY['azure', 'local']::TEXT[]),
+        ('phd', ARRAY['azure', 'local']::TEXT[]),
+        ('student', ARRAY['local']::TEXT[])
+      ON CONFLICT (role) DO NOTHING;
 
       -- Share links: add share_token column (safe for deployed DB)
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_token TEXT;
