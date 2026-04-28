@@ -180,7 +180,7 @@ export function UploadVersionModal({
               className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 outline-none focus:border-white/20"
             >
               <option value="azure">Azure</option>
-              <option value="ollama">Ollama</option>
+              <option value="local">Local LLM</option>
             </select>
           </div>
 

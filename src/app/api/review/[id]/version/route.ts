@@ -145,7 +145,7 @@ export async function POST(
   }
 
   // Provider: use parent's if not specified
-  const provider: ProviderType = (providerRaw === "azure" || providerRaw === "ollama")
+  const provider: ProviderType = (providerRaw === "azure" || providerRaw === "local")
     ? providerRaw
     : parentReview.provider as ProviderType;
 

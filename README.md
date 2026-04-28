@@ -42,11 +42,11 @@ AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_DEPLOYMENT=gpt-5.2
 ```
 
-**Ollama (OpenAI-compatible endpoint):**
+**Self-hosted local model (OpenAI-compatible endpoint):**
 ```
-OLLAMA_API_KEY=your-key
-OLLAMA_BASE_URL=https://your-ollama-host/v1
-OLLAMA_MODEL=gpt-oss:120b
+LOCAL_LLM_API_KEY=your-key
+LOCAL_LLM_BASE_URL=https://your-llm-host/v1
+LOCAL_LLM_MODEL=openai/gpt-oss-120b
 ```
 
 **Optional limits:**

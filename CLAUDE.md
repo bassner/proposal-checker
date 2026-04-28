@@ -26,7 +26,7 @@ There are no tests in this project.
 
 Configured via `.env.local` (see `docker/docker-compose.yml` for docker). Key vars:
 - `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` — Azure OpenAI provider
-- `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` — Ollama provider
+- `LOCAL_LLM_API_KEY`, `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL` — self-hosted local model (OpenAI-compatible)
 - `MAX_PDF_SIZE_MB` (default: 10), `MAX_PDF_PAGES` (default: 20)
 - `AUTH_SECRET` — Required. Generate with `openssl rand -base64 32`
 - `AUTH_KEYCLOAK_ID`, `AUTH_KEYCLOAK_SECRET`, `AUTH_KEYCLOAK_ISSUER` — Keycloak OIDC
@@ -49,7 +49,7 @@ Keycloak OIDC via `next-auth` v5. JWT session strategy — roles extracted from 
 
 **Convention**: every API route MUST call `requireAuth()` as its first line. Exceptions: `/api/health` (public healthcheck) and `/api/auth/[...nextauth]` (login/callback flow).
 
-Role-provider mapping in `src/lib/auth/roles.ts`: admin/phd get all providers, student gets ollama only. Stream endpoint enforces ownership (IDOR prevention).
+Role-provider mapping in `src/lib/auth/roles.ts`: admin/phd get all providers, student gets the local model only. Stream endpoint enforces ownership (IDOR prevention).
 
 ### Session System (`src/lib/sessions.ts`)
 

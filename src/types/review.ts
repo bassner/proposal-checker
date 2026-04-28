@@ -334,7 +334,7 @@ export interface ReviewState {
   startTime: number | null;
 }
 
-export const PROVIDER_TYPES = ["azure", "ollama"] as const;
+export const PROVIDER_TYPES = ["azure", "local"] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
 export interface ModelConfig {

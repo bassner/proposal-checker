@@ -58,7 +58,7 @@ export interface MergerRevisionContext {
  * When revision context is provided, also produces a versionComparison object
  * classifying previous findings as resolved, persistent, unreviewed, or new.
  *
- * @param model   - The LangChain chat model instance (Azure or Ollama).
+ * @param model   - The LangChain chat model instance (Azure or local).
  * @param results - Output from all check groups (including any that errored).
  * @param options - Optional abort signal and streaming callbacks.
  * @returns Merged feedback with structured findings and token usage stats.

@@ -136,7 +136,7 @@ function PrivacyDE() {
       <ul>
         <li><strong>Textextraktion:</strong> Der Textinhalt der PDF-Seiten wird maschinell extrahiert.</li>
         <li><strong>Seitenrendering:</strong> Die Seiten des PDF-Dokuments werden serverseitig als PNG-Bilder gerendert (mittels Poppler/pdftoppm), um dem KI-Modell eine visuelle Analyse (z.&nbsp;B. Abbildungen, Seitenlayout, Struktur) zu ermöglichen.</li>
-        <li><strong>KI-Verarbeitung:</strong> Sowohl der extrahierte Text als auch die gerenderten Seitenbilder werden an das gewählte KI-Modell (Azure OpenAI oder Ollama) übermittelt. Die Analyse erfolgt in 7 parallelen Prüfgruppen (z.&nbsp;B. Struktur, Problemstellung, Literaturverzeichnis, Abbildungen, Schreibstil, KI-Transparenz, Zeitplan), gefolgt von einem Zusammenführungsschritt.</li>
+        <li><strong>KI-Verarbeitung:</strong> Sowohl der extrahierte Text als auch die gerenderten Seitenbilder werden an das gewählte KI-Modell (Azure OpenAI oder ein selbst gehostetes Open-Source-Modell auf TUM-Infrastruktur) übermittelt. Die Analyse erfolgt in 7 parallelen Prüfgruppen (z.&nbsp;B. Struktur, Problemstellung, Literaturverzeichnis, Abbildungen, Schreibstil, KI-Transparenz, Zeitplan), gefolgt von einem Zusammenführungsschritt.</li>
       </ul>
       <p><strong>Rechtsgrundlage:</strong> Art.&nbsp;6 Abs.&nbsp;1 lit.&nbsp;a DSGVO (Einwilligung durch aktives Hochladen und Starten der Analyse).</p>
       <p>Die gerenderten PNG-Bilder werden ausschließlich temporär im Arbeitsspeicher bzw. im temporären Dateisystem des Servers erzeugt und nach Abschluss der Analyse gelöscht.</p>
@@ -201,8 +201,8 @@ function PrivacyDE() {
         <li>Alle Datenübertragungen erfolgen verschlüsselt (TLS).</li>
       </ul>
 
-      <h3>5.3 Ollama (On-Premises)</h3>
-      <p>Wird als KI-Anbieter &bdquo;Ollama&ldquo; gewählt, erfolgt die gesamte KI-Verarbeitung auf GPU-Infrastruktur der TUM. Es findet keine Übermittlung an Dritte statt. Ihre Daten verlassen nicht das Netzwerk der Universität.</p>
+      <h3>5.3 Selbst gehostetes lokales KI-Modell (On-Premises)</h3>
+      <p>Wird als KI-Anbieter &bdquo;Local LLM&ldquo; gewählt, erfolgt die gesamte KI-Verarbeitung auf GPU-Infrastruktur der TUM. Es findet keine Übermittlung an Dritte statt. Ihre Daten verlassen nicht das Netzwerk der Universität.</p>
 
       <h3>5.4 Sonstige Empfänger</h3>
       <p>Darüber hinaus werden keine personenbezogenen Daten an Dritte weitergegeben.</p>
@@ -246,7 +246,7 @@ function PrivacyDE() {
       <h3>8.2 Lokale Speicherung (localStorage)</h3>
       <p>Im lokalen Speicher des Browsers werden folgende Einstellungen gesichert, um die Benutzererfahrung bei erneutem Besuch zu verbessern:</p>
       <ul>
-        <li><strong>Anbieterpräferenz:</strong> Der zuletzt gewählte KI-Anbieter (Azure/Ollama).</li>
+        <li><strong>Anbieterpräferenz:</strong> Der zuletzt gewählte KI-Anbieter (Azure / Local LLM).</li>
         <li><strong>Review-Modus:</strong> Die gewählte Analyse-Art (Proposal/Thesis).</li>
         <li><strong>Ausgewählte Prüfgruppen:</strong> Die zuletzt gewählte Kombination von Prüfkategorien.</li>
         <li><strong>Onboarding-Status:</strong> Ob die Einführungstour bereits durchlaufen wurde.</li>
@@ -256,7 +256,7 @@ function PrivacyDE() {
 
       <h2>9. Datenübermittlung in Drittstaaten</h2>
       <p>Bei Nutzung des KI-Anbieters &bdquo;Azure OpenAI&ldquo; erfolgt die Verarbeitung ausschließlich in Rechenzentren innerhalb der Europäischen Union. Eine Übermittlung personenbezogener Daten in Drittstaaten (außerhalb des EWR) findet nicht statt.</p>
-      <p>Bei Nutzung des KI-Anbieters &bdquo;Ollama&ldquo; verlassen die Daten nicht das Netzwerk der TUM.</p>
+      <p>Bei Nutzung des KI-Anbieters &bdquo;Local LLM&ldquo; verlassen die Daten nicht das Netzwerk der TUM.</p>
 
       <h2>10. Automatisierte Entscheidungsfindung</h2>
       <p>Die KI-gestützte Analyse stellt keine automatisierte Entscheidungsfindung im Sinne von Art.&nbsp;22 DSGVO dar. Die Ergebnisse der Analyse sind rein informativ und dienen als Unterstützung für die Nutzenden. Es findet kein Profiling statt. Aus den Ergebnissen werden keine verbindlichen Entscheidungen abgeleitet — die finale Bewertung obliegt stets den zuständigen Lehrpersonen.</p>
@@ -400,7 +400,7 @@ function PrivacyEN() {
       <ul>
         <li><strong>Text extraction:</strong> The text content of PDF pages is extracted automatically.</li>
         <li><strong>Page rendering:</strong> PDF pages are rendered server-side as PNG images (via Poppler/pdftoppm) to enable visual analysis by the AI model (e.g., figures, page layout, structure).</li>
-        <li><strong>AI processing:</strong> Both the extracted text and rendered page images are sent to the selected AI model (Azure OpenAI or Ollama). Analysis is performed in 7 parallel check groups (e.g., structure, problem statement, bibliography, figures, writing style, AI transparency, schedule), followed by a merging step.</li>
+        <li><strong>AI processing:</strong> Both the extracted text and rendered page images are sent to the selected AI model (Azure OpenAI or a self-hosted open-source model on TUM infrastructure). Analysis is performed in 7 parallel check groups (e.g., structure, problem statement, bibliography, figures, writing style, AI transparency, schedule), followed by a merging step.</li>
       </ul>
       <p><strong>Legal basis:</strong> Art.&nbsp;6(1)(a) GDPR (consent through active upload and initiation of analysis).</p>
       <p>Rendered PNG images are generated exclusively temporarily in server memory or temporary file system and are deleted upon completion of the analysis.</p>
@@ -465,8 +465,8 @@ function PrivacyEN() {
         <li>All data transmissions are encrypted (TLS).</li>
       </ul>
 
-      <h3>5.3 Ollama (On-Premises)</h3>
-      <p>When &ldquo;Ollama&rdquo; is selected as the AI provider, all AI processing takes place on TUM&apos;s GPU infrastructure. No data is transmitted to third parties. Your data does not leave the university network.</p>
+      <h3>5.3 Self-hosted local AI model (On-Premises)</h3>
+      <p>When &ldquo;Local LLM&rdquo; is selected as the AI provider, all AI processing takes place on TUM&apos;s GPU infrastructure. No data is transmitted to third parties. Your data does not leave the university network.</p>
 
       <h3>5.4 Other Recipients</h3>
       <p>No personal data is disclosed to any other third parties.</p>
@@ -510,7 +510,7 @@ function PrivacyEN() {
       <h3>8.2 Local Storage (localStorage)</h3>
       <p>The following settings are stored in the browser&apos;s local storage to improve the user experience on return visits:</p>
       <ul>
-        <li><strong>Provider preference:</strong> The last selected AI provider (Azure/Ollama).</li>
+        <li><strong>Provider preference:</strong> The last selected AI provider (Azure / Local LLM).</li>
         <li><strong>Review mode:</strong> The selected analysis type (Proposal/Thesis).</li>
         <li><strong>Selected check groups:</strong> The last selected combination of check categories.</li>
         <li><strong>Onboarding status:</strong> Whether the introductory tour has been completed.</li>
@@ -520,7 +520,7 @@ function PrivacyEN() {
 
       <h2>9. Data Transfers to Third Countries</h2>
       <p>When using the &ldquo;Azure OpenAI&rdquo; AI provider, processing takes place exclusively in data centers within the European Union. No transfer of personal data to third countries (outside the EEA) takes place.</p>
-      <p>When using the &ldquo;Ollama&rdquo; AI provider, data does not leave TUM&apos;s network.</p>
+      <p>When using the &ldquo;Local LLM&rdquo; AI provider, data does not leave TUM&apos;s network.</p>
 
       <h2>10. Automated Decision-Making</h2>
       <p>The AI-assisted analysis does not constitute automated decision-making within the meaning of Art.&nbsp;22 GDPR. The analysis results are purely informational and serve as support for users. No profiling takes place. No binding decisions are derived from the results — the final assessment always rests with the responsible teaching staff.</p>

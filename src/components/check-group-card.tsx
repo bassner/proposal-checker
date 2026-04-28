@@ -13,7 +13,7 @@ interface CheckGroupCardProps {
 
 export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const isOllama = provider === "ollama";
+  const isLocal = provider === "local";
 
   const staticElapsed =
     group.startTime && group.endTime
@@ -21,10 +21,10 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
       : null;
 
   // Azure: hide tokens until generating phase (reasoning tokens are opaque)
-  // Ollama: show tokens from the start (think-tag tokens are streamed)
+  // Local: show tokens from the start (reasoning tokens stream in a separate field)
   const hasNoTokensYet =
     group.status === "active" &&
-    (isOllama
+    (isLocal
       ? (group.tokenCount ?? 0) === 0
       : group.phase !== "generating" && (group.tokenCount ?? 0) < 100);
 

@@ -27,11 +27,12 @@ export async function GET() {
     });
   }
 
-  if (allowedProviders.includes("ollama") && process.env.OLLAMA_API_KEY) {
+  if (allowedProviders.includes("local") && process.env.LOCAL_LLM_API_KEY) {
+    const localModel = process.env.LOCAL_LLM_MODEL || "openai/gpt-oss-120b";
     models.push({
-      provider: "ollama",
-      label: `Ollama (${process.env.OLLAMA_MODEL || "gpt-oss:120b"})`,
-      model: process.env.OLLAMA_MODEL || "gpt-oss:120b",
+      provider: "local",
+      label: `Local LLM (${formatModelLabel(localModel)})`,
+      model: localModel,
     });
   }
 
@@ -41,10 +42,23 @@ export async function GET() {
     if (allowedProviders.includes("azure")) {
       models.push({ provider: "azure", label: `Azure OpenAI (${process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4"})`, model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4" });
     }
-    if (allowedProviders.includes("ollama")) {
-      models.push({ provider: "ollama", label: "Ollama (GPT-OSS 120B)", model: "gpt-oss:120b" });
+    if (allowedProviders.includes("local")) {
+      const localModel = process.env.LOCAL_LLM_MODEL || "openai/gpt-oss-120b";
+      models.push({ provider: "local", label: `Local LLM (${formatModelLabel(localModel)})`, model: localModel });
     }
   }
 
   return Response.json({ models });
+}
+
+/** Strip provider prefix and normalize a model id into a short display label. */
+function formatModelLabel(modelId: string): string {
+  const stripped = modelId.includes("/") ? modelId.slice(modelId.lastIndexOf("/") + 1) : modelId;
+  // gpt-oss-120b → GPT-OSS 120B
+  return stripped
+    .replace(/[-_]/g, " ")
+    .replace(/\bgpt\b/gi, "GPT")
+    .replace(/\boss\b/gi, "OSS")
+    .replace(/(\d+)b\b/gi, "$1B")
+    .trim();
 }

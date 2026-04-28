@@ -474,7 +474,7 @@ export function ScheduleManager({ initialSchedules }: Props) {
           <div className="mb-3">
             <label className="mb-1 block text-xs text-white/50">Provider</label>
             <div className="flex gap-2">
-              {["azure", "ollama"].map((p) => (
+              {["azure", "local"].map((p) => (
                 <button
                   key={p}
                   onClick={() => setFormProvider(p)}

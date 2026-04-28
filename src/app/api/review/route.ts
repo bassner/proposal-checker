@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  if (providerRaw !== "azure" && providerRaw !== "ollama") {
+  if (providerRaw !== "azure" && providerRaw !== "local") {
     return new Response(JSON.stringify({ error: "Invalid provider" }), {
       status: 400, headers: { "Content-Type": "application/json" },
     });

@@ -39,11 +39,11 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
   const outputTokens = totalOutputTokens(state);
   const inputTokens = state.totalInputTokens;
 
-  const isOllama = state.provider === "ollama";
+  const isLocal = state.provider === "local";
 
   const mergeHasNoTokensYet =
     state.steps.merge === "active" &&
-    (isOllama
+    (isLocal
       ? state.mergeTokens === 0
       : state.mergePhase !== "generating" && state.mergeTokens < 100);
 

@@ -70,7 +70,7 @@ export async function safeStructuredInvoke<T extends z.ZodTypeAny>(
   };
 
   if (options?.onToken) {
-    // Track <think> tags for Ollama-style thinking models.
+    // Track <think> tags for thinking models that emit them inline.
     // The model streams <think>...</think> as regular content before the JSON.
     let accumulated = "";
     let thinkTagClosed = false;
@@ -220,7 +220,7 @@ async function streamCollect(
 
     // Phase detection:
     // - Responses API: reasoning summary chunks = thinking, content = generating
-    // - Ollama <think> tags: inside <think>...</think> = thinking, after = generating
+    // - Inline <think> tags: inside <think>...</think> = thinking, after = generating
     // - Plain models: any content = generating
     let phase: LLMPhase = "thinking";
     if (!seenContent && content.length > 0) {

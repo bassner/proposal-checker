@@ -47,7 +47,7 @@ export interface PipelineCallbacks {
  * timeout aborts the entire pipeline if any step hangs.
  *
  * @param pdfBuffer - Raw PDF bytes from the uploaded file.
- * @param provider  - Which LLM backend to use ("azure" or "ollama").
+ * @param provider  - Which LLM backend to use ("azure" or "local").
  * @param callbacks - Event callbacks wired to the session's SSE emitter.
  */
 export async function runReviewPipeline(
@@ -116,7 +116,7 @@ export async function runReviewPipeline(
       const selectedSet = new Set(selectedGroups);
       checkGroups = checkGroups.filter((g) => selectedSet.has(g.id));
     }
-    const maxConcurrency = provider === "ollama" ? 2 : undefined; // undefined = all at once
+    const maxConcurrency = provider === "local" ? 2 : undefined; // undefined = all at once
     console.log(`[pipeline] Using provider: ${provider}, mode: ${mode}, checks: ${checkGroups.length}/${getCheckGroups(mode).length}, concurrency: ${maxConcurrency ?? "unlimited"}`);
 
     // Build prompts with guideline reference material (loaded once, cached)

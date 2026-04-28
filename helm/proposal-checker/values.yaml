@@ -36,9 +36,9 @@ secrets:
   AZURE_OPENAI_ENDPOINT: ""
   AZURE_OPENAI_DEPLOYMENT: "gpt-5.2"
   AZURE_OPENAI_API_VERSION: "2025-04-01-preview"
-  OLLAMA_BASE_URL: ""
-  OLLAMA_API_KEY: ""
-  OLLAMA_MODEL: "gpt-oss:120b"
+  LOCAL_LLM_BASE_URL: ""
+  LOCAL_LLM_API_KEY: ""
+  LOCAL_LLM_MODEL: "openai/gpt-oss-120b"
   AUTH_SECRET: ""
   AUTH_KEYCLOAK_SECRET: ""
   # -- SMTP (optional, leave empty to disable)

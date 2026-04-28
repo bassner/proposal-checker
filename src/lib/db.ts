@@ -70,7 +70,7 @@ async function ensureSchema(): Promise<void> {
         user_id TEXT NOT NULL,
         user_email TEXT NOT NULL,
         user_name TEXT NOT NULL,
-        provider TEXT NOT NULL CHECK (provider IN ('azure', 'ollama')),
+        provider TEXT NOT NULL CHECK (provider IN ('azure', 'local')),
         status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'done', 'error')),
         file_name TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -89,17 +89,37 @@ async function ensureSchema(): Promise<void> {
         role TEXT PRIMARY KEY CHECK (role IN ('admin', 'phd', 'student')),
         providers TEXT[] NOT NULL CHECK (
           cardinality(providers) > 0 AND
-          providers <@ ARRAY['azure', 'ollama']::text[]
+          providers <@ ARRAY['azure', 'local']::text[]
         ),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
       -- Seed with current hardcoded defaults
       INSERT INTO role_provider_config (role, providers) VALUES
-        ('admin', ARRAY['azure', 'ollama']::TEXT[]),
-        ('phd', ARRAY['azure', 'ollama']::TEXT[]),
-        ('student', ARRAY['ollama']::TEXT[])
+        ('admin', ARRAY['azure', 'local']::TEXT[]),
+        ('phd', ARRAY['azure', 'local']::TEXT[]),
+        ('student', ARRAY['local']::TEXT[])
       ON CONFLICT (role) DO NOTHING;
+
+      -- Provider rename migration (April 2026): 'ollama' → 'local'.
+      -- Idempotent: on fresh DBs the drop/add pair simply replaces the just-created constraint;
+      -- on existing DBs it migrates legacy rows before re-adding the constraint with the new allowed set.
+      DO $migrate$
+      BEGIN
+        ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_provider_check;
+        UPDATE reviews SET provider = 'local' WHERE provider = 'ollama';
+        ALTER TABLE reviews ADD CONSTRAINT reviews_provider_check CHECK (provider IN ('azure', 'local'));
+      END $migrate$;
+
+      DO $migrate$
+      BEGIN
+        ALTER TABLE role_provider_config DROP CONSTRAINT IF EXISTS role_provider_config_providers_check;
+        UPDATE role_provider_config
+          SET providers = ARRAY(SELECT CASE WHEN p = 'ollama' THEN 'local' ELSE p END FROM unnest(providers) AS p)
+          WHERE 'ollama' = ANY(providers);
+        ALTER TABLE role_provider_config ADD CONSTRAINT role_provider_config_providers_check
+          CHECK (cardinality(providers) > 0 AND providers <@ ARRAY['azure', 'local']::text[]);
+      END $migrate$;
 
       -- Share links: add share_token column (safe for deployed DB)
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_token TEXT;

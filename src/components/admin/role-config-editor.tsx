@@ -72,7 +72,7 @@ export function RoleConfigEditor({ initialConfig }: Props) {
     }
   };
 
-  const providers: ProviderType[] = ["azure", "ollama"];
+  const providers: ProviderType[] = ["azure", "local"];
   const roles: AppRole[] = ["admin", "phd", "student"];
 
   return (
