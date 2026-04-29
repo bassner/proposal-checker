@@ -199,11 +199,26 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
       )}
       {showThinkingSummary && !thinkingTitle && thinkingBody && (
         <div
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className="mt-1 max-h-80 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap"
+          className="mt-1 cursor-pointer select-none"
+          onClick={() => setExpanded((e) => !e)}
         >
-          {thinkingBody}
+          {expanded ? (
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-48 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap"
+            >
+              {thinkingBody}
+            </div>
+          ) : (
+            <p className="line-clamp-2 break-words text-[11px] italic leading-relaxed text-blue-400/40">
+              {thinkingBody}
+            </p>
+          )}
+          <p className="mt-0.5 text-[10px] font-normal text-blue-400/30">
+            ({expanded ? "click to collapse" : "click to expand"})
+          </p>
         </div>
       )}
     </div>

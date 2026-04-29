@@ -167,9 +167,26 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
                 </div>
               )}
               {showMergeThinking && !mergeThinkingTitle && mergeThinkingBody && (
-                <p className="mt-1.5 max-h-80 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap">
-                  {mergeThinkingBody}
-                </p>
+                <div
+                  className="mt-1.5 cursor-pointer select-none"
+                  onClick={() => setMergeThinkingExpanded((e) => !e)}
+                >
+                  {mergeThinkingExpanded ? (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="max-h-48 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap"
+                    >
+                      {mergeThinkingBody}
+                    </div>
+                  ) : (
+                    <p className="line-clamp-2 break-words text-[11px] italic leading-relaxed text-blue-400/40">
+                      {mergeThinkingBody}
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-[10px] font-normal text-blue-400/30">
+                    ({mergeThinkingExpanded ? "click to collapse" : "click to expand"})
+                  </p>
+                </div>
               )}
             </div>
           )}
