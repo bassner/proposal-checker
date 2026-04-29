@@ -25,14 +25,18 @@ export function createModel(provider: ProviderType): BaseChatModel {
   }
 
   // Self-hosted open-source model on TUM AET infrastructure (OpenAI-compatible gateway).
+  // __includeRawResponse: LangChain's chunk converter only copies `delta.reasoning_content`
+  // (OpenAI o-series) into additional_kwargs, but vLLM/gpt-oss emits `delta.reasoning`.
+  // This flag attaches the full raw chunk so we can read `reasoning` ourselves.
   return new ChatOpenAI({
     apiKey: process.env.LOCAL_LLM_API_KEY,
     model: process.env.LOCAL_LLM_MODEL || "openai/gpt-oss-120b",
     temperature: 0.2,
     streaming: true,
     modelKwargs: { reasoning_effort: "high" },
+    __includeRawResponse: true,
     configuration: {
       baseURL: process.env.LOCAL_LLM_BASE_URL || "https://logos.aet.cit.tum.de/v1",
     },
-  });
+  } as ConstructorParameters<typeof ChatOpenAI>[0]);
 }

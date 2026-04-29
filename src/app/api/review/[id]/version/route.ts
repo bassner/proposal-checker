@@ -9,7 +9,6 @@ import {
   completeReview,
   failReview,
   logAuditEvent,
-  getUserById,
   findDuplicateReview,
   getVersionGroup,
   generateRevisionSummary,
@@ -20,7 +19,6 @@ import { savePdf } from "@/lib/uploads";
 import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
-import { sendReviewCompleteEmail, sendReviewErrorEmail } from "@/lib/email/send";
 import { hashPDFContent } from "@/lib/pdf/hash";
 import type { ProviderType, ReviewMode } from "@/types/review";
 
@@ -304,26 +302,6 @@ export async function POST(
             generateRevisionSummary(prevVersionId, sessionId)
               .catch((err) => console.error("[api] Revision summary generation failed:", err));
           }
-          sendReviewCompleteEmail({
-            to: dbMeta.userEmail,
-            userName: dbMeta.userName,
-            fileName: dbMeta.fileName,
-            reviewId: sessionId,
-            feedback,
-          }).catch((err) => console.error("[api] Email failed:", err));
-          // Notify student for on-behalf uploads
-          if (parentReview.studentId && parentReview.studentId !== session.user.id) {
-            const studentUser = await getUserById(parentReview.studentId).catch(() => null);
-            if (studentUser?.email) {
-              sendReviewCompleteEmail({
-                to: studentUser.email,
-                userName: studentUser.name,
-                fileName: dbMeta.fileName,
-                reviewId: sessionId,
-                feedback,
-              }).catch((err) => console.error("[api] Student email failed:", err));
-            }
-          }
         })
         .catch((err) => console.error("[api] DB complete failed:", err));
     },
@@ -332,15 +310,6 @@ export async function POST(
       send("error", { error: sanitizedError });
       setSessionStatus(sessionId, "error");
       failReview(sessionId, sanitizedError, dbMeta)
-        .then(async () => {
-          sendReviewErrorEmail({
-            to: dbMeta.userEmail,
-            userName: dbMeta.userName,
-            fileName: dbMeta.fileName,
-            reviewId: sessionId,
-            error: sanitizedError,
-          }).catch((err) => console.error("[api] Email failed:", err));
-        })
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
   }, resolvedGroups, sessionId, previousFindings ? { previousFindings, previousAssessment, previousReviewId: parentId, previousAdjudications } : undefined);

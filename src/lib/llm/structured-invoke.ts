@@ -1,6 +1,6 @@
 // Note: The `as any` casts below access LangChain internal properties
 // (useResponsesApi, modelKwargs, additional_kwargs, usage_metadata).
-// Tested with @langchain/openai ^1.2.7 and @langchain/core ^1.1.22.
+// Tested with @langchain/openai ^1.4.5 and @langchain/core ^1.1.42.
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { BaseMessageLike } from "@langchain/core/messages";
 import type { z } from "zod";
@@ -194,9 +194,12 @@ async function streamCollect(
   const stream = await model.stream(messages, { signal: options?.signal });
   for await (const chunk of stream) {
     // Reasoning chunks — multiple shapes depending on the backend:
-    //   - Responses API:        additional_kwargs.reasoning.summary[].text
+    //   - Azure Responses API:  additional_kwargs.reasoning.summary[].text
     //   - OpenAI o-series API:  additional_kwargs.reasoning_content (string)
-    //   - vLLM gpt-oss:         additional_kwargs.reasoning           (string)
+    //   - vLLM gpt-oss:         __raw_response.choices[0].delta.reasoning
+    //                           (LangChain's converter only copies reasoning_content;
+    //                           ChatOpenAI is constructed with __includeRawResponse: true
+    //                           so we can read the original delta ourselves).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const akw = (chunk as any).additional_kwargs ?? {};
     let reasoningDelta = "";
@@ -205,8 +208,9 @@ async function streamCollect(
       reasoningDelta = akw.reasoning.summary.map((s: any) => s.text ?? "").join("");
     } else if (typeof akw.reasoning_content === "string") {
       reasoningDelta = akw.reasoning_content;
-    } else if (typeof akw.reasoning === "string") {
-      reasoningDelta = akw.reasoning;
+    } else {
+      const rawReasoning = akw.__raw_response?.choices?.[0]?.delta?.reasoning;
+      if (typeof rawReasoning === "string") reasoningDelta = rawReasoning;
     }
     if (reasoningDelta) {
       thinkingText += reasoningDelta;
