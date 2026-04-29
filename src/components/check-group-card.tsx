@@ -212,9 +212,11 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
               {thinkingBody}
             </div>
           ) : (
-            <p className="line-clamp-2 break-words text-[11px] italic leading-relaxed text-blue-400/40">
-              {thinkingBody}
-            </p>
+            <div className="flex h-9 flex-col justify-end overflow-hidden">
+              <p className="break-words text-[11px] italic leading-relaxed text-blue-400/40">
+                {thinkingBody}
+              </p>
+            </div>
           )}
           <p className="mt-0.5 text-[10px] font-normal text-blue-400/30">
             ({expanded ? "click to collapse" : "click to expand"})

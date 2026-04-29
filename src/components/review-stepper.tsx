@@ -179,9 +179,11 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
                       {mergeThinkingBody}
                     </div>
                   ) : (
-                    <p className="line-clamp-2 break-words text-[11px] italic leading-relaxed text-blue-400/40">
-                      {mergeThinkingBody}
-                    </p>
+                    <div className="flex h-9 flex-col justify-end overflow-hidden">
+                      <p className="break-words text-[11px] italic leading-relaxed text-blue-400/40">
+                        {mergeThinkingBody}
+                      </p>
+                    </div>
                   )}
                   <p className="mt-0.5 text-[10px] font-normal text-blue-400/30">
                     ({mergeThinkingExpanded ? "click to collapse" : "click to expand"})
