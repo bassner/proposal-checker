@@ -12,7 +12,7 @@ import { insertCheckPerformance } from "@/lib/db";
 // timeouts so a single long-reasoning check doesn't get killed before the
 // pipeline does. With reasoning_effort=high on logos, observed ~10–15 min.
 const CHECK_TIMEOUT_MS = 30 * 60 * 1000;
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 5;
 const RETRY_BACKOFF_MS = 2_000;
 /** Max previous findings to pass to each check group. */
 const MAX_PREV_FINDINGS_PER_GROUP = 20;
@@ -61,10 +61,27 @@ function isRetryableError(error: unknown): boolean {
     const msg = error.message.toLowerCase();
     return (
       msg.includes("429") ||
+      msg.includes("502") ||
       msg.includes("503") ||
+      msg.includes("504") ||
       msg.includes("rate limit") ||
       msg.includes("too many requests") ||
-      msg.includes("service unavailable")
+      msg.includes("service unavailable") ||
+      msg.includes("bad gateway") ||
+      msg.includes("gateway timeout") ||
+      msg.includes("connection error") ||
+      msg.includes("connection reset") ||
+      msg.includes("econnreset") ||
+      msg.includes("econnrefused") ||
+      msg.includes("etimedout") ||
+      msg.includes("enotfound") ||
+      msg.includes("fetch failed") ||
+      msg.includes("socket hang up") ||
+      msg.includes("network error") ||
+      msg.includes("aborted") ||
+      msg.includes("timeout") ||
+      error.name === "AbortError" ||
+      error.name === "TimeoutError"
     );
   }
   return false;
@@ -212,6 +229,11 @@ export async function runAllChecks(
           pipelineSignal?.removeEventListener("abort", onPipelineAbort);
           lastError = error instanceof Error ? error.message : "Unknown error";
           console.error(`[parallel] Check ${group.id} failed (attempt ${attempt + 1}): ${lastError}`);
+
+          // Pipeline cancel / global timeout — never retry, let it unwind.
+          if (pipelineSignal?.aborted) {
+            break;
+          }
 
           if (attempt < MAX_RETRIES && isRetryableError(error)) {
             await sleep(RETRY_BACKOFF_MS * Math.pow(2, attempt));

@@ -35,12 +35,16 @@ export function createModel(provider: ProviderType): BaseChatModel {
   // __includeRawResponse: LangChain's chunk converter only copies `delta.reasoning_content`
   // (OpenAI o-series) into additional_kwargs, but vLLM/gpt-oss emits `delta.reasoning`.
   // This flag attaches the full raw chunk so we can read `reasoning` ourselves.
+  // OpenAI-recommended inference settings for gpt-oss: temperature=1.0,
+  // top_p=1.0, top_k=0. top_k is a vLLM-specific extension (not part of the
+  // standard OpenAI Chat Completions schema), so it goes via modelKwargs.
   return new ChatOpenAI({
     apiKey: process.env.LOCAL_LLM_API_KEY,
     model: process.env.LOCAL_LLM_MODEL || "openai/gpt-oss-120b",
-    temperature: 0.2,
+    temperature: 1.0,
+    topP: 1.0,
     streaming: true,
-    modelKwargs: { reasoning_effort: "high" },
+    modelKwargs: { reasoning_effort: "high", top_k: 0 },
     __includeRawResponse: true,
     timeout: REQUEST_TIMEOUT_MS,
     configuration: {

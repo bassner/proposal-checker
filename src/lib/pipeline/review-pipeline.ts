@@ -11,7 +11,7 @@ import type { MergerRevisionContext } from "@/lib/llm/merger";
 import { getCheckGroupPrompts } from "@/lib/llm/prompts";
 import { countTokens } from "@/lib/llm/tokens";
 
-const PIPELINE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const PIPELINE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes — must accommodate up to 5 retries on a stuck check
 
 /** Max serialized chars for resolution reports passed to the merger. */
 const MAX_RESOLUTION_REPORT_CHARS = 4000;
