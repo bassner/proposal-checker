@@ -36,7 +36,7 @@ import { VersionComparison } from "@/components/version-comparison";
  */
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
-  const { state, notFound } = useReviewStream(id);
+  const { state, notFound, markError } = useReviewStream(id);
   const { review, loading: dbLoading, error: dbError } = useCompletedReview(id, notFound);
   const [cancelInFlight, setCancelInFlight] = useState(false);
 
@@ -49,13 +49,20 @@ export default function ReviewPage() {
     if (!confirm("Cancel this review? Progress so far will be discarded.")) return;
     setCancelInFlight(true);
     try {
-      await fetch(`/api/review/${id}/cancel`, { method: "POST" });
-      // The pipeline's onError will broadcast the final SSE event; UI updates from there.
+      const res = await fetch(`/api/review/${id}/cancel`, { method: "POST" });
+      // Optimistic transition: don't wait for the SSE error event. Some upstream
+      // proxies hold the close-stream chunk; this guarantees the spinner stops
+      // and the Cancel button unmounts as soon as the server acknowledges.
+      if (res.ok || res.status === 409) {
+        markError("Cancelled by user");
+      } else {
+        setCancelInFlight(false);
+      }
     } catch (err) {
       console.error("[review] Cancel request failed:", err);
       setCancelInFlight(false);
     }
-  }, [id, cancelInFlight]);
+  }, [id, cancelInFlight, markError]);
 
   // ── DB fallback: session not in memory ──────────────────────────────────
   if (notFound) {

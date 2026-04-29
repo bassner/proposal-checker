@@ -104,6 +104,9 @@ export async function GET(
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      // Disable nginx ingress buffering so the final close-stream "error"
+      // chunk on user cancel reaches the client immediately.
+      "X-Accel-Buffering": "no",
     },
   });
 }

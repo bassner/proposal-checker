@@ -122,6 +122,13 @@ export function useReviewStream(id: string) {
   const [state, setState] = useState<ReviewState>(INITIAL_STATE);
   const [notFound, setNotFound] = useState(false);
 
+  // Trigger the same state sweep the SSE "error" event would. Used by the
+  // cancel button so the UI doesn't sit in "Cancelling…" if the final SSE
+  // event gets held by an upstream proxy (or arrives after a delay).
+  const markError = useCallback((message: string) => {
+    handleSSEEvent("error", { error: message, _ts: Date.now() }, setState);
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -174,7 +181,7 @@ export function useReviewStream(id: string) {
     };
   }, [id]);
 
-  return { state, notFound };
+  return { state, notFound, markError };
 }
 
 /** Completed review data from the database. */

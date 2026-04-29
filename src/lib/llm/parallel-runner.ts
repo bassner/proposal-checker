@@ -8,7 +8,10 @@ import type { TokenUsage } from "./structured-invoke";
 import type { RenderedPage } from "@/lib/pdf/render";
 import { insertCheckPerformance } from "@/lib/db";
 
-const CHECK_TIMEOUT_MS = 600_000;
+// Per-check abort. Must match (or exceed) the pipeline-level + OpenAI SDK
+// timeouts so a single long-reasoning check doesn't get killed before the
+// pipeline does. With reasoning_effort=high on logos, observed ~10–15 min.
+const CHECK_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_RETRIES = 2;
 const RETRY_BACKOFF_MS = 2_000;
 /** Max previous findings to pass to each check group. */
