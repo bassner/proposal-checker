@@ -33,17 +33,28 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
     group.phase !== "generating" &&
     group.thinkingSummary;
 
-  // Parse thinking summary: last **title**, text after it is body
+  // Parse thinking summary. Two formats supported:
+  //  - Azure Responses API: section-headed summary, e.g. "**Heading** body text..."
+  //    → title = last heading, body = text after it
+  //  - vLLM gpt-oss raw chain-of-thought: no markdown structure
+  //    → title = latest sentence (live ticker), body = full text (expandable)
   let thinkingTitle = "";
   let thinkingBody = "";
   if (showThinkingSummary) {
+    const flat = group.thinkingSummary!.replace(/\s+/g, " ").trim();
     const matches = [...group.thinkingSummary!.matchAll(/\*\*(.+?)\*\*/g)];
     if (matches.length > 0) {
       const last = matches[matches.length - 1];
       thinkingTitle = last[1].trim();
       thinkingBody = group.thinkingSummary!.slice(last.index! + last[0].length).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
-    } else {
-      thinkingBody = group.thinkingSummary!.replace(/\s+/g, " ").trim();
+    } else if (flat.length > 0) {
+      // Pick the last complete sentence-ish fragment as the live ticker title.
+      // Falls back to the trailing tail of the buffer if the model hasn't
+      // reached terminal punctuation yet.
+      const sentences = flat.match(/[^.!?\n]+[.!?]?/g) ?? [flat];
+      const lastSentence = sentences[sentences.length - 1].trim();
+      thinkingTitle = lastSentence.length > 120 ? lastSentence.slice(-120).trim() : lastSentence;
+      thinkingBody = flat;
     }
   }
 
