@@ -11,7 +11,7 @@ import type { MergerRevisionContext } from "@/lib/llm/merger";
 import { getCheckGroupPrompts } from "@/lib/llm/prompts";
 import { countTokens } from "@/lib/llm/tokens";
 
-const PIPELINE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const PIPELINE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 /** Max serialized chars for resolution reports passed to the merger. */
 const MAX_RESOLUTION_REPORT_CHARS = 4000;
@@ -66,6 +66,8 @@ export async function runReviewPipeline(
     previousReviewId?: string;
     /** User adjudication decisions on previous findings. */
     previousAdjudications?: ReadonlyMap<number, FindingAdjudication>;
+    /** External signal — when aborted, the pipeline stops and reports an error. */
+    cancelSignal?: AbortSignal;
   }
 ): Promise<void> {
   const maxPagesProposal = parseInt(process.env.MAX_PDF_PAGES || "20", 10);
@@ -74,6 +76,12 @@ export async function runReviewPipeline(
 
   const pipelineAbort = new AbortController();
   const pipelineTimeout = setTimeout(() => pipelineAbort.abort(), PIPELINE_TIMEOUT_MS);
+  // External cancel (user clicked Cancel) — propagate to the pipeline's abort.
+  const onCancel = () => pipelineAbort.abort();
+  if (options?.cancelSignal) {
+    if (options.cancelSignal.aborted) pipelineAbort.abort();
+    else options.cancelSignal.addEventListener("abort", onCancel, { once: true });
+  }
 
   try {
     // Copy buffer — unpdf can detach the original ArrayBuffer
@@ -376,6 +384,7 @@ export async function runReviewPipeline(
     } catch { /* writer may be dead */ }
   } finally {
     clearTimeout(pipelineTimeout);
+    options?.cancelSignal?.removeEventListener("abort", onCancel);
   }
 }
 

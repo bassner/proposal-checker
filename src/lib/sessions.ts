@@ -40,6 +40,8 @@ export interface ReviewSession {
   supervisorId?: string;
   /** Student who authored the document. */
   studentId?: string;
+  /** Controller for canceling the running pipeline. Cleared once the run finishes. */
+  abortController?: AbortController;
 }
 
 export interface CreateSessionOptions {
@@ -160,13 +162,40 @@ export function getSession(id: string): ReviewSession | null {
   return sessions.get(id) ?? null;
 }
 
+/** Attach the controller used to abort the running pipeline. */
+export function setAbortController(id: string, controller: AbortController): void {
+  const session = sessions.get(id);
+  if (!session) return;
+  session.abortController = controller;
+}
+
+/**
+ * Cancel a running review. Emits a final error event, flips the session to
+ * "error", and aborts the pipeline so its background work stops promptly.
+ * Returns true if a running session was cancelled, false if it was already
+ * finished or doesn't exist.
+ */
+export function cancelSession(id: string, reason = "Cancelled by user"): boolean {
+  const session = sessions.get(id);
+  if (!session || session.status !== "running") return false;
+  emitEvent(id, "error", { error: reason });
+  setSessionStatus(id, "error");
+  // After setSessionStatus the further pipeline emits are gated out, so it's
+  // safe to abort and let the pipeline unwind in the background.
+  try { session.abortController?.abort(); } catch { /* nothing to do */ }
+  return true;
+}
+
 /** Push an event to the session log and broadcast to all connected writers.
  *  Injects `_ts` (server timestamp) so replayed events preserve original timing.
+ *  Skipped once the session has been finalized — late events from a cancelled
+ *  pipeline must not overwrite the "Cancelled by user" message the user already saw.
  *  When expectedRetryCount is provided, the write is a no-op if the session's
  *  retryCount has moved past it (stale pipeline callback from a previous attempt). */
 export function emitEvent(id: string, event: string, data: unknown, expectedRetryCount?: number): void {
   const session = sessions.get(id);
   if (!session) return;
+  if (session.status !== "running") return;
   if (expectedRetryCount != null && session.retryCount !== expectedRetryCount) return;
   const ts = Date.now();
   const payload = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : { value: data };

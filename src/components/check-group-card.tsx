@@ -5,6 +5,7 @@ import { Check, Circle, Loader2, X } from "lucide-react";
 import type { CheckGroupState, ProviderType } from "@/types/review";
 import { cn, formatTokensK } from "@/lib/utils";
 import { LiveTimer } from "./live-timer";
+import { LiveTokenRate } from "./live-token-rate";
 
 interface CheckGroupCardProps {
   group: CheckGroupState;
@@ -135,8 +136,25 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
             "hidden min-w-[3.5rem] shrink-0 whitespace-nowrap text-right tabular-nums text-xs sm:inline",
             group.status === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
           )}>
-            {hasNoTokensYet ? "–" : formatTokensK((group.tokenCount ?? 0) + (group.reasoningTokens ?? 0))}
+            {hasNoTokensYet ? "–" : formatTokensK(group.tokenCount ?? 0)}
           </span>
+        )}
+
+        {!hasNoTokensYet && (
+          <LiveTokenRate
+            provider={provider}
+            status={group.status}
+            phase={group.phase}
+            startTime={group.startTime}
+            endTime={group.endTime}
+            tokenCount={group.tokenCount ?? 0}
+            generatingStartTime={group.generatingStartTime}
+            generatingStartTokenCount={group.generatingStartTokenCount}
+            className={cn(
+              "hidden min-w-[3.5rem] shrink-0 whitespace-nowrap text-right text-xs sm:inline",
+              group.status === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
+            )}
+          />
         )}
 
 

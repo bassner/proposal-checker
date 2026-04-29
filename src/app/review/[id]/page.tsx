@@ -38,10 +38,24 @@ export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
   const { state, notFound } = useReviewStream(id);
   const { review, loading: dbLoading, error: dbError } = useCompletedReview(id, notFound);
+  const [cancelInFlight, setCancelInFlight] = useState(false);
 
   const isRunning = state.status === "running";
   const hasResult = !!state.result;
   const hasError = state.status === "error";
+
+  const handleCancel = useCallback(async () => {
+    if (cancelInFlight) return;
+    if (!confirm("Cancel this review? Progress so far will be discarded.")) return;
+    setCancelInFlight(true);
+    try {
+      await fetch(`/api/review/${id}/cancel`, { method: "POST" });
+      // The pipeline's onError will broadcast the final SSE event; UI updates from there.
+    } catch (err) {
+      console.error("[review] Cancel request failed:", err);
+      setCancelInFlight(false);
+    }
+  }, [id, cancelInFlight]);
 
   // ── DB fallback: session not in memory ──────────────────────────────────
   if (notFound) {
@@ -113,7 +127,11 @@ export default function ReviewPage() {
       {state.status !== "idle" && (
         <aside aria-label="Review progress" className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-white/5 dark:shadow-none dark:backdrop-blur-xl sm:p-5">
           <h2 className="mb-4 text-sm font-medium text-slate-500 dark:text-white/60">Progress</h2>
-          <ReviewStepper state={state} />
+          <ReviewStepper
+            state={state}
+            onCancel={isRunning ? handleCancel : undefined}
+            cancelInFlight={cancelInFlight}
+          />
         </aside>
       )}
 

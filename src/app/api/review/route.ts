@@ -3,7 +3,7 @@ import type { ProviderType, ReviewMode, CheckGroupId, LLMPhase } from "@/types/r
 import { REVIEW_MODES, getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
-import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
+import { createSession, emitEvent, setAbortController, setSessionStatus } from "@/lib/sessions";
 import { insertReview, completeReview, failReview, logAuditEvent, getUserById, findDuplicateReview, generateRevisionSummary, getPreviousVersionReviewId } from "@/lib/db";
 import { savePdf } from "@/lib/uploads";
 import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
@@ -219,6 +219,8 @@ export async function POST(request: NextRequest) {
   };
 
   const sessionId = createSession(dbMeta);
+  const cancelController = new AbortController();
+  setAbortController(sessionId, cancelController);
   console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, mode: ${mode}, groups: ${resolvedGroups.length}/${modeGroupIds.size}`);
 
   // Save PDF to disk for retry support (fire-and-forget — don't block the response)
@@ -302,7 +304,7 @@ export async function POST(request: NextRequest) {
       failReview(sessionId, sanitizedError, dbMeta)
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, selectedGroups, sessionId);
+  }, selectedGroups, sessionId, { cancelSignal: cancelController.signal });
 
   return new Response(JSON.stringify({ id: sessionId }), {
     status: 202,

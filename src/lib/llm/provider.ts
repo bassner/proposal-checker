@@ -3,6 +3,12 @@ import { ChatOpenAI } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { ProviderType } from "@/types/review";
 
+// The OpenAI SDK underneath ChatOpenAI defaults to a 10-minute per-request
+// timeout (DEFAULT_TIMEOUT = 600000). gpt-oss with reasoning_effort=high can
+// exceed that on long inputs, especially while logos serializes parallel
+// requests. Bump to 30 minutes to match the pipeline-level abort.
+const REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
+
 export function createModel(provider: ProviderType): BaseChatModel {
   if (provider === "azure") {
     // Use ChatOpenAI directly with Azure v1 API endpoint
@@ -12,6 +18,7 @@ export function createModel(provider: ProviderType): BaseChatModel {
       streaming: true,
       useResponsesApi: true,
       reasoning: { effort: "high", summary: "auto" },
+      timeout: REQUEST_TIMEOUT_MS,
       configuration: {
         baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}openai/v1`,
         defaultHeaders: {
@@ -35,6 +42,7 @@ export function createModel(provider: ProviderType): BaseChatModel {
     streaming: true,
     modelKwargs: { reasoning_effort: "high" },
     __includeRawResponse: true,
+    timeout: REQUEST_TIMEOUT_MS,
     configuration: {
       baseURL: process.env.LOCAL_LLM_BASE_URL || "https://logos.aet.cit.tum.de/v1",
     },

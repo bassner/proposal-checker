@@ -5,11 +5,16 @@ import type { ReviewState, StepEvent } from "@/types/review";
 import { StepItem } from "./step-item";
 import { CheckGroupCard } from "./check-group-card";
 import { LiveTimer } from "./live-timer";
+import { LiveTokenRate } from "./live-token-rate";
 import { Loader2 } from "lucide-react";
 import { cn, formatTokensK, estimateCost } from "@/lib/utils";
 
 interface ReviewStepperProps {
   state: ReviewState;
+  /** Optional callback to cancel a running review. When provided, a Cancel button is shown next to the live timer. */
+  onCancel?: () => void;
+  /** True while the cancel request is in flight; the button is disabled. */
+  cancelInFlight?: boolean;
 }
 
 const STEP_LABELS: Record<StepEvent["step"], string> = {
@@ -34,7 +39,7 @@ function totalOutputTokens(state: ReviewState): number {
   return checkTokens + state.mergeTokens;
 }
 
-export function ReviewStepper({ state }: ReviewStepperProps) {
+export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepperProps) {
   const [mergeThinkingExpanded, setMergeThinkingExpanded] = useState(false);
   const outputTokens = totalOutputTokens(state);
   const inputTokens = state.totalInputTokens;
@@ -107,8 +112,24 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                     "hidden w-[3.5rem] text-right tabular-nums sm:inline",
                     state.steps.merge === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
                   )}>
-                    {mergeHasNoTokensYet ? "–" : formatTokensK(state.mergeTokens + state.mergeReasoningTokens)}
+                    {mergeHasNoTokensYet ? "–" : formatTokensK(state.mergeTokens)}
                   </span>
+                )}
+                {!mergeHasNoTokensYet && (
+                  <LiveTokenRate
+                    provider={state.provider}
+                    status={state.steps.merge}
+                    phase={state.mergePhase}
+                    startTime={state.mergeStartTime}
+                    endTime={state.mergeEndTime ?? undefined}
+                    tokenCount={state.mergeTokens}
+                    generatingStartTime={state.mergeGeneratingStartTime ?? undefined}
+                    generatingStartTokenCount={state.mergeGeneratingStartTokenCount}
+                    className={cn(
+                      "hidden w-[3.5rem] text-right text-xs sm:inline",
+                      state.steps.merge === "active" ? "text-blue-400/60" : "text-slate-400 dark:text-white/30"
+                    )}
+                  />
                 )}
                 {state.steps.merge === "active" && (
                   <LiveTimer startTime={state.mergeStartTime} className="w-[3rem] tabular-nums text-blue-400/60" />
@@ -153,10 +174,29 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
             <>
               <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
               <LiveTimer startTime={state.startTime} className="text-blue-300" />
+              {outputTokens > 0 && (
+                <span className="tabular-nums text-blue-300/60" title="Total output tokens streamed across all checks + merge">
+                  {formatTokensK(outputTokens)} tokens
+                </span>
+              )}
               {state.provider === "azure" && (inputTokens > 0 || outputTokens > 0) && (
                 <span className="tabular-nums text-blue-300/60">
                   {estimateCost(inputTokens, outputTokens)}
                 </span>
+              )}
+              {onCancel && (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  disabled={cancelInFlight}
+                  className={cn(
+                    "ml-2 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                    "border-red-400/30 text-red-300 hover:border-red-400/60 hover:bg-red-400/10",
+                    "disabled:cursor-not-allowed disabled:opacity-50"
+                  )}
+                >
+                  {cancelInFlight ? "Cancelling…" : "Cancel"}
+                </button>
               )}
             </>
           ) : (
@@ -165,6 +205,11 @@ export function ReviewStepper({ state }: ReviewStepperProps) {
                 <span className="tabular-nums text-slate-600 dark:text-white/50">
                   {((state.mergeEndTime - state.startTime) / 1000).toFixed(1)}s
                 </span>
+                {outputTokens > 0 && (
+                  <span className="tabular-nums text-slate-400 dark:text-white/30" title="Total output tokens streamed across all checks + merge">
+                    {formatTokensK(outputTokens)} tokens
+                  </span>
+                )}
                 {state.provider === "azure" && (inputTokens > 0 || outputTokens > 0) && (
                   <span className="tabular-nums text-slate-400 dark:text-white/30">
                     {estimateCost(inputTokens, outputTokens)}

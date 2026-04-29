@@ -2,7 +2,7 @@ import type { CheckGroupId, LLMPhase, MergedFeedback, Finding } from "@/types/re
 import { getCheckGroups } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
-import { createSession, emitEvent, setSessionStatus } from "@/lib/sessions";
+import { createSession, emitEvent, setAbortController, setSessionStatus } from "@/lib/sessions";
 import {
   getReviewById,
   createVersionedReview,
@@ -190,6 +190,8 @@ export async function POST(
   };
 
   const sessionId = createSession(dbMeta);
+  const cancelController = new AbortController();
+  setAbortController(sessionId, cancelController);
   console.log(`[api] Version review ${sessionId} (parent: ${parentId}): PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, mode: ${mode}`);
 
   // Save PDF to disk
@@ -312,7 +314,10 @@ export async function POST(
       failReview(sessionId, sanitizedError, dbMeta)
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, resolvedGroups, sessionId, previousFindings ? { previousFindings, previousAssessment, previousReviewId: parentId, previousAdjudications } : undefined);
+  }, resolvedGroups, sessionId, {
+    ...(previousFindings ? { previousFindings, previousAssessment, previousReviewId: parentId, previousAdjudications } : {}),
+    cancelSignal: cancelController.signal,
+  });
 
   return Response.json({ id: sessionId }, { status: 202 });
 }
