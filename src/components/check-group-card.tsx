@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Circle, Loader2, X } from "lucide-react";
+import { Check, Circle, Hourglass, Loader2, X } from "lucide-react";
 import type { CheckGroupState, ProviderType } from "@/types/review";
 import { cn, formatTokensK } from "@/lib/utils";
 import { LiveTimer } from "./live-timer";
@@ -32,9 +32,18 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12;
   }
 
+  // "Initializing" = active but no token has arrived yet. While initializing
+  // we anchor the visible time at firstTokenTime (which is undefined here),
+  // so the timer column shows a placeholder instead of counting up the
+  // queue/TTFT wait.
+  const isInitializing = group.status === "active" && !group.firstTokenTime;
+
+  // For the final static elapsed, prefer firstTokenTime → endTime so the
+  // displayed duration reflects model work, not queue time. Falls back to
+  // startTime if no first token was ever recorded (e.g. error before stream).
   const staticElapsed =
-    group.startTime && group.endTime
-      ? ((group.endTime - group.startTime) / 1000).toFixed(1)
+    group.endTime && (group.firstTokenTime ?? group.startTime)
+      ? ((group.endTime - (group.firstTokenTime ?? group.startTime!)) / 1000).toFixed(1)
       : null;
 
   // Azure: hide tokens until generating phase (reasoning tokens are opaque)
@@ -79,8 +88,10 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         "rounded-lg border px-3 py-2 transition-all",
         group.status === "pending" &&
           "border-slate-200 bg-slate-50 dark:border-white/5 dark:bg-white/[0.02]",
-        group.status === "active" &&
+        group.status === "active" && !isInitializing &&
           "border-blue-400/20 bg-blue-400/5",
+        group.status === "active" && isInitializing &&
+          "border-amber-400/20 bg-amber-400/5",
         group.status === "done" &&
           "border-emerald-400/20 bg-emerald-400/5",
         group.status === "error" && "border-red-400/20 bg-red-400/5"
@@ -90,7 +101,10 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         {group.status === "pending" && (
           <Circle className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-white/20" />
         )}
-        {group.status === "active" && (
+        {group.status === "active" && isInitializing && (
+          <Hourglass className="h-3.5 w-3.5 shrink-0 animate-pulse text-amber-400" />
+        )}
+        {group.status === "active" && !isInitializing && (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue-400" />
         )}
         {group.status === "done" && (
@@ -104,7 +118,8 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
           className={cn(
             "flex-1 text-xs font-medium",
             group.status === "pending" && "text-slate-400 dark:text-white/30",
-            group.status === "active" && "text-blue-300",
+            group.status === "active" && !isInitializing && "text-blue-300",
+            group.status === "active" && isInitializing && "text-amber-300",
             group.status === "done" && "text-emerald-300",
             group.status === "error" && "text-red-300"
           )}
@@ -120,12 +135,15 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         )}
 
         {group.status === "active" && (
-          <span className="w-[4.5rem] shrink-0 whitespace-nowrap text-right text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
-            {group.phase === "generating"
-              ? "Generating"
-              : group.phase === "thinking" || (group.tokenCount ?? 0) >= 100
-                ? "Thinking"
-                : "Initializing"}
+          <span className={cn(
+            "w-[4.5rem] shrink-0 whitespace-nowrap text-right text-[10px] font-medium uppercase tracking-wider",
+            isInitializing ? "text-amber-400/70" : "text-blue-400/50"
+          )}>
+            {isInitializing
+              ? "Initializing"
+              : group.phase === "generating"
+                ? "Generating"
+                : "Thinking"}
           </span>
         )}
 
@@ -156,8 +174,12 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         )}
 
 
-        {group.status === "active" && group.startTime && (
-          <LiveTimer startTime={group.startTime} className="w-[3rem] shrink-0 whitespace-nowrap text-right text-xs text-blue-400/60" />
+        {group.status === "active" && (
+          isInitializing ? (
+            <span className="w-[3rem] shrink-0 whitespace-nowrap text-right text-xs text-amber-400/60">–</span>
+          ) : group.firstTokenTime ? (
+            <LiveTimer startTime={group.firstTokenTime} className="w-[3rem] shrink-0 whitespace-nowrap text-right text-xs text-blue-400/60" />
+          ) : null
         )}
 
         {staticElapsed && (

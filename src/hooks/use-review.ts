@@ -468,7 +468,15 @@ function handleSSEEvent(
           ...prev,
           checkGroups: groups.map((g) =>
             g.id === groupId
-              ? { ...g, thinkingSummary: text, phase: g.phase ?? "thinking" }
+              ? {
+                  ...g,
+                  thinkingSummary: text,
+                  phase: g.phase ?? "thinking",
+                  // Anchor first-token on whichever streaming signal arrives
+                  // first — for Azure the reasoning summary often precedes
+                  // numeric token counts.
+                  ...(g.firstTokenTime ? {} : { firstTokenTime: ts }),
+                }
               : g
           ),
         };
@@ -544,6 +552,11 @@ function handleSSEEvent(
         ...prev,
         mergeThinkingSummary: text,
         mergePhase: prev.mergePhase ?? "thinking",
+        // First reasoning chunk also counts as a "first token" for the timer
+        // anchor, so we exit the Initializing visual as soon as the model
+        // starts producing anything (Azure often emits a summary before
+        // numeric token counts).
+        ...(prev.mergeFirstTokenTime ? {} : { mergeFirstTokenTime: ts }),
       }));
       break;
     }

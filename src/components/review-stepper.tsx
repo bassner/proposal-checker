@@ -6,7 +6,7 @@ import { StepItem } from "./step-item";
 import { CheckGroupCard } from "./check-group-card";
 import { LiveTimer } from "./live-timer";
 import { LiveTokenRate } from "./live-token-rate";
-import { Loader2 } from "lucide-react";
+import { Hourglass, Loader2 } from "lucide-react";
 import { cn, formatTokensK, estimateCost } from "@/lib/utils";
 
 interface ReviewStepperProps {
@@ -51,6 +51,10 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
     (isLocal
       ? state.mergeTokens === 0
       : state.mergePhase !== "generating" && state.mergeTokens < 100);
+
+  // Initializing = merge has started but no first token yet (queue/TTFT wait).
+  const isMergeInitializing =
+    state.steps.merge === "active" && !state.mergeFirstTokenTime;
 
   // Parse merge thinking summary
   const showMergeThinking =
@@ -100,16 +104,22 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
           {step === "merge" && state.mergeStartTime && (
             <div>
               <div className="flex items-center gap-2 text-xs">
-                {state.steps.merge === "active" && (
+                {state.steps.merge === "active" && isMergeInitializing && (
+                  <Hourglass className="h-3 w-3 animate-pulse text-amber-400" />
+                )}
+                {state.steps.merge === "active" && !isMergeInitializing && (
                   <Loader2 className="h-3 w-3 animate-spin text-blue-400/60" />
                 )}
                 {state.steps.merge === "active" && (
-                  <span className="w-[4.5rem] text-[10px] font-medium uppercase tracking-wider text-blue-400/50">
-                    {state.mergePhase === "generating"
-                      ? "Generating"
-                      : state.mergePhase === "thinking" || state.mergeTokens >= 100
-                        ? "Thinking"
-                        : "Initializing"}
+                  <span className={cn(
+                    "w-[4.5rem] text-[10px] font-medium uppercase tracking-wider",
+                    isMergeInitializing ? "text-amber-400/70" : "text-blue-400/50"
+                  )}>
+                    {isMergeInitializing
+                      ? "Initializing"
+                      : state.mergePhase === "generating"
+                        ? "Generating"
+                        : "Thinking"}
                   </span>
                 )}
                 {(state.mergeTokens > 0 || state.steps.merge === "active") && (
@@ -137,11 +147,15 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
                   />
                 )}
                 {state.steps.merge === "active" && (
-                  <LiveTimer startTime={state.mergeStartTime} className="w-[3rem] tabular-nums text-blue-400/60" />
+                  isMergeInitializing ? (
+                    <span className="w-[3rem] tabular-nums text-right text-xs text-amber-400/60">–</span>
+                  ) : state.mergeFirstTokenTime ? (
+                    <LiveTimer startTime={state.mergeFirstTokenTime} className="w-[3rem] tabular-nums text-blue-400/60" />
+                  ) : null
                 )}
                 {state.steps.merge === "done" && state.mergeEndTime && (
                   <span className="w-[3rem] tabular-nums text-slate-400 dark:text-white/30">
-                    {((state.mergeEndTime - state.mergeStartTime) / 1000).toFixed(1)}s
+                    {((state.mergeEndTime - (state.mergeFirstTokenTime ?? state.mergeStartTime)) / 1000).toFixed(1)}s
                   </span>
                 )}
               </div>
