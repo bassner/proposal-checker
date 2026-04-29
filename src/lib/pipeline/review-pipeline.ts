@@ -116,7 +116,7 @@ export async function runReviewPipeline(
       const selectedSet = new Set(selectedGroups);
       checkGroups = checkGroups.filter((g) => selectedSet.has(g.id));
     }
-    const maxConcurrency = provider === "local" ? 2 : undefined; // undefined = all at once
+    const maxConcurrency = undefined; // undefined = all at once (logos handles batching upstream)
     console.log(`[pipeline] Using provider: ${provider}, mode: ${mode}, checks: ${checkGroups.length}/${getCheckGroups(mode).length}, concurrency: ${maxConcurrency ?? "unlimited"}`);
 
     // Build prompts with guideline reference material (loaded once, cached)

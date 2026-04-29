@@ -105,11 +105,15 @@ export async function safeStructuredInvoke<T extends z.ZodTypeAny>(
   const usesResponsesApi = !!(model as any).useResponsesApi;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const usesThinkTags = !!(model as any).modelKwargs?.think;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const usesReasoningEffort = !!(model as any).modelKwargs?.reasoning_effort;
 
   // Attempt 1: Native structured output
-  // Skip for Responses API (discards reasoning summary chunks) and
-  // for <think>-tag models (callback receives empty strings, can't detect thinking phase)
-  if (!usesResponsesApi && !usesThinkTags) {
+  // Skip for Responses API (discards reasoning summary chunks),
+  // for <think>-tag models (callback receives empty strings, can't detect thinking phase),
+  // and for reasoning-effort models like vLLM-served gpt-oss (reasoning streams in a
+  // separate `delta.reasoning` channel that withStructuredOutput's tool-call path doesn't surface).
+  if (!usesResponsesApi && !usesThinkTags && !usesReasoningEffort) {
     try {
       const structured = model.withStructuredOutput(schema);
       const result = await structured.invoke(messages, {
@@ -189,17 +193,28 @@ async function streamCollect(
 
   const stream = await model.stream(messages, { signal: options?.signal });
   for await (const chunk of stream) {
-    // Reasoning summary chunks (Responses API thinking phase)
+    // Reasoning chunks — multiple shapes depending on the backend:
+    //   - Responses API:        additional_kwargs.reasoning.summary[].text
+    //   - OpenAI o-series API:  additional_kwargs.reasoning_content (string)
+    //   - vLLM gpt-oss:         additional_kwargs.reasoning           (string)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const reasoning = (chunk as any).additional_kwargs?.reasoning;
-    if (reasoning?.summary && options?.onThinking) {
+    const akw = (chunk as any).additional_kwargs ?? {};
+    let reasoningDelta = "";
+    if (akw.reasoning && Array.isArray(akw.reasoning.summary)) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const delta = reasoning.summary.map((s: any) => s.text).join("");
-      if (delta) {
-        thinkingText += delta;
-        // Send the full accumulated summary so the client can just replace
-        options.onThinking(thinkingText);
-      }
+      reasoningDelta = akw.reasoning.summary.map((s: any) => s.text ?? "").join("");
+    } else if (typeof akw.reasoning_content === "string") {
+      reasoningDelta = akw.reasoning_content;
+    } else if (typeof akw.reasoning === "string") {
+      reasoningDelta = akw.reasoning;
+    }
+    if (reasoningDelta) {
+      thinkingText += reasoningDelta;
+      if (options?.onThinking) options.onThinking(thinkingText);
+      // Count reasoning chunks toward the token counter so the UI shows progress
+      // during the (often long) reasoning phase, not just during content generation.
+      tokenCount++;
+      options?.onToken?.(tokenCount, "thinking");
     }
 
     // Content chunk (generating phase)
