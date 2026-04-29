@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Circle, Loader2, X } from "lucide-react";
 import type { CheckGroupState, ProviderType } from "@/types/review";
 import { cn, formatTokensK } from "@/lib/utils";
@@ -14,6 +14,22 @@ interface CheckGroupCardProps {
 export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
   const isLocal = provider === "local";
+
+  // Live-tail behavior for the expanded reasoning panel: auto-scroll to the
+  // bottom as new chunks arrive, but only when the user hasn't scrolled up.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !stickToBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [group.thinkingSummary, expanded]);
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Re-stick when the user scrolls within ~12px of the bottom.
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 12;
+  }
 
   const staticElapsed =
     group.startTime && group.endTime
@@ -154,9 +170,14 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
             </p>
           )}
           {thinkingBody && expanded && (
-            <p className="mt-0.5 break-words text-[11px] italic text-blue-400/40">
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-0.5 max-h-80 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap"
+            >
               {thinkingBody}
-            </p>
+            </div>
           )}
         </div>
       )}
