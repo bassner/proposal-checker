@@ -574,11 +574,27 @@ function handleSSEEvent(
 
     case "error": {
       const { error } = data as { error: string };
-      setState((prev) => ({
-        ...prev,
-        status: "error",
-        error,
-      }));
+      setState((prev) => {
+        // Sweep any in-flight steps/checks to "error" so spinners + phase
+        // labels stop. Without this, an aborted merge keeps showing
+        // "GENERATING 443s" even though the review has failed.
+        const sweptSteps: typeof prev.steps = { ...prev.steps };
+        for (const k of Object.keys(sweptSteps) as (keyof typeof sweptSteps)[]) {
+          if (sweptSteps[k] === "active") sweptSteps[k] = "error";
+        }
+        return {
+          ...prev,
+          status: "error",
+          error,
+          steps: sweptSteps,
+          checkGroups: prev.checkGroups.map((g) =>
+            g.status === "active"
+              ? { ...g, status: "error", error: g.error ?? error, endTime: g.endTime ?? ts }
+              : g
+          ),
+          mergeEndTime: prev.mergeStartTime && !prev.mergeEndTime ? ts : prev.mergeEndTime,
+        };
+      });
       break;
     }
   }

@@ -374,8 +374,15 @@ export async function runReviewPipeline(
     callbacks.onResult(result);
   } catch (error) {
     if (pipelineAbort.signal.aborted) {
-      console.error("[pipeline] Review timed out after 15 minutes");
-      try { callbacks.onError("Review timed out after 15 minutes"); } catch { /* writer may be dead */ }
+      // Distinguish a user cancel (cancelSignal already emitted "Cancelled by user"
+      // and gated future emits) from a hard pipeline timeout.
+      if (options?.cancelSignal?.aborted) {
+        console.log("[pipeline] Review cancelled by user");
+        return;
+      }
+      const minutes = Math.round(PIPELINE_TIMEOUT_MS / 60000);
+      console.error(`[pipeline] Review timed out after ${minutes} minutes`);
+      try { callbacks.onError(`Review timed out after ${minutes} minutes`); } catch { /* writer may be dead */ }
       return;
     }
     console.error("[pipeline] Fatal error:", error instanceof Error ? error.message : error);
