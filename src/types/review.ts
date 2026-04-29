@@ -308,6 +308,10 @@ export interface CheckGroupState {
   thinkingSummary?: string;
   error?: string;
   startTime?: number;
+  /** When the first token actually arrived from the LLM (excludes queue/TTFT wait).
+   *  Used as the t/s denominator anchor so the rate reflects model throughput, not
+   *  time spent waiting in front of the gateway. */
+  firstTokenTime?: number;
   generatingStartTime?: number;
   generatingStartTokenCount?: number;
   endTime?: number;
@@ -325,6 +329,8 @@ export interface ReviewState {
   mergePhase: LLMPhase | null;
   mergeThinkingSummary?: string;
   mergeStartTime: number | null;
+  /** First-token arrival timestamp for the merger (see CheckGroupState.firstTokenTime). */
+  mergeFirstTokenTime: number | null;
   mergeGeneratingStartTime: number | null;
   mergeGeneratingStartTokenCount: number;
   mergeEndTime: number | null;

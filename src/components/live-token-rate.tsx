@@ -9,8 +9,10 @@ interface LiveTokenRateProps {
   provider: ProviderType | null;
   status: StepStatus;
   phase?: LLMPhase | null;
-  /** Wall-clock start of the whole call (used for thinking-rate on local + final average on done). */
-  startTime?: number;
+  /** Wall-clock arrival of the very first streamed token. Excludes queue/TTFT
+   *  wait so the displayed rate reflects model throughput — not time spent
+   *  sitting in the gateway's serial queue. */
+  firstTokenTime?: number;
   endTime?: number;
   /** Live total tokens (chunk counter while streaming; API outputTokens after complete). */
   tokenCount: number;
@@ -41,7 +43,7 @@ export function LiveTokenRate({
   provider,
   status,
   phase,
-  startTime,
+  firstTokenTime,
   endTime,
   tokenCount,
   generatingStartTime,
@@ -62,15 +64,16 @@ export function LiveTokenRate({
   let numTokens = 0;
   let denomMs = 0;
 
-  if (status === "done" && startTime != null && endTime != null) {
-    // Final average using the API's true outputTokens (includes reasoning).
+  if (status === "done" && firstTokenTime != null && endTime != null) {
+    // Final average using the API's true outputTokens (includes reasoning),
+    // measured from the first real token to the last — not from request start.
     numTokens = tokenCount;
-    denomMs = endTime - startTime;
+    denomMs = endTime - firstTokenTime;
   } else if (status === "active") {
-    if (provider === "local" && startTime != null) {
-      // 1 chunk ≈ 1 token; full-call rate is accurate.
+    if (provider === "local" && firstTokenTime != null) {
+      // 1 chunk ≈ 1 token; rate is accurate from the first token onward.
       numTokens = tokenCount;
-      denomMs = now - startTime;
+      denomMs = now - firstTokenTime;
     } else if (phase === "generating" && generatingStartTime != null) {
       // Azure during generating — anchor on content phase for an honest rate.
       numTokens = tokenCount - (generatingStartTokenCount ?? 0);

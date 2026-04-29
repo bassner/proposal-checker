@@ -50,28 +50,26 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
     group.phase !== "generating" &&
     group.thinkingSummary;
 
-  // Parse thinking summary. Two formats supported:
+  // Parse thinking summary. Format depends on the provider:
   //  - Azure Responses API: section-headed summary, e.g. "**Heading** body text..."
-  //    → title = last heading, body = text after it
-  //  - vLLM gpt-oss raw chain-of-thought: no markdown structure
-  //    → title = latest sentence (live ticker), body = full text (expandable)
+  //    → title = last heading (live ticker), body = text after it (expandable)
+  //  - vLLM gpt-oss raw chain-of-thought: no structure, just stream-of-thought
+  //    → no title (synthesizing one from the latest sentence is noisy);
+  //      show body inline with the same scroll/expand behavior
   let thinkingTitle = "";
   let thinkingBody = "";
   if (showThinkingSummary) {
-    const flat = group.thinkingSummary!.replace(/\s+/g, " ").trim();
-    const matches = [...group.thinkingSummary!.matchAll(/\*\*(.+?)\*\*/g)];
-    if (matches.length > 0) {
-      const last = matches[matches.length - 1];
-      thinkingTitle = last[1].trim();
-      thinkingBody = group.thinkingSummary!.slice(last.index! + last[0].length).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
-    } else if (flat.length > 0) {
-      // Pick the last complete sentence-ish fragment as the live ticker title.
-      // Falls back to the trailing tail of the buffer if the model hasn't
-      // reached terminal punctuation yet.
-      const sentences = flat.match(/[^.!?\n]+[.!?]?/g) ?? [flat];
-      const lastSentence = sentences[sentences.length - 1].trim();
-      thinkingTitle = lastSentence.length > 120 ? lastSentence.slice(-120).trim() : lastSentence;
-      thinkingBody = flat;
+    if (isLocal) {
+      thinkingBody = group.thinkingSummary!.replace(/\s+/g, " ").trim();
+    } else {
+      const matches = [...group.thinkingSummary!.matchAll(/\*\*(.+?)\*\*/g)];
+      if (matches.length > 0) {
+        const last = matches[matches.length - 1];
+        thinkingTitle = last[1].trim();
+        thinkingBody = group.thinkingSummary!.slice(last.index! + last[0].length).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+      } else {
+        thinkingBody = group.thinkingSummary!.replace(/\s+/g, " ").trim();
+      }
     }
   }
 
@@ -145,7 +143,7 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
             provider={provider}
             status={group.status}
             phase={group.phase}
-            startTime={group.startTime}
+            firstTokenTime={group.firstTokenTime}
             endTime={group.endTime}
             tokenCount={group.tokenCount ?? 0}
             generatingStartTime={group.generatingStartTime}
@@ -173,20 +171,20 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
         )}
       </div>
 
-      {/* Reasoning summary preview while thinking */}
-      {showThinkingSummary && (
+      {/* Reasoning summary preview while thinking. Two layouts:
+          - Azure: clickable title (live ticker) + expandable body
+          - Local (gpt-oss): no title, body shown inline with live-tail scroll */}
+      {showThinkingSummary && thinkingTitle && (
         <div
           className="mt-1 cursor-pointer select-none"
           onClick={() => setExpanded((e) => !e)}
         >
-          {thinkingTitle && (
-            <p className="break-words text-[11px] text-blue-400/60">
-              <span className="thinking-shimmer font-semibold">{thinkingTitle}</span>
-              <span className="ml-1.5 font-normal text-blue-400/30">
-                ({expanded ? "click to collapse" : "click to expand"})
-              </span>
-            </p>
-          )}
+          <p className="break-words text-[11px] text-blue-400/60">
+            <span className="thinking-shimmer font-semibold">{thinkingTitle}</span>
+            <span className="ml-1.5 font-normal text-blue-400/30">
+              ({expanded ? "click to collapse" : "click to expand"})
+            </span>
+          </p>
           {thinkingBody && expanded && (
             <div
               ref={scrollRef}
@@ -197,6 +195,15 @@ export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
               {thinkingBody}
             </div>
           )}
+        </div>
+      )}
+      {showThinkingSummary && !thinkingTitle && thinkingBody && (
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="mt-1 max-h-80 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap"
+        >
+          {thinkingBody}
         </div>
       )}
     </div>

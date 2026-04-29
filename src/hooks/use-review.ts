@@ -34,6 +34,7 @@ const INITIAL_STATE: ReviewState = {
   mergeReasoningTokens: 0,
   mergePhase: null,
   mergeStartTime: null,
+  mergeFirstTokenTime: null,
   mergeGeneratingStartTime: null,
   mergeGeneratingStartTokenCount: 0,
   mergeEndTime: null,
@@ -437,6 +438,8 @@ function handleSSEEvent(
               ...g,
               tokenCount: tokens,
               phase,
+              // Anchor t/s on the first real token (excludes queue/TTFT wait).
+              ...(g.firstTokenTime ? {} : { firstTokenTime: ts }),
               ...(phase === "generating" && !g.generatingStartTime
                 ? { generatingStartTime: ts, generatingStartTokenCount: tokens }
                 : {}),
@@ -519,6 +522,8 @@ function handleSSEEvent(
         ...prev,
         mergeTokens: tokens,
         mergePhase: phase,
+        // Anchor merge t/s on the first real token (excludes queue/TTFT wait).
+        ...(prev.mergeFirstTokenTime ? {} : { mergeFirstTokenTime: ts }),
         ...(phase === "generating" && !prev.mergeGeneratingStartTime
           ? { mergeGeneratingStartTime: ts, mergeGeneratingStartTokenCount: tokens }
           : {}),

@@ -61,13 +61,18 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
   let mergeThinkingTitle = "";
   let mergeThinkingBody = "";
   if (showMergeThinking) {
-    const matches = [...state.mergeThinkingSummary!.matchAll(/\*\*(.+?)\*\*/g)];
-    if (matches.length > 0) {
-      const last = matches[matches.length - 1];
-      mergeThinkingTitle = last[1].trim();
-      mergeThinkingBody = state.mergeThinkingSummary!.slice(last.index! + last[0].length).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
-    } else {
+    if (isLocal) {
+      // Raw chain-of-thought from gpt-oss has no headings — show body only.
       mergeThinkingBody = state.mergeThinkingSummary!.replace(/\s+/g, " ").trim();
+    } else {
+      const matches = [...state.mergeThinkingSummary!.matchAll(/\*\*(.+?)\*\*/g)];
+      if (matches.length > 0) {
+        const last = matches[matches.length - 1];
+        mergeThinkingTitle = last[1].trim();
+        mergeThinkingBody = state.mergeThinkingSummary!.slice(last.index! + last[0].length).replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+      } else {
+        mergeThinkingBody = state.mergeThinkingSummary!.replace(/\s+/g, " ").trim();
+      }
     }
   }
 
@@ -120,7 +125,7 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
                     provider={state.provider}
                     status={state.steps.merge}
                     phase={state.mergePhase}
-                    startTime={state.mergeStartTime}
+                    firstTokenTime={state.mergeFirstTokenTime ?? undefined}
                     endTime={state.mergeEndTime ?? undefined}
                     tokenCount={state.mergeTokens}
                     generatingStartTime={state.mergeGeneratingStartTime ?? undefined}
@@ -141,26 +146,30 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
                 )}
               </div>
 
-              {/* Merge thinking summary — below counters, expandable */}
-              {showMergeThinking && (
+              {/* Merge thinking summary. Azure: clickable title + expandable body.
+                  Local (gpt-oss raw chain-of-thought): no title — body shown inline. */}
+              {showMergeThinking && mergeThinkingTitle && (
                 <div
                   className="mt-1.5 cursor-pointer select-none"
                   onClick={() => setMergeThinkingExpanded((e) => !e)}
                 >
-                  {mergeThinkingTitle && (
-                    <p className="break-words text-[11px] text-blue-400/60">
-                      <span className="thinking-shimmer font-semibold">{mergeThinkingTitle}</span>
-                      <span className="ml-1.5 font-normal text-blue-400/30">
-                        ({mergeThinkingExpanded ? "click to collapse" : "click to expand"})
-                      </span>
-                    </p>
-                  )}
+                  <p className="break-words text-[11px] text-blue-400/60">
+                    <span className="thinking-shimmer font-semibold">{mergeThinkingTitle}</span>
+                    <span className="ml-1.5 font-normal text-blue-400/30">
+                      ({mergeThinkingExpanded ? "click to collapse" : "click to expand"})
+                    </span>
+                  </p>
                   {mergeThinkingBody && mergeThinkingExpanded && (
-                    <p className="mt-0.5 break-words text-[11px] italic text-blue-400/40">
+                    <p className="mt-0.5 max-h-80 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap">
                       {mergeThinkingBody}
                     </p>
                   )}
                 </div>
+              )}
+              {showMergeThinking && !mergeThinkingTitle && mergeThinkingBody && (
+                <p className="mt-1.5 max-h-80 overflow-y-auto break-words text-[11px] italic leading-relaxed text-blue-400/40 whitespace-pre-wrap">
+                  {mergeThinkingBody}
+                </p>
               )}
             </div>
           )}
