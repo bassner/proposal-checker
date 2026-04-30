@@ -18,12 +18,11 @@ const t = {
     confirmWord: "LÖSCHEN",
     deleteWarning: (
       <>
-        Die Löschung entfernt <strong className="text-amber-200/80">unwiderruflich</strong> alle
-        Ihre Daten aus der Datenbank: Reviews, Annotationen, Kommentare,
-        Audit-Einträge und Ihr Benutzerkonto. Hochgeladene PDF-Dateien
-        werden innerhalb von 24&nbsp;Stunden vom Server entfernt. Geben
-        Sie <strong className="text-amber-200/80">LÖSCHEN</strong> ein,
-        um zu bestätigen.
+        {"Die Löschung entfernt "}
+        <strong className="text-amber-200/80">unwiderruflich</strong>
+        {" alle Ihre Daten aus der Datenbank: Reviews, Annotationen, Kommentare, Audit-Einträge und Ihr Benutzerkonto. Hochgeladene PDF-Dateien werden innerhalb von 24 Stunden vom Server entfernt. Geben Sie "}
+        <strong className="text-amber-200/80">LÖSCHEN</strong>
+        {" ein, um zu bestätigen."}
       </>
     ),
   },
@@ -39,11 +38,11 @@ const t = {
     confirmWord: "DELETE",
     deleteWarning: (
       <>
-        Deletion <strong className="text-amber-200/80">irrevocably</strong> removes
-        all your data from the database: reviews, annotations, comments,
-        audit entries, and your user account. Uploaded PDF files will be
-        removed from the server within 24&nbsp;hours. Type{" "}
-        <strong className="text-amber-200/80">DELETE</strong> to confirm.
+        {"Deletion "}
+        <strong className="text-amber-200/80">irrevocably</strong>
+        {" removes all your data from the database: reviews, annotations, comments, audit entries, and your user account. Uploaded PDF files will be removed from the server within 24 hours. Type "}
+        <strong className="text-amber-200/80">DELETE</strong>
+        {" to confirm."}
       </>
     ),
   },

@@ -146,7 +146,7 @@ function PrivacyDE() {
         <li><strong>Seitenrendering:</strong> Die Seiten des PDF-Dokuments werden serverseitig als PNG-Bilder gerendert (mittels Poppler/pdftoppm), um dem KI-Modell eine visuelle Analyse (z.&nbsp;B. Abbildungen, Seitenlayout, Struktur) zu ermöglichen.</li>
         <li><strong>KI-Verarbeitung:</strong> Sowohl der extrahierte Text als auch die gerenderten Seitenbilder werden an das gewählte KI-Modell (Azure OpenAI oder ein selbst gehostetes Open-Source-Modell auf TUM-Infrastruktur) übermittelt. Die Analyse erfolgt in 7 parallelen Prüfgruppen (z.&nbsp;B. Struktur, Problemstellung, Literaturverzeichnis, Abbildungen, Schreibstil, KI-Transparenz, Zeitplan), gefolgt von einem Zusammenführungsschritt.</li>
       </ul>
-      <p><strong>Rechtsgrundlage:</strong> Rechtsgrundlage für die konkrete KI-Analyse einschließlich der Übermittlung der hierfür erforderlichen Inhalte an den gewählten KI-Anbieter ist Art.&nbsp;6 Abs.&nbsp;1 UAbs.&nbsp;1 Buchst.&nbsp;a DSGVO. Die Einwilligung wird vor jedem Start der Analyse durch aktives Anhaken der entsprechenden Checkbox erteilt.</p>
+      <p>Rechtsgrundlage für die konkrete KI-Analyse einschließlich der Übermittlung der hierfür erforderlichen Inhalte an den gewählten KI-Anbieter ist Art.&nbsp;6 Abs.&nbsp;1 UAbs.&nbsp;1 Buchst.&nbsp;a DSGVO. Die Einwilligung wird vor jedem Start der Analyse durch aktives Anhaken der entsprechenden Checkbox erteilt.</p>
       <p>Die gerenderten PNG-Bilder werden ausschließlich temporär im Arbeitsspeicher bzw. im temporären Dateisystem des Servers erzeugt und nach Abschluss der Analyse gelöscht.</p>
 
       <h3>4.4 Review-Daten</h3>
@@ -248,7 +248,8 @@ function PrivacyDE() {
           <tr><td>localStorage-Daten im Browser</td><td>Bis zur manuellen Löschung durch die nutzende Person im Browser oder durch entsprechende Funktion in der Anwendung</td></tr>
         </tbody>
       </table>
-      <p>Bei Betätigung der Löschfunktion werden Reviews in der Anwendung nicht mehr angezeigt und für reguläre Datenbankabrufe nicht mehr berücksichtigt. Soweit technisch zunächst eine Markierung als gelöscht (Soft-Delete) erfolgt, wird der Zugriff auf diese Daten auf besonders berechtigte Administrierende mit berechtigtem Anlass beschränkt. Eine endgültige Löschung aus dem Primärsystem erfolgt nach Maßgabe des technischen Löschkonzepts; Sicherungskopien werden im Rahmen der regulären Backup-Zyklen überschrieben oder gelöscht.</p>
+      <p>Bei Löschung eines einzelnen Reviews wird dieses in der Anwendung nicht mehr angezeigt und bei regulären Datenbankabrufen nicht mehr berücksichtigt. Soweit technisch zunächst eine Markierung als gelöscht (Soft-Delete) erfolgt, ist der Zugriff auf besonders berechtigte Administrierende mit berechtigtem Anlass beschränkt. Die endgültige Löschung erfolgt nach Maßgabe des technischen Löschkonzepts und der Backup-Zyklen.</p>
+      <p>Die Funktion &bdquo;Alle meine Daten löschen&ldquo; ist hiervon zu unterscheiden. Sie entfernt das Benutzerkonto und die zugehörigen Datenbankeinträge unwiderruflich aus der Datenbank; hochgeladene PDF-Dateien werden innerhalb von 24&nbsp;Stunden vom Server entfernt.</p>
 
       <h2>8. Cookies und lokale Speicherung</h2>
       <h3>8.1 Cookies</h3>
@@ -311,7 +312,7 @@ function PrivacyDE() {
         <li>Der Zugang zur Datenbank (PostgreSQL) und zu den gespeicherten Dokumenten ist auf die Anwendung beschränkt und nicht öffentlich zugänglich.</li>
         <li>Die Authentifizierung erfolgt über das bewährte Keycloak-SSO der TUM mit JWT-basierter Sitzungsverwaltung.</li>
         <li>Share-Links können mit Ablaufdatum und optionalem Passwortschutz versehen werden. Passwörter werden nur als kryptographischer Hash gespeichert.</li>
-        <li>Bei Löschung eines Reviews wird dieses in der Anwendung nicht mehr angezeigt und bei regulären Datenbankabrufen nicht mehr berücksichtigt. Soweit technisch zunächst eine Soft-Delete-Markierung erfolgt, ist der Zugriff auf besonders berechtigte Administrierende mit berechtigtem Anlass beschränkt. Die endgültige Löschung erfolgt nach Maßgabe des technischen Löschkonzepts und der Backup-Zyklen.</li>
+        <li>Bei Löschung eines einzelnen Reviews wird dieses in der Anwendung nicht mehr angezeigt und bei regulären Datenbankabrufen nicht mehr berücksichtigt. Soweit technisch zunächst eine Markierung als gelöscht (Soft-Delete) erfolgt, ist der Zugriff auf besonders berechtigte Administrierende mit berechtigtem Anlass beschränkt. Die endgültige Löschung erfolgt nach Maßgabe des technischen Löschkonzepts und der Backup-Zyklen. Die Funktion &bdquo;Alle meine Daten löschen&ldquo; ist hiervon zu unterscheiden; sie entfernt das Benutzerkonto und die zugehörigen Datenbankeinträge unwiderruflich aus der Datenbank, hochgeladene PDF-Dateien werden innerhalb von 24&nbsp;Stunden vom Server entfernt.</li>
       </ul>
 
       <h2>14. Änderungen dieser Datenschutzerklärung</h2>
@@ -428,7 +429,7 @@ function PrivacyEN() {
         <li><strong>Page rendering:</strong> PDF pages are rendered server-side as PNG images (via Poppler/pdftoppm) to enable visual analysis by the AI model (e.g., figures, page layout, structure).</li>
         <li><strong>AI processing:</strong> Both the extracted text and rendered page images are sent to the selected AI model (Azure OpenAI or a self-hosted open-source model on TUM infrastructure). Analysis is performed in 7 parallel check groups (e.g., structure, problem statement, bibliography, figures, writing style, AI transparency, schedule), followed by a merging step.</li>
       </ul>
-      <p><strong>Legal basis:</strong> The legal basis for the specific AI analysis, including the transmission of the content required for that purpose to the selected AI provider, is Art.&nbsp;6(1)(a) GDPR. Consent is given before each analysis by actively ticking the corresponding checkbox.</p>
+      <p>The legal basis for the specific AI analysis, including the transmission of the content required for that purpose to the selected AI provider, is Art.&nbsp;6(1)(a) GDPR. Consent is given before each analysis by actively ticking the corresponding checkbox.</p>
       <p>Rendered PNG images are generated exclusively temporarily in server memory or temporary file system and are deleted upon completion of the analysis.</p>
 
       <h3>4.4 Review Data</h3>
@@ -530,7 +531,8 @@ function PrivacyEN() {
           <tr><td>localStorage data in browser</td><td>Until manual deletion by the user in their browser or via a corresponding function within the application</td></tr>
         </tbody>
       </table>
-      <p>When the deletion function is used, reviews are no longer displayed in the application and are no longer included in regular database queries. Where technically a deletion marking (soft-delete) is initially applied, access to such data is restricted to specifically authorised administrators with a legitimate reason. Final deletion from the primary system takes place in accordance with the technical deletion concept; backup copies are overwritten or deleted as part of the regular backup cycles.</p>
+      <p>When an individual review is deleted, it is no longer displayed in the application and is no longer included in regular database queries. Where technically a deletion marking (soft-delete) is initially applied, access to such data is restricted to specifically authorised administrators with a legitimate reason. Final deletion takes place in accordance with the technical deletion concept and the backup cycles.</p>
+      <p>The &ldquo;Delete all my data&rdquo; function is to be distinguished from this. It irrevocably removes the user account and associated database entries from the database; uploaded PDF files are removed from the server within 24&nbsp;hours.</p>
 
       <h2>8. Cookies and Local Storage</h2>
       <h3>8.1 Cookies</h3>
@@ -593,7 +595,7 @@ function PrivacyEN() {
         <li>Access to the database (PostgreSQL) and stored documents is restricted to the application and is not publicly accessible.</li>
         <li>Authentication is provided via TUM&apos;s established Keycloak SSO with JWT-based session management.</li>
         <li>Share links can be configured with an expiration date and optional password protection. Passwords are stored only as cryptographic hashes.</li>
-        <li>When a review is deleted, it is no longer displayed in the application and no longer considered in regular database queries. Where technically a soft-delete marking is initially applied, access is restricted to specifically authorised administrators with a legitimate reason. Final deletion takes place in accordance with the technical deletion concept and the backup cycles.</li>
+        <li>When an individual review is deleted, it is no longer displayed in the application and no longer considered in regular database queries. Where technically a soft-delete marking is initially applied, access is restricted to specifically authorised administrators with a legitimate reason. Final deletion takes place in accordance with the technical deletion concept and the backup cycles. The &ldquo;Delete all my data&rdquo; function is to be distinguished from this; it irrevocably removes the user account and associated database entries from the database, and uploaded PDF files are removed from the server within 24&nbsp;hours.</li>
       </ul>
 
       <h2>14. Changes to This Privacy Policy</h2>
