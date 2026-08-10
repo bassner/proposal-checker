@@ -21,6 +21,10 @@ import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
 import { hashPDFContent } from "@/lib/pdf/hash";
 import type { ProviderType, ReviewMode } from "@/types/review";
+import {
+  getProviderConfig,
+  ProviderConfigurationError,
+} from "@/lib/llm/provider-config";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -155,6 +159,19 @@ export async function POST(
     return Response.json({ error: "Your role does not allow this provider" }, { status: 403 });
   }
 
+  let providerModel: string;
+  try {
+    providerModel = getProviderConfig(provider, process.env, {
+      role: session.user.role,
+    }).model;
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      console.error(`[api] ${provider} provider unavailable: ${error.message}`);
+      return Response.json({ error: "Selected provider is not configured" }, { status: 503 });
+    }
+    throw error;
+  }
+
   const pdfBuffer = await file.arrayBuffer();
   const contentHash = hashPDFContent(pdfBuffer);
 
@@ -241,7 +258,7 @@ export async function POST(
 
   // Audit log
   logAuditEvent(sessionId, session.user.id, session.user.email ?? null, "review.version_created", {
-    parentReviewId: parentId, provider, mode, fileName: file.name,
+    parentReviewId: parentId, provider, model: providerModel, mode, fileName: file.name,
   }, session.user.name);
 
   // Get previous findings and adjudications for diff-aware pipeline
@@ -315,6 +332,7 @@ export async function POST(
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
   }, resolvedGroups, sessionId, {
+    model: providerModel,
     ...(previousFindings ? { previousFindings, previousAssessment, previousReviewId: parentId, previousAdjudications } : {}),
     cancelSignal: cancelController.signal,
   });

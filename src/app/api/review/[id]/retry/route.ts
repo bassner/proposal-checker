@@ -10,6 +10,10 @@ import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
 import { cacheInvalidate } from "@/lib/cache";
 import type { ProviderType, ReviewMode } from "@/types/review";
+import {
+  getProviderConfig,
+  ProviderConfigurationError,
+} from "@/lib/llm/provider-config";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -73,6 +77,19 @@ export async function POST(
   }
   if (!allowed) {
     return Response.json({ error: "Your role no longer allows this provider" }, { status: 403 });
+  }
+
+  let providerModel: string;
+  try {
+    providerModel = getProviderConfig(provider, process.env, {
+      role: session.user.role,
+    }).model;
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      console.error(`[api] ${provider} provider unavailable: ${error.message}`);
+      return Response.json({ error: "Selected provider is not configured" }, { status: 503 });
+    }
+    throw error;
   }
 
   // Step 3: Rate limiting (same rules as initial submit)
@@ -152,11 +169,11 @@ export async function POST(
     fileName: claimed.fileName ?? undefined,
   };
 
-  console.log(`[api] Retry review ${id} (attempt ${retryCount}): provider=${provider}, mode=${mode}, groups=${selectedGroups.length}`);
+  console.log(`[api] Retry review ${id} (attempt ${retryCount}): provider=${provider}, model=${providerModel}, mode=${mode}, groups=${selectedGroups.length}`);
 
   // Audit log (fire-and-forget)
   logAuditEvent(id, session.user.id, session.user.email ?? null, "review.retried", {
-    retryCount, provider, mode,
+    retryCount, provider, model: providerModel, mode,
   }, session.user.name);
 
   // Step 6.5: Fetch previous version findings for diff-aware retry (if in a version group)
@@ -238,7 +255,10 @@ export async function POST(
       failReview(id, sanitizedError, dbMeta, retryCount)
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, selectedGroups, id, previousFindings ? { previousFindings, previousAssessment, previousReviewId, previousAdjudications } : undefined);
+  }, selectedGroups, id, {
+    model: providerModel,
+    ...(previousFindings ? { previousFindings, previousAssessment, previousReviewId, previousAdjudications } : {}),
+  });
 
   return Response.json({ id }, { status: 202 });
 }

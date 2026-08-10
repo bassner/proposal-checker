@@ -120,8 +120,15 @@ async function ensureSchema(): Promise<void> {
       INSERT INTO role_provider_config (role, providers) VALUES
         ('admin', ARRAY['azure', 'local']::TEXT[]),
         ('phd', ARRAY['azure', 'local']::TEXT[]),
-        ('student', ARRAY['local']::TEXT[])
+        ('student', ARRAY['azure', 'local']::TEXT[])
       ON CONFLICT (role) DO NOTHING;
+
+      -- August 2026 model-tier rollout: students now get the role-scoped Azure
+      -- model as well as the local model. Limit the migration to the previous
+      -- default so other custom provider combinations remain untouched.
+      UPDATE role_provider_config
+        SET providers = ARRAY['azure', 'local']::TEXT[], updated_at = NOW()
+        WHERE role = 'student' AND providers = ARRAY['local']::TEXT[];
 
       -- Share links: add share_token column (safe for deployed DB)
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_token TEXT;

@@ -1,5 +1,9 @@
 import { requireAuth } from "@/lib/auth/helpers";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
+import {
+  getProviderConfig,
+  ProviderConfigurationError,
+} from "@/lib/llm/provider-config";
 
 export async function GET() {
   let session;
@@ -18,37 +22,31 @@ export async function GET() {
   }
   const models = [];
 
-  if (allowedProviders.includes("azure") && process.env.AZURE_OPENAI_API_KEY) {
-    const azureModel = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4";
-    models.push({
-      provider: "azure",
-      label: `Azure OpenAI (${azureModel})`,
-      model: azureModel,
-    });
-  }
-
-  if (allowedProviders.includes("local") && process.env.LOCAL_LLM_API_KEY) {
-    const localModel = process.env.LOCAL_LLM_MODEL || "openai/gpt-oss-120b";
-    models.push({
-      provider: "local",
-      label: `Local LLM (${formatModelLabel(localModel)})`,
-      model: localModel,
-    });
-  }
-
-  // If allowed providers are configured but no API keys, show them anyway
-  // (they'll fail at runtime with a clear error)
-  if (models.length === 0) {
-    if (allowedProviders.includes("azure")) {
-      models.push({ provider: "azure", label: `Azure OpenAI (${process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4"})`, model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-5.4" });
-    }
-    if (allowedProviders.includes("local")) {
-      const localModel = process.env.LOCAL_LLM_MODEL || "openai/gpt-oss-120b";
-      models.push({ provider: "local", label: `Local LLM (${formatModelLabel(localModel)})`, model: localModel });
+  for (const provider of allowedProviders) {
+    try {
+      const config = getProviderConfig(provider, process.env, {
+        role: session.user.role,
+      });
+      models.push({
+        provider,
+        label: provider === "azure"
+          ? `Azure OpenAI (${config.model})`
+          : `Local LLM (${formatModelLabel(config.model)})`,
+        model: config.model,
+      });
+    } catch (error) {
+      if (error instanceof ProviderConfigurationError) {
+        console.error(`[config] ${provider} provider unavailable: ${error.message}`);
+      } else {
+        throw error;
+      }
     }
   }
 
-  return Response.json({ models });
+  return Response.json(
+    { models, ...(models.length === 0 && { configStatus: "unavailable" }) },
+    { status: models.length === 0 ? 503 : 200 }
+  );
 }
 
 /** Strip provider prefix and normalize a model id into a short display label. */

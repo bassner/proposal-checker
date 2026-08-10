@@ -39,8 +39,12 @@ Create a `.env.local` file with the provider(s) you want to use:
 ```
 AZURE_OPENAI_API_KEY=your-key
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-AZURE_OPENAI_DEPLOYMENT=gpt-5.2
+AZURE_OPENAI_INSTRUCTOR_DEPLOYMENT=gpt-5.6-sol
+AZURE_OPENAI_STUDENT_DEPLOYMENT=gpt-5.6-luna
+AZURE_OPENAI_API_VERSION=preview
 ```
+
+Admins and PhD researchers use the instructor deployment; students use the student deployment. Both groups can also select the self-hosted model.
 
 **Self-hosted local model (OpenAI-compatible endpoint):**
 ```

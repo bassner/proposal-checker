@@ -58,6 +58,8 @@ export async function runReviewPipeline(
   selectedGroups?: CheckGroupId[],
   reviewId?: string,
   options?: {
+    /** Server-resolved model/deployment. Never trust a client-provided model id. */
+    model?: string;
     /** Findings from the previous version for diff-aware review. */
     previousFindings?: Finding[];
     /** Previous version's overall assessment. */
@@ -118,7 +120,7 @@ export async function runReviewPipeline(
 
     // Step 3: Run parallel checks
     callbacks.onStep("check", "active");
-    const model = createModel(provider);
+    const model = createModel(provider, options?.model);
     let checkGroups: CheckGroupMeta[] = getCheckGroups(mode);
     if (selectedGroups && selectedGroups.length > 0) {
       const selectedSet = new Set(selectedGroups);

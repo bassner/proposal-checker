@@ -10,6 +10,10 @@ import { requireAuth, canAccessReview } from "@/lib/auth/helpers";
 import { canUseProvider } from "@/lib/auth/provider-access";
 import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limiter";
 import { hashPDFContent } from "@/lib/pdf/hash";
+import {
+  getProviderConfig,
+  ProviderConfigurationError,
+} from "@/lib/llm/provider-config";
 
 /**
  * Sanitize error for client/DB to avoid leaking internal details.
@@ -173,6 +177,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let providerModel: string;
+  try {
+    providerModel = getProviderConfig(provider, process.env, {
+      role: session.user.role,
+    }).model;
+  } catch (error) {
+    if (error instanceof ProviderConfigurationError) {
+      console.error(`[api] ${provider} provider unavailable: ${error.message}`);
+      return new Response(
+        JSON.stringify({ error: "Selected provider is not configured" }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    throw error;
+  }
+
   if (file.type !== "application/pdf") {
     return new Response(
       JSON.stringify({ error: "Only PDF files are accepted" }),
@@ -221,7 +241,7 @@ export async function POST(request: NextRequest) {
   const sessionId = createSession(dbMeta);
   const cancelController = new AbortController();
   setAbortController(sessionId, cancelController);
-  console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, mode: ${mode}, groups: ${resolvedGroups.length}/${modeGroupIds.size}`);
+  console.log(`[api] Review ${sessionId}: PDF uploaded (${(file.size / 1024).toFixed(1)} KB), provider: ${provider}, model: ${providerModel}, mode: ${mode}, groups: ${resolvedGroups.length}/${modeGroupIds.size}`);
 
   // Save PDF to disk for retry support (fire-and-forget — don't block the response)
   let pdfPath: string | null = null;
@@ -237,7 +257,7 @@ export async function POST(request: NextRequest) {
 
   // Audit log (fire-and-forget)
   logAuditEvent(sessionId, session.user.id, session.user.email ?? null, "review.created", {
-    provider, mode, fileName: file.name, groups: resolvedGroups.length,
+    provider, model: providerModel, mode, fileName: file.name, groups: resolvedGroups.length,
   }, session.user.name);
 
   // Throttle high-frequency events (token counts, thinking text) to avoid
@@ -304,7 +324,10 @@ export async function POST(request: NextRequest) {
       failReview(sessionId, sanitizedError, dbMeta)
         .catch((err) => console.error("[api] DB fail failed:", err));
     },
-  }, selectedGroups, sessionId, { cancelSignal: cancelController.signal });
+  }, selectedGroups, sessionId, {
+    model: providerModel,
+    cancelSignal: cancelController.signal,
+  });
 
   return new Response(JSON.stringify({ id: sessionId }), {
     status: 202,
