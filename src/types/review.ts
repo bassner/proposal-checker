@@ -344,6 +344,8 @@ export const PROVIDER_TYPES = ["azure", "local"] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
 export interface ModelConfig {
+  /** Stable picker value. Azure has multiple entries for instructor roles. */
+  id: string;
   provider: ProviderType;
   label: string;
   model: string;

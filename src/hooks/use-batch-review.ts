@@ -43,7 +43,7 @@ export function useBatchReview() {
       provider: ProviderType,
       mode: ReviewMode,
       selectedGroups?: CheckGroupId[],
-      opts?: { supervisorId?: string; studentId?: string }
+      opts?: { supervisorId?: string; studentId?: string; model?: string }
     ): Promise<{ successCount: number; totalCount: number }> => {
       setIsSubmitting(true);
       let successCount = 0;
@@ -61,6 +61,7 @@ export function useBatchReview() {
         formData.append("file", files[i].file);
         formData.append("provider", provider);
         formData.append("mode", mode);
+        if (opts?.model) formData.append("model", opts.model);
         if (selectedGroups && selectedGroups.length > 0) {
           formData.append("selectedGroups", JSON.stringify(selectedGroups));
         }

@@ -49,7 +49,7 @@ Keycloak OIDC via `next-auth` v5. JWT session strategy — roles extracted from 
 
 **Convention**: every API route MUST call `requireAuth()` as its first line. Exceptions: `/api/health` (public healthcheck) and `/api/auth/[...nextauth]` (login/callback flow).
 
-Role-provider mapping in `src/lib/auth/roles.ts`: all roles get Azure and local providers. Azure resolves server-side to the instructor deployment for admin/phd and the student deployment for students. Stream endpoint enforces ownership (IDOR prevention).
+Role-provider mapping in `src/lib/auth/roles.ts`: all roles get Azure and local providers. Admin/PhD users may select the instructor (Sol) or student (Luna) Azure deployment; students may select only Luna. The server validates every requested deployment against that role allowlist. Stream endpoint enforces ownership (IDOR prevention).
 
 ### Session System (`src/lib/sessions.ts`)
 
@@ -71,7 +71,7 @@ All outputs validated against Zod schemas in `src/lib/llm/schemas.ts`.
 ### LLM Providers (`src/lib/llm/provider.ts`)
 
 Two providers, both using `ChatOpenAI` from LangChain:
-- **Azure**: Uses Responses API with reasoning (`effort: "high"`, `summary: "auto"`)
+- **Azure**: Uses Responses API with reasoning (`high` for Sol, `max` for Luna, `summary: "auto"`)
 - **Ollama**: OpenAI-compatible endpoint with `<think>` tag-based reasoning
 
 ### Client-Side

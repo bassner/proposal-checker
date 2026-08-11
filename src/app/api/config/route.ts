@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth/helpers";
 import { getAllowedProviders } from "@/lib/auth/provider-access";
 import {
+  azureDeploymentsForRole,
   getProviderConfig,
   ProviderConfigurationError,
 } from "@/lib/llm/provider-config";
@@ -24,14 +25,28 @@ export async function GET() {
 
   for (const provider of allowedProviders) {
     try {
+      if (provider === "azure") {
+        for (const model of azureDeploymentsForRole(session.user.role)) {
+          const config = getProviderConfig(provider, process.env, {
+            role: session.user.role,
+            model,
+          });
+          models.push({
+            id: `azure:${config.model}`,
+            provider,
+            label: `Azure OpenAI (${config.model})`,
+            model: config.model,
+          });
+        }
+        continue;
+      }
       const config = getProviderConfig(provider, process.env, {
         role: session.user.role,
       });
       models.push({
+        id: `${provider}:${config.model}`,
         provider,
-        label: provider === "azure"
-          ? `Azure OpenAI (${config.model})`
-          : `Local LLM (${formatModelLabel(config.model)})`,
+        label: `Local LLM (${formatModelLabel(config.model)})`,
         model: config.model,
       });
     } catch (error) {

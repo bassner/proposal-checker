@@ -86,14 +86,16 @@ export async function runReviewPipeline(
   }
 
   try {
-    // Copy buffer — unpdf can detach the original ArrayBuffer
-    const bufferCopy = pdfBuffer.slice(0);
+    // unpdf may detach the ArrayBuffer it receives. Create both consumers'
+    // copies up front so extraction cannot invalidate the renderer's input.
+    const extractionBuffer = pdfBuffer.slice(0);
+    const renderBuffer = pdfBuffer.slice(0);
 
     // Step 1: Extract text
     callbacks.onStep("extract", "active");
-    console.log(`[pipeline] Extracting text from PDF (${(bufferCopy.byteLength / 1024 / 1024).toFixed(2)} MB)`);
+    console.log(`[pipeline] Extracting text from PDF (${(extractionBuffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
 
-    const extraction = await extractPDFText(bufferCopy);
+    const extraction = await extractPDFText(extractionBuffer);
     console.log(`[pipeline] Extracted ${extraction.pageCount} pages, ${extraction.fullText.length} characters`);
 
     if (extraction.pageCount > maxPages) {
@@ -110,7 +112,7 @@ export async function runReviewPipeline(
     let pageImages;
     try {
       console.log("[pipeline] Rendering PDF pages as images...");
-      pageImages = await renderPDFPages(bufferCopy);
+      pageImages = await renderPDFPages(renderBuffer);
       console.log(`[pipeline] Rendered ${pageImages.length} page images`);
     } catch (err) {
       console.warn("[pipeline] PDF page rendering failed (image-enabled checks will use text only):", err instanceof Error ? err.message : err);

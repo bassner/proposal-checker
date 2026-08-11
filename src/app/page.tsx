@@ -206,7 +206,7 @@ function UploadPage() {
   const tour = useOnboarding();
   const [file, setFile] = useState<File | null>(null);
   const [mode, setModeRaw] = useState<ReviewMode>("proposal");
-  const [provider, setProviderRaw] = useState<ProviderType>("azure");
+  const [selectedModelId, setSelectedModelIdRaw] = useState("");
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [selectedGroups, setSelectedGroups] = useState<Set<CheckGroupId>>(() => new Set());
@@ -232,14 +232,16 @@ function UploadPage() {
     localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify([...allIds]));
     setSelectedTemplate(null);
   }, []);
-  const setProvider = useCallback((v: ProviderType) => {
-    setProviderRaw(v);
-    localStorage.setItem("proposal-checker:provider", v);
+  const setSelectedModelId = useCallback((v: string) => {
+    setSelectedModelIdRaw(v);
+    localStorage.setItem("proposal-checker:model", v);
   }, []);
   const { startReview, error, isUploading } = useReview();
   const batch = useBatchReview();
   const isBatchMode = batch.files.length > 0;
   const isAnySubmitting = isUploading || batch.isSubmitting;
+  const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
+  const provider: ProviderType = selectedModel?.provider ?? "azure";
 
   // Derived values for current mode
   const modeGroups = getCheckGroups(mode);
@@ -325,13 +327,15 @@ function UploadPage() {
         const fetched: ModelConfig[] = data.models ?? [];
         setModels(fetched);
 
-        const saved = localStorage.getItem("proposal-checker:provider");
-        const providerIds = fetched.map((m: ModelConfig) => m.provider);
-        if (saved && providerIds.includes(saved as ProviderType)) {
-          setProviderRaw(saved as ProviderType);
+        const savedModel = localStorage.getItem("proposal-checker:model");
+        if (savedModel && fetched.some((model) => model.id === savedModel)) {
+          setSelectedModelIdRaw(savedModel);
         } else if (fetched.length > 0) {
-          setProviderRaw(fetched[0].provider);
-          localStorage.setItem("proposal-checker:provider", fetched[0].provider);
+          // Backward compatibility: retain the previously selected provider when possible.
+          const savedProvider = localStorage.getItem("proposal-checker:provider");
+          const fallback = fetched.find((model) => model.provider === savedProvider) ?? fetched[0];
+          setSelectedModelIdRaw(fallback.id);
+          localStorage.setItem("proposal-checker:model", fallback.id);
         }
       } finally {
         setModelsLoading(false);
@@ -399,6 +403,10 @@ function UploadPage() {
       ? { supervisorId: assignmentId }
       : { studentId: assignmentId }
     : undefined;
+  const submissionOpts = {
+    ...assignmentOpts,
+    model: selectedModel?.model,
+  };
 
   const handleStart = async () => {
     if (!gdprConsent) return;
@@ -406,7 +414,7 @@ function UploadPage() {
       // Batch mode: submit all queued files sequentially
       if (batch.files.length === 0 || noneSelected) return;
       const groupsToSend = allSelected ? undefined : [...selectedGroups];
-      const { successCount } = await batch.submitAll(provider, mode, groupsToSend, assignmentOpts);
+      const { successCount } = await batch.submitAll(provider, mode, groupsToSend, submissionOpts);
       if (successCount > 0) {
         router.push("/reviews");
       }
@@ -414,7 +422,7 @@ function UploadPage() {
       // Single-file mode
       if (!file || noneSelected) return;
       const groupsToSend = allSelected ? undefined : [...selectedGroups];
-      const result = await startReview(file, provider, mode, groupsToSend, assignmentOpts);
+      const result = await startReview(file, provider, mode, groupsToSend, submissionOpts);
       if (result) {
         const [reviewId, flag] = result.split("|");
         const dupParam = flag === "duplicate" ? "?duplicate=true" : "";
@@ -528,8 +536,8 @@ function UploadPage() {
             </p>
           ) : (
             <ProviderSelect
-              value={provider}
-              onChange={setProvider}
+              value={selectedModelId}
+              onChange={setSelectedModelId}
               disabled={isAnySubmitting}
               models={models}
             />

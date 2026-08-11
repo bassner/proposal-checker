@@ -163,6 +163,9 @@ export async function POST(
   try {
     providerModel = getProviderConfig(provider, process.env, {
       role: session.user.role,
+      model: provider === "azure" && provider === parentReview.provider
+        ? parentReview.model ?? undefined
+        : undefined,
     }).model;
   } catch (error) {
     if (error instanceof ProviderConfigurationError) {
@@ -177,7 +180,13 @@ export async function POST(
 
   // Duplicate check (exclude parent — user may intentionally re-review same PDF)
   const documentOwnerId = parentReview.studentId ?? parentReview.userId;
-  const existingDup = await findDuplicateReview(contentHash, parentReview.reviewMode, documentOwnerId);
+  const existingDup = await findDuplicateReview(
+    contentHash,
+    parentReview.reviewMode,
+    documentOwnerId,
+    provider,
+    providerModel,
+  );
   if (existingDup && existingDup.id !== parentId && canAccessReview(session, existingDup)) {
     return Response.json(
       { id: existingDup.id, duplicate: true },
@@ -197,6 +206,7 @@ export async function POST(
     userEmail: session.user.email ?? "",
     userName: session.user.name ?? "",
     provider,
+    model: providerModel,
     mode,
     reviewMode: mode,
     selectedGroups: resolvedGroups,
@@ -231,6 +241,7 @@ export async function POST(
       userEmail: session.user.email ?? "",
       userName: session.user.name ?? "",
       provider,
+      model: providerModel,
       reviewMode: mode,
       fileName: file.name,
       pdfPath,

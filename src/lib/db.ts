@@ -15,6 +15,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const globalDb = globalThis as unknown as {
   __dbPool?: pg.Pool | null;
   __schemaInitialized?: boolean;
+  __schemaInitPromise?: Promise<void>;
 };
 
 if (!globalDb.__dbPool) {
@@ -49,6 +50,16 @@ const pool = globalDb.__dbPool;
 // ---------------------------------------------------------------------------
 
 async function ensureSchema(): Promise<void> {
+  if (globalDb.__schemaInitialized || !pool) return;
+  if (!globalDb.__schemaInitPromise) {
+    globalDb.__schemaInitPromise = runSchemaInitialization().finally(() => {
+      globalDb.__schemaInitPromise = undefined;
+    });
+  }
+  return globalDb.__schemaInitPromise;
+}
+
+async function runSchemaInitialization(): Promise<void> {
   if (globalDb.__schemaInitialized || !pool) return;
   try {
     await pool.query(`
@@ -137,6 +148,9 @@ async function ensureSchema(): Promise<void> {
 
       -- Review mode: proposal (default) or thesis
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS review_mode TEXT DEFAULT 'proposal';
+
+      -- Exact deployment selected for this review (provider remains azure/local).
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS model TEXT;
 
       -- Finding annotations (user actions on individual findings)
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS annotations JSONB;
@@ -892,6 +906,7 @@ export interface ReviewRow {
   userEmail: string;
   userName: string;
   provider: string;
+  model: string | null;
   reviewMode: ReviewMode;
   status: string;
   fileName: string | null;
@@ -924,6 +939,7 @@ function rowToReview(row: Record<string, unknown>): ReviewRow {
     userEmail: row.user_email as string,
     userName: row.user_name as string,
     provider: row.provider as string,
+    model: (row.model as string) ?? null,
     reviewMode: (rawMode === "thesis" ? "thesis" : "proposal") as ReviewMode,
     status: row.status as string,
     fileName: (row.file_name as string) ?? null,
@@ -959,6 +975,7 @@ export async function insertReview(review: {
   userEmail: string;
   userName: string;
   provider: string;
+  model?: string;
   reviewMode?: ReviewMode;
   fileName: string | null;
   pdfPath?: string | null;
@@ -973,17 +990,17 @@ export async function insertReview(review: {
   // Re-check after async ensureSchema — erasure may have started during await
   if (erasedUserIds.has(review.userId)) return;
   await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id, content_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, model, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id, content_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (id) DO NOTHING`,
-    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.reviewMode ?? "proposal", review.fileName, review.pdfPath ?? null, review.selectedGroups ? JSON.stringify(review.selectedGroups) : null, review.supervisorId ?? null, review.studentId ?? null, review.contentHash ?? null]
+    [review.id, review.userId, review.userEmail, review.userName, review.provider, review.model ?? null, review.reviewMode ?? "proposal", review.fileName, review.pdfPath ?? null, review.selectedGroups ? JSON.stringify(review.selectedGroups) : null, review.supervisorId ?? null, review.studentId ?? null, review.contentHash ?? null]
   );
 }
 
 export async function completeReview(
   id: string,
   feedback: unknown,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string; supervisorId?: string; studentId?: string },
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; model?: string; reviewMode?: ReviewMode; fileName?: string; supervisorId?: string; studentId?: string },
   expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
@@ -996,8 +1013,8 @@ export async function completeReview(
   // (prevents stale pipeline callbacks from overwriting a newer retry's state)
   const retryGuard = expectedRetryCount != null ? ` AND reviews.retry_count = ${Number(expectedRetryCount)}` : "";
   const result = await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, feedback, file_name, completed_at, updated_at, supervisor_id, student_id)
-     VALUES ($1, $3, $4, $5, $6, $8, 'done', $2, $7, NOW(), NOW(), $9, $10)
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, model, review_mode, status, feedback, file_name, completed_at, updated_at, supervisor_id, student_id)
+     VALUES ($1, $3, $4, $5, $6, $11, $8, 'done', $2, $7, NOW(), NOW(), $9, $10)
      ON CONFLICT (id) DO UPDATE SET
        status = 'done',
        feedback = $2,
@@ -1016,6 +1033,7 @@ export async function completeReview(
       meta?.reviewMode ?? "proposal",
       meta?.supervisorId ?? null,
       meta?.studentId ?? null,
+      meta?.model ?? null,
     ]
   );
   if (expectedRetryCount != null && result.rowCount === 0) {
@@ -1052,7 +1070,7 @@ export async function addManualFinding(
 export async function failReview(
   id: string,
   errorMessage: string,
-  meta?: { userId: string; userEmail: string; userName: string; provider: string; reviewMode?: ReviewMode; fileName?: string; supervisorId?: string; studentId?: string },
+  meta?: { userId: string; userEmail: string; userName: string; provider: string; model?: string; reviewMode?: ReviewMode; fileName?: string; supervisorId?: string; studentId?: string },
   expectedRetryCount?: number
 ): Promise<void> {
   if (!pool) return;
@@ -1062,8 +1080,8 @@ export async function failReview(
   if (meta?.userId && erasedUserIds.has(meta.userId)) return;
   const retryGuard = expectedRetryCount != null ? ` AND reviews.retry_count = ${Number(expectedRetryCount)}` : "";
   const result = await pool.query(
-    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, status, error_message, file_name, completed_at, updated_at, supervisor_id, student_id)
-     VALUES ($1, $3, $4, $5, $6, $8, 'error', $2, $7, NOW(), NOW(), $9, $10)
+    `INSERT INTO reviews (id, user_id, user_email, user_name, provider, model, review_mode, status, error_message, file_name, completed_at, updated_at, supervisor_id, student_id)
+     VALUES ($1, $3, $4, $5, $6, $11, $8, 'error', $2, $7, NOW(), NOW(), $9, $10)
      ON CONFLICT (id) DO UPDATE SET
        status = 'error',
        error_message = $2,
@@ -1082,6 +1100,7 @@ export async function failReview(
       meta?.reviewMode ?? "proposal",
       meta?.supervisorId ?? null,
       meta?.studentId ?? null,
+      meta?.model ?? null,
     ]
   );
   if (expectedRetryCount != null && result.rowCount === 0) {
@@ -4357,6 +4376,8 @@ export async function findDuplicateReview(
   contentHash: string,
   reviewMode: string,
   documentOwnerId: string,
+  provider: string,
+  model: string | null,
 ): Promise<ReviewRow | null> {
   if (!pool) return null;
   await ensureSchema();
@@ -4368,11 +4389,13 @@ export async function findDuplicateReview(
      WHERE r.content_hash = $1
        AND r.review_mode = $2
        AND COALESCE(r.student_id, r.user_id) = $3
+       AND r.provider = $4
+       AND r.model IS NOT DISTINCT FROM $5
        AND r.status = 'done'
        AND r.deleted_at IS NULL
      ORDER BY r.created_at DESC
      LIMIT 1`,
-    [contentHash, reviewMode, documentOwnerId]
+    [contentHash, reviewMode, documentOwnerId, provider, model]
   );
   if (result.rows.length === 0) return null;
   return rowToReview(result.rows[0]);
@@ -4391,6 +4414,7 @@ export async function createVersionedReview(
     userEmail: string;
     userName: string;
     provider: string;
+    model: string | null;
     reviewMode: ReviewMode;
     fileName: string | null;
     pdfPath: string | null;
@@ -4459,11 +4483,11 @@ export async function createVersionedReview(
 
     // INSERT new review
     await client.query(
-      `INSERT INTO reviews (id, user_id, user_email, user_name, provider, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id, content_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      `INSERT INTO reviews (id, user_id, user_email, user_name, provider, model, review_mode, file_name, pdf_path, selected_groups, supervisor_id, student_id, content_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         newReview.id, newReview.userId, newReview.userEmail, newReview.userName,
-        newReview.provider, newReview.reviewMode, newReview.fileName, newReview.pdfPath,
+        newReview.provider, newReview.model, newReview.reviewMode, newReview.fileName, newReview.pdfPath,
         newReview.selectedGroups ? JSON.stringify(newReview.selectedGroups) : null,
         newReview.supervisorId, newReview.studentId, newReview.contentHash,
       ]

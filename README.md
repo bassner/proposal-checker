@@ -44,7 +44,7 @@ AZURE_OPENAI_STUDENT_DEPLOYMENT=gpt-5.6-luna
 AZURE_OPENAI_API_VERSION=preview
 ```
 
-Admins and PhD researchers use the instructor deployment; students use the student deployment. Both groups can also select the self-hosted model.
+Admins and PhD researchers can select either the instructor (Sol) or student (Luna) deployment; students can select Luna. Both groups can also select the self-hosted model. Sol uses `high` reasoning effort, while Luna uses `max`.
 
 **Self-hosted local model (OpenAI-compatible endpoint):**
 ```

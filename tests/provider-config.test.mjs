@@ -7,8 +7,11 @@ import {
   DEFAULT_STUDENT_AZURE_DEPLOYMENT,
   ProviderConfigurationError,
   azureDeploymentForRole,
+  azureDeploymentsForRole,
+  azureReasoningEffort,
   azureV1BaseURL,
   getProviderConfig,
+  resolveAzureDeploymentForRole,
 } from "../src/lib/llm/provider-config.ts";
 
 test("normalizes Azure resource endpoints with or without a trailing slash", () => {
@@ -49,6 +52,36 @@ test("selects Azure deployments by server-side application role", () => {
     azureDeploymentForRole("student", { AZURE_OPENAI_STUDENT_DEPLOYMENT: "student-custom" }),
     "student-custom"
   );
+});
+
+test("offers Sol and Luna to instructors, but only Luna to students", () => {
+  assert.deepEqual(azureDeploymentsForRole("admin", {}), [
+    DEFAULT_INSTRUCTOR_AZURE_DEPLOYMENT,
+    DEFAULT_STUDENT_AZURE_DEPLOYMENT,
+  ]);
+  assert.deepEqual(azureDeploymentsForRole("phd", {}), [
+    DEFAULT_INSTRUCTOR_AZURE_DEPLOYMENT,
+    DEFAULT_STUDENT_AZURE_DEPLOYMENT,
+  ]);
+  assert.deepEqual(azureDeploymentsForRole("student", {}), [
+    DEFAULT_STUDENT_AZURE_DEPLOYMENT,
+  ]);
+});
+
+test("rejects Azure deployments outside the server-side role allowlist", () => {
+  assert.equal(
+    resolveAzureDeploymentForRole("phd", DEFAULT_STUDENT_AZURE_DEPLOYMENT, {}),
+    DEFAULT_STUDENT_AZURE_DEPLOYMENT
+  );
+  assert.throws(
+    () => resolveAzureDeploymentForRole("student", DEFAULT_INSTRUCTOR_AZURE_DEPLOYMENT, {}),
+    /not allowed for role student/
+  );
+});
+
+test("uses max reasoning for Luna and high reasoning for Sol", () => {
+  assert.equal(azureReasoningEffort(DEFAULT_STUDENT_AZURE_DEPLOYMENT, {}), "max");
+  assert.equal(azureReasoningEffort(DEFAULT_INSTRUCTOR_AZURE_DEPLOYMENT, {}), "high");
 });
 
 test("builds one consistent Azure v1 configuration", () => {

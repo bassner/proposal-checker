@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
   const fileEntry = formData.get("file");
   const file = fileEntry instanceof File ? fileEntry : null;
   const providerRaw = formData.get("provider") as string | null;
+  const modelRaw = formData.get("model") as string | null;
   const modeRaw = formData.get("mode") as string | null;
 
   if (!file) {
@@ -181,6 +182,7 @@ export async function POST(request: NextRequest) {
   try {
     providerModel = getProviderConfig(provider, process.env, {
       role: session.user.role,
+      model: provider === "azure" ? modelRaw ?? undefined : undefined,
     }).model;
   } catch (error) {
     if (error instanceof ProviderConfigurationError) {
@@ -215,7 +217,7 @@ export async function POST(request: NextRequest) {
 
   // Duplicate detection: same PDF + same mode + same document owner → redirect
   const documentOwnerId = studentId ?? session.user.id;
-  const existingReview = await findDuplicateReview(contentHash, mode, documentOwnerId);
+  const existingReview = await findDuplicateReview(contentHash, mode, documentOwnerId, provider, providerModel);
   if (existingReview && canAccessReview(session, existingReview)) {
     console.log(`[api] Duplicate detected: redirecting to existing review ${existingReview.id}`);
     return new Response(
@@ -229,6 +231,7 @@ export async function POST(request: NextRequest) {
     userEmail: session.user.email ?? "",
     userName: session.user.name ?? "",
     provider,
+    model: providerModel,
     mode,
     reviewMode: mode,
     selectedGroups: resolvedGroups,

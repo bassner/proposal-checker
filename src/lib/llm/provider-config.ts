@@ -54,12 +54,48 @@ export function azureDeploymentForRole(
   role: AppRole,
   env: Environment = process.env
 ): string {
-  if (role === "student") {
-    return env.AZURE_OPENAI_STUDENT_DEPLOYMENT?.trim()
-      || DEFAULT_STUDENT_AZURE_DEPLOYMENT;
-  }
-  return env.AZURE_OPENAI_INSTRUCTOR_DEPLOYMENT?.trim()
+  return azureDeploymentsForRole(role, env)[0];
+}
+
+/** Azure deployments a role may select, in preferred/default order. */
+export function azureDeploymentsForRole(
+  role: AppRole,
+  env: Environment = process.env
+): string[] {
+  const luna = env.AZURE_OPENAI_STUDENT_DEPLOYMENT?.trim()
+    || DEFAULT_STUDENT_AZURE_DEPLOYMENT;
+  if (role === "student") return [luna];
+
+  const sol = env.AZURE_OPENAI_INSTRUCTOR_DEPLOYMENT?.trim()
     || DEFAULT_INSTRUCTOR_AZURE_DEPLOYMENT;
+  return [...new Set([sol, luna])];
+}
+
+/** Resolve a client-requested deployment against the server-side role allowlist. */
+export function resolveAzureDeploymentForRole(
+  role: AppRole,
+  requestedModel: string | undefined,
+  env: Environment = process.env
+): string {
+  const allowed = azureDeploymentsForRole(role, env);
+  const requested = requestedModel?.trim();
+  if (requested && !allowed.includes(requested)) {
+    throw new ProviderConfigurationError(
+      "azure",
+      `Azure deployment ${requested} is not allowed for role ${role}`
+    );
+  }
+  return requested || allowed[0];
+}
+
+/** Use the deeper reasoning budget for Luna while keeping Sol latency bounded. */
+export function azureReasoningEffort(
+  model: string,
+  env: Environment = process.env
+): "high" | "max" {
+  const luna = env.AZURE_OPENAI_STUDENT_DEPLOYMENT?.trim()
+    || DEFAULT_STUDENT_AZURE_DEPLOYMENT;
+  return model === luna ? "max" : "high";
 }
 
 /** Normalize the resource endpoint to the Azure OpenAI v1 base URL. */
@@ -143,8 +179,9 @@ export function getProviderConfig(
       baseURL: azureV1BaseURL(required(env, provider, "AZURE_OPENAI_ENDPOINT")),
       // Azure's v1 Responses API uses the stable aliases "v1" and "preview".
       apiVersion: azureV1ApiVersion(env),
-      model: options.model?.trim()
-        || (options.role ? azureDeploymentForRole(options.role, env) : undefined)
+      model: options.role
+        ? resolveAzureDeploymentForRole(options.role, options.model, env)
+        : options.model?.trim()
         || env.AZURE_OPENAI_INSTRUCTOR_DEPLOYMENT?.trim()
         || DEFAULT_INSTRUCTOR_AZURE_DEPLOYMENT,
     };

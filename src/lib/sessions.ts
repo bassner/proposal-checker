@@ -30,6 +30,7 @@ export interface ReviewSession {
   userEmail: string;
   userName: string;
   provider: ProviderType;
+  model?: string;
   mode: ReviewMode;
   /** Which check groups are active for this review (resolved subset of mode groups). */
   selectedGroups: CheckGroupId[];
@@ -49,6 +50,7 @@ export interface CreateSessionOptions {
   userEmail: string;
   userName: string;
   provider: ProviderType;
+  model?: string;
   mode: ReviewMode;
   selectedGroups: CheckGroupId[];
   fileName?: string;
@@ -116,6 +118,7 @@ function buildSession(id: string, opts: CreateSessionOptions): ReviewSession {
     userEmail: opts.userEmail,
     userName: opts.userName,
     provider: opts.provider,
+    model: opts.model,
     mode: opts.mode,
     selectedGroups: opts.selectedGroups,
     fileName: opts.fileName,

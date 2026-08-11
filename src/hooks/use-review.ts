@@ -53,7 +53,7 @@ export function useReview() {
   const [isUploading, setIsUploading] = useState(false);
 
   const startReview = useCallback(
-    async (file: File, provider: ProviderType, mode: ReviewMode = "proposal", selectedGroups?: CheckGroupId[], opts?: { supervisorId?: string; studentId?: string }): Promise<string | null> => {
+    async (file: File, provider: ProviderType, mode: ReviewMode = "proposal", selectedGroups?: CheckGroupId[], opts?: { supervisorId?: string; studentId?: string; model?: string }): Promise<string | null> => {
       setError(null);
       setIsUploading(true);
 
@@ -61,6 +61,7 @@ export function useReview() {
       formData.append("file", file);
       formData.append("provider", provider);
       formData.append("mode", mode);
+      if (opts?.model) formData.append("model", opts.model);
       if (selectedGroups && selectedGroups.length > 0) {
         formData.append("selectedGroups", JSON.stringify(selectedGroups));
       }

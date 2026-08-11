@@ -83,6 +83,7 @@ export async function POST(
   try {
     providerModel = getProviderConfig(provider, process.env, {
       role: session.user.role,
+      model: provider === "azure" ? review.model ?? undefined : undefined,
     }).model;
   } catch (error) {
     if (error instanceof ProviderConfigurationError) {
@@ -153,6 +154,7 @@ export async function POST(
     userEmail: claimed.userEmail,
     userName: claimed.userName,
     provider,
+    model: providerModel,
     mode,
     selectedGroups,
     fileName: claimed.fileName ?? undefined,
@@ -165,6 +167,7 @@ export async function POST(
     userEmail: claimed.userEmail,
     userName: claimed.userName,
     provider,
+    model: providerModel,
     reviewMode: mode,
     fileName: claimed.fileName ?? undefined,
   };

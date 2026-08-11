@@ -2,7 +2,7 @@ import "server-only";
 import { ChatOpenAI } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { ProviderType } from "@/types/review";
-import { getProviderConfig } from "./provider-config";
+import { azureReasoningEffort, getProviderConfig } from "./provider-config";
 
 // The OpenAI SDK underneath ChatOpenAI defaults to a 10-minute per-request
 // timeout (DEFAULT_TIMEOUT = 600000). gpt-oss with reasoning_effort=high can
@@ -13,13 +13,20 @@ const REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
 export function createModel(provider: ProviderType, model?: string): BaseChatModel {
   if (provider === "azure") {
     const config = getProviderConfig(provider, process.env, { model });
+    const reasoningEffort = azureReasoningEffort(config.model);
+    console.log(`[llm] Creating Azure model ${config.model} with reasoning effort ${reasoningEffort}`);
     // Use ChatOpenAI directly with Azure v1 API endpoint
     return new ChatOpenAI({
       model: config.model,
       apiKey: config.apiKey,
       streaming: true,
       useResponsesApi: true,
-      reasoning: { effort: "high", summary: "auto" },
+      reasoning: {
+        // The deployed API already supports GPT-5.6 `max`; the installed
+        // LangChain ReasoningEffort union has not added that value yet.
+        effort: reasoningEffort as "high",
+        summary: "auto",
+      },
       timeout: REQUEST_TIMEOUT_MS,
       configuration: {
         baseURL: config.baseURL,
