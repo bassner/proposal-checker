@@ -3,6 +3,7 @@ import pg from "pg";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType, ReviewMode, CheckGroupId, Annotations, Comment, AnnotationConflict, ThreadStatus, WorkflowStatus, FindingCategory, Finding, MergedFeedback, FindingAdjudication } from "@/types/review";
 import { FINDING_CATEGORY_VALUES } from "@/types/review";
+import type { AnalyticsExportRow, AnalyticsExportCheck } from "@/lib/analytics-export";
 
 // ---------------------------------------------------------------------------
 // Pool setup
@@ -2007,20 +2008,13 @@ export async function getAnalytics(): Promise<AnalyticsData | null> {
 // Analytics export (date-range filtered)
 // ---------------------------------------------------------------------------
 
-export interface AnalyticsExportRow {
-  reviewId: string;
-  userEmail: string;
-  fileName: string | null;
-  status: string;
-  provider: string;
-  reviewMode: string;
-  findingCount: number;
-  createdAt: string;
-}
+export type { AnalyticsExportRow };
 
 /**
- * Returns review rows for CSV/JSON export with optional date-range filtering.
+ * Returns one row per review for CSV/JSON export with optional date-range filtering.
  * Only includes non-deleted reviews. Ordered by created_at DESC.
+ * Each related table is aggregated in its own LATERAL subquery so joins never
+ * multiply rows. Finding text, quotes, and comment text are not exported.
  */
 export async function getAnalyticsForDateRange(
   startDate?: string,
@@ -2029,17 +2023,17 @@ export async function getAnalyticsForDateRange(
   if (!pool) return [];
   await ensureSchema();
 
-  const conditions: string[] = ["deleted_at IS NULL"];
+  const conditions: string[] = ["r.deleted_at IS NULL"];
   const params: unknown[] = [];
   let paramIdx = 1;
 
   if (startDate) {
-    conditions.push(`created_at >= $${paramIdx++}::timestamptz`);
+    conditions.push(`r.created_at >= $${paramIdx++}::timestamptz`);
     params.push(startDate);
   }
   if (endDate) {
     // Include the entire end date by adding a day
-    conditions.push(`created_at < ($${paramIdx++}::date + 1)::timestamptz`);
+    conditions.push(`r.created_at < ($${paramIdx++}::date + 1)::timestamptz`);
     params.push(endDate);
   }
 
@@ -2047,23 +2041,124 @@ export async function getAnalyticsForDateRange(
 
   const result = await pool.query(
     `SELECT
-       id,
-       user_email,
-       file_name,
-       status,
-       provider,
-       review_mode,
-       CASE
-         WHEN feedback IS NOT NULL AND jsonb_typeof(feedback->'findings') = 'array'
-         THEN jsonb_array_length(feedback->'findings')
-         ELSE 0
-       END AS finding_count,
-       created_at
-     FROM reviews ${where}
-     ORDER BY created_at DESC`,
+       r.id,
+       r.user_id,
+       r.user_email,
+       r.user_name,
+       u.role AS user_role,
+       r.file_name,
+       r.status,
+       r.workflow_status,
+       r.provider,
+       r.model,
+       r.review_mode,
+       r.created_at,
+       r.completed_at,
+       EXTRACT(EPOCH FROM (r.completed_at - r.created_at)) AS duration_seconds,
+       r.retry_count,
+       (r.share_token IS NOT NULL) AS is_shared,
+       CASE WHEN jsonb_typeof(r.selected_groups) = 'array' THEN r.selected_groups ELSE '[]'::jsonb END AS selected_groups,
+       r.feedback->>'overallAssessment' AS overall_assessment,
+       f.finding_count,
+       f.critical_count,
+       f.major_count,
+       f.minor_count,
+       f.suggestion_count,
+       f.manual_count,
+       fc.category_counts,
+       fg.failed_groups,
+       cp.checks_run,
+       cp.checks_failed,
+       cp.prompt_tokens,
+       cp.completion_tokens,
+       cp.reasoning_tokens,
+       cp.slowest_check_ms,
+       cp.checks,
+       a.dismissed_count,
+       a.fixed_count,
+       a.comment_count,
+       so.override_count,
+       rv.group_id AS version_group_id,
+       rv.version_number,
+       t.tags
+     FROM reviews r
+     LEFT JOIN users u ON u.id = r.user_id
+     LEFT JOIN LATERAL (
+       SELECT
+         COUNT(*) AS finding_count,
+         COUNT(*) FILTER (WHERE e->>'severity' = 'critical') AS critical_count,
+         COUNT(*) FILTER (WHERE e->>'severity' = 'major') AS major_count,
+         COUNT(*) FILTER (WHERE e->>'severity' = 'minor') AS minor_count,
+         COUNT(*) FILTER (WHERE e->>'severity' = 'suggestion') AS suggestion_count,
+         COUNT(*) FILTER (WHERE e->'manual' = 'true'::jsonb) AS manual_count
+       FROM jsonb_array_elements(
+         CASE WHEN jsonb_typeof(r.feedback->'findings') = 'array' THEN r.feedback->'findings' ELSE '[]'::jsonb END
+       ) e
+     ) f ON true
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(jsonb_object_agg(cat, n), '{}'::jsonb) AS category_counts
+       FROM (
+         SELECT COALESCE(e->>'category', 'unknown') AS cat, COUNT(*) AS n
+         FROM jsonb_array_elements(
+           CASE WHEN jsonb_typeof(r.feedback->'findings') = 'array' THEN r.feedback->'findings' ELSE '[]'::jsonb END
+         ) e
+         GROUP BY 1
+       ) c
+     ) fc ON true
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(array_agg(g->>'groupId') FILTER (WHERE g->>'groupId' IS NOT NULL), '{}') AS failed_groups
+       FROM jsonb_array_elements(
+         CASE WHEN jsonb_typeof(r.feedback->'failedGroups') = 'array' THEN r.feedback->'failedGroups' ELSE '[]'::jsonb END
+       ) g
+     ) fg ON true
+     LEFT JOIN LATERAL (
+       SELECT
+         COUNT(*) AS checks_run,
+         COUNT(*) FILTER (WHERE status = 'error') AS checks_failed,
+         COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+         COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+         COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+         MAX(duration_ms) AS slowest_check_ms,
+         COALESCE(
+           jsonb_agg(
+             jsonb_build_object(
+               'checkGroup', check_group,
+               'status', status,
+               'durationMs', duration_ms,
+               'promptTokens', prompt_tokens,
+               'completionTokens', completion_tokens,
+               'reasoningTokens', reasoning_tokens
+             ) ORDER BY created_at, check_group
+           ),
+           '[]'::jsonb
+         ) AS checks
+       FROM check_performance
+       WHERE review_id = r.id
+     ) cp ON true
+     LEFT JOIN LATERAL (
+       SELECT
+         COUNT(*) FILTER (WHERE value->>'status' = 'dismissed') AS dismissed_count,
+         COUNT(*) FILTER (WHERE value->>'status' = 'fixed') AS fixed_count,
+         COALESCE(SUM(
+           CASE WHEN jsonb_typeof(value->'comments') = 'array' THEN jsonb_array_length(value->'comments') ELSE 0 END
+         ), 0) AS comment_count
+       FROM jsonb_each(
+         CASE WHEN jsonb_typeof(r.annotations) = 'object' THEN r.annotations ELSE '{}'::jsonb END
+       )
+     ) a ON true
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*) AS override_count FROM severity_overrides WHERE review_id = r.id
+     ) so ON true
+     LEFT JOIN review_versions rv ON rv.review_id = r.id
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(array_agg(tag ORDER BY tag), '{}') AS tags FROM review_tags WHERE review_id = r.id
+     ) t ON true
+     ${where}
+     ORDER BY r.created_at DESC`,
     params
   );
 
+  const toInt = (v: unknown) => Number(v ?? 0);
   return result.rows.map((row) => ({
     reviewId: row.id as string,
     userEmail: row.user_email as string,
@@ -2071,8 +2166,40 @@ export async function getAnalyticsForDateRange(
     status: row.status as string,
     provider: row.provider as string,
     reviewMode: (row.review_mode as string) ?? "proposal",
-    findingCount: parseInt(row.finding_count, 10),
+    findingCount: toInt(row.finding_count),
     createdAt: (row.created_at as Date).toISOString(),
+    userId: row.user_id as string,
+    userName: row.user_name as string,
+    userRole: (row.user_role as string) ?? null,
+    model: (row.model as string) ?? null,
+    workflowStatus: row.workflow_status as string,
+    completedAt: row.completed_at ? (row.completed_at as Date).toISOString() : null,
+    durationSeconds: row.duration_seconds === null ? null : Math.round(Number(row.duration_seconds)),
+    retryCount: toInt(row.retry_count),
+    isShared: row.is_shared as boolean,
+    selectedGroups: (row.selected_groups as string[]).map(String),
+    tags: row.tags as string[],
+    versionGroupId: (row.version_group_id as string) ?? null,
+    versionNumber: row.version_number === null ? null : toInt(row.version_number),
+    overallAssessment: (row.overall_assessment as string) ?? null,
+    criticalCount: toInt(row.critical_count),
+    majorCount: toInt(row.major_count),
+    minorCount: toInt(row.minor_count),
+    suggestionCount: toInt(row.suggestion_count),
+    manualFindingCount: toInt(row.manual_count),
+    categoryCounts: row.category_counts as Record<string, number>,
+    failedGroups: row.failed_groups as string[],
+    checksRun: toInt(row.checks_run),
+    checksFailed: toInt(row.checks_failed),
+    promptTokens: toInt(row.prompt_tokens),
+    completionTokens: toInt(row.completion_tokens),
+    reasoningTokens: toInt(row.reasoning_tokens),
+    slowestCheckMs: row.slowest_check_ms === null ? null : toInt(row.slowest_check_ms),
+    checks: row.checks as AnalyticsExportCheck[],
+    dismissedCount: toInt(row.dismissed_count),
+    fixedCount: toInt(row.fixed_count),
+    commentCount: toInt(row.comment_count),
+    severityOverrideCount: toInt(row.override_count),
   }));
 }
 

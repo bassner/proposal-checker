@@ -1,24 +1,6 @@
 import { requireRole } from "@/lib/auth/helpers";
 import { isAvailable, getAnalyticsForDateRange } from "@/lib/db";
-import type { AnalyticsExportRow } from "@/lib/db";
-
-function toCsv(rows: AnalyticsExportRow[]): string {
-  const header = "review_id,user_email,file_name,status,provider,review_mode,finding_count,created_at";
-  const lines = rows.map((r) => {
-    const fileName = r.fileName ? `"${r.fileName.replace(/"/g, '""')}"` : "";
-    return [
-      r.reviewId,
-      r.userEmail,
-      fileName,
-      r.status,
-      r.provider,
-      r.reviewMode,
-      r.findingCount,
-      r.createdAt,
-    ].join(",");
-  });
-  return [header, ...lines].join("\n");
-}
+import { toCsv, computeTotals } from "@/lib/analytics-export";
 
 export async function GET(request: Request) {
   try {
@@ -75,8 +57,14 @@ export async function GET(request: Request) {
       });
     }
 
-    // JSON format
-    return new Response(JSON.stringify(rows, null, 2), {
+    // JSON format: metadata and totals plus the full per-review rows
+    const body = {
+      exportedAt: new Date().toISOString(),
+      filters: { startDate: startDate ?? null, endDate: endDate ?? null },
+      totals: computeTotals(rows),
+      reviews: rows,
+    };
+    return new Response(JSON.stringify(body, null, 2), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Content-Disposition": `attachment; filename="analytics-${timestamp}.json"`,

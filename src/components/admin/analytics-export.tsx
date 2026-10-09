@@ -124,7 +124,7 @@ export function AnalyticsExport() {
 
       {/* Hint text */}
       <p className="text-[10px] text-white/30">
-        Leave dates empty to export all reviews. Data includes review ID, user email, file name, status, provider, review mode, finding count, and creation date.
+        Leave dates empty to export all reviews. One row per review: user and role, model, status and timing, assessment, findings by severity, failed checks, token usage, tags, version, and dismissed/fixed/comment counts. JSON also includes totals, findings per category, and per-check details. Finding and comment text are not included.
       </p>
     </div>
   );
