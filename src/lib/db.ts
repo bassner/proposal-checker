@@ -640,25 +640,67 @@ async function runSchemaInitialization(): Promise<void> {
     // ── Seed users table from existing data (migration for existing DBs) ──
     // Uses reviews table as the primary source (has user_id, user_email, user_name).
     // DISTINCT ON picks the most-recently-updated row per user to get the freshest name/email.
-    // ON CONFLICT DO NOTHING preserves existing records (idempotent).
-    await pool.query(`
-      INSERT INTO users (id, email, name)
-      SELECT DISTINCT ON (user_id) user_id, user_email, COALESCE(user_name, '')
+    //
+    // A review can carry a user id whose email already belongs to another users row:
+    // upsertUser() moves a person to their new Keycloak sub at login, but a review
+    // created afterwards from a session with the old sub keeps the old id. Such ids
+    // are skipped (ON CONFLICT DO NOTHING covers the unique email index too); the
+    // next login with that sub merges them in upsertUser(). Filling an empty email
+    // also skips emails that another row already has.
+    //
+    // Best-effort, like the dedup below: a backfill problem must not stop schema
+    // init, which would otherwise re-run on every DB access. Each step runs on its
+    // own, so one failing step does not roll back the others.
+    const latestReviewPerUser = `
+      SELECT DISTINCT ON (user_id) user_id, user_email AS email,
+             COALESCE(user_name, '') AS name, updated_at
       FROM reviews
       WHERE user_id IS NOT NULL AND user_id != ''
-      ORDER BY user_id, updated_at DESC
-      ON CONFLICT (id) DO UPDATE SET
-        email = CASE WHEN users.email = '' AND EXCLUDED.email != '' THEN EXCLUDED.email ELSE users.email END,
-        name  = CASE WHEN users.name  = '' AND EXCLUDED.name  != '' THEN EXCLUDED.name  ELSE users.name  END;
-
-      -- Also seed from audit log (may contain users not in reviews table)
-      INSERT INTO users (id, email, name)
-      SELECT DISTINCT ON (user_id) user_id, COALESCE(user_email, ''), COALESCE(user_name, '')
-      FROM review_audit_log
-      WHERE user_id IS NOT NULL AND user_id != ''
-      ORDER BY user_id, created_at DESC
-      ON CONFLICT (id) DO NOTHING;
-    `);
+      ORDER BY user_id, updated_at DESC`;
+    const userSeedSteps: [string, string][] = [
+      ["fill empty names", `
+        UPDATE users SET name = r.name
+        FROM (${latestReviewPerUser}) r
+        WHERE users.id = r.user_id AND users.name = '' AND r.name != ''`],
+      // At most one user per email (the most recently active one), and only
+      // emails no other row has yet.
+      ["fill empty emails", `
+        UPDATE users SET email = c.email
+        FROM (
+          SELECT DISTINCT ON (r.email) r.user_id, r.email
+          FROM (${latestReviewPerUser}) r
+          JOIN users u ON u.id = r.user_id AND u.email = ''
+          WHERE r.email != ''
+            AND NOT EXISTS (SELECT 1 FROM users o WHERE o.email = r.email)
+          ORDER BY r.email, r.updated_at DESC
+        ) c
+        WHERE users.id = c.user_id AND users.email = ''`],
+      // Newest first, so the most recently active id wins an email conflict.
+      ["insert users from reviews", `
+        INSERT INTO users (id, email, name)
+        SELECT user_id, email, name FROM (${latestReviewPerUser}) latest
+        ORDER BY updated_at DESC
+        ON CONFLICT DO NOTHING`],
+      // Also seed from audit log (may contain users not in reviews table)
+      ["insert users from audit log", `
+        INSERT INTO users (id, email, name)
+        SELECT user_id, user_email, user_name FROM (
+          SELECT DISTINCT ON (user_id) user_id, COALESCE(user_email, '') AS user_email,
+                 COALESCE(user_name, '') AS user_name, created_at
+          FROM review_audit_log
+          WHERE user_id IS NOT NULL AND user_id != ''
+          ORDER BY user_id, created_at DESC
+        ) latest
+        ORDER BY created_at DESC
+        ON CONFLICT DO NOTHING`],
+    ];
+    for (const [step, sql] of userSeedSteps) {
+      try {
+        await pool.query(sql);
+      } catch (err) {
+        console.error(`[db] User seed step "${step}" failed:`, err);
+      }
+    }
 
     // ── Deduplicate users by email, then add UNIQUE constraint ──
     // If the same person logged in with different Keycloak subs, merge into one row.
