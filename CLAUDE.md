@@ -50,7 +50,7 @@ Keycloak OIDC via `next-auth` v5. JWT session strategy — roles extracted from 
 
 **Convention**: every API route MUST call `requireAuth()` as its first line. Exceptions: `/api/health` (public healthcheck) and `/api/auth/[...nextauth]` (login/callback flow).
 
-Role-provider mapping is stored in `role_provider_config` (admin-editable; default: all roles get `cloud`, `logos-local`, `morpheus`). Admin/PhD users may select the instructor (Sol) or student (Luna) cloud model; students may select only Luna. The server validates every requested cloud model against that role allowlist (`src/lib/llm/provider-config.ts`). Stream endpoint enforces ownership (IDOR prevention).
+Role-provider mapping is stored in `role_provider_config` (admin-editable; default: all roles get `cloud` and `logos-local`; `morpheus` is off by default because it is too slow for parallel reviews). Admin/PhD users may select the instructor (Sol) or student (Luna) cloud model; students may select only Luna. The server validates every requested cloud model against that role allowlist (`src/lib/llm/provider-config.ts`). Stream endpoint enforces ownership (IDOR prevention).
 
 ### Session System (`src/lib/sessions.ts`)
 

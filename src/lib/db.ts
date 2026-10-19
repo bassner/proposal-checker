@@ -110,7 +110,8 @@ async function runSchemaInitialization(): Promise<void> {
       -- existing DBs with an old CHECK constraint don't reject the new values.
       --   April 2026:   'ollama' → 'local'
       --   October 2026: 'azure' → 'cloud', 'local'/'ollama' → 'logos-local',
-      --                 new provider 'morpheus' (added once to every role)
+      --                 new provider 'morpheus' (off by default: too slow for
+      --                 parallel reviews; admins can enable it per role)
       -- Idempotent: only legacy values are rewritten; on fresh DBs this replaces
       -- the just-created constraint with an identical one.
       -- Rollback to a pre-October build: scripts/rollback-provider-rename.sql.
@@ -127,8 +128,7 @@ async function runSchemaInitialization(): Promise<void> {
       DO $migrate$
       BEGIN
         ALTER TABLE role_provider_config DROP CONSTRAINT IF EXISTS role_provider_config_providers_check;
-        -- A row with any legacy value has not seen the October migration yet:
-        -- rename its values and add 'morpheus'. Sorted like updateRoleProviders().
+        -- Rename legacy values. Sorted like updateRoleProviders().
         UPDATE role_provider_config
           SET providers = ARRAY(
                 SELECT DISTINCT CASE p
@@ -137,7 +137,7 @@ async function runSchemaInitialization(): Promise<void> {
                   WHEN 'ollama' THEN 'logos-local'
                   ELSE p
                 END
-                FROM unnest(providers || ARRAY['morpheus']::text[]) AS p
+                FROM unnest(providers) AS p
                 ORDER BY 1
               ),
               updated_at = NOW()
@@ -148,9 +148,9 @@ async function runSchemaInitialization(): Promise<void> {
 
       -- Seed with current defaults (fresh DBs only)
       INSERT INTO role_provider_config (role, providers) VALUES
-        ('admin', ARRAY['cloud', 'logos-local', 'morpheus']::TEXT[]),
-        ('phd', ARRAY['cloud', 'logos-local', 'morpheus']::TEXT[]),
-        ('student', ARRAY['cloud', 'logos-local', 'morpheus']::TEXT[])
+        ('admin', ARRAY['cloud', 'logos-local']::TEXT[]),
+        ('phd', ARRAY['cloud', 'logos-local']::TEXT[]),
+        ('student', ARRAY['cloud', 'logos-local']::TEXT[])
       ON CONFLICT (role) DO NOTHING;
 
       -- Share links: add share_token column (safe for deployed DB)

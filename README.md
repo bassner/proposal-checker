@@ -55,7 +55,7 @@ LOGOS_LLM_BASE_URL=https://logos.aet.cit.tum.de/v1
 LOGOS_LLM_MODEL=Qwen/Qwen3.8-27B
 ```
 
-**Morpheus (self-hosted open-weight model, Open WebUI API):**
+**Morpheus (self-hosted open-weight model, Open WebUI API; off by default, enable per role in the admin role configuration):**
 ```
 MORPHEUS_LLM_API_KEY=your-key
 MORPHEUS_LLM_BASE_URL=https://morpheus.cit.tum.de/api/v1
