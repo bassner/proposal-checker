@@ -19,7 +19,7 @@ The seven check groups: **Structure & Completeness**, **Problem & Motivation & O
 ### Prerequisites
 
 - Node.js 22+
-- An API key for at least one LLM provider (Azure OpenAI or Ollama-compatible endpoint)
+- An API key for at least one LLM provider (cloud: Logos gateway or Azure OpenAI; Logos or Morpheus for open-weight models)
 
 ### Install and Run
 
@@ -35,22 +35,31 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Create a `.env.local` file with the provider(s) you want to use:
 
-**Azure OpenAI:**
+There are three providers. Admins choose per role which ones are enabled (Admin → role configuration).
+
+**Cloud (OpenAI models via the Responses API):** an OpenAI-compatible gateway such as Logos, or an Azure OpenAI resource endpoint (`https://<resource>.openai.azure.com/`; `api-version` and the `api-key` header are added automatically).
 ```
-AZURE_OPENAI_API_KEY=your-key
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-AZURE_OPENAI_INSTRUCTOR_DEPLOYMENT=gpt-5.6-sol
-AZURE_OPENAI_STUDENT_DEPLOYMENT=gpt-5.6-luna
-AZURE_OPENAI_API_VERSION=preview
+CLOUD_LLM_BASE_URL=https://logos.aet.cit.tum.de/v1
+CLOUD_LLM_API_KEY=your-key
+CLOUD_LLM_INSTRUCTOR_MODEL=gpt-6.1-sol
+CLOUD_LLM_STUDENT_MODEL=gpt-6-luna
+CLOUD_LLM_API_VERSION=preview   # Azure hosts only
 ```
 
-Admins and PhD researchers can select either the instructor (Sol) or student (Luna) deployment; students can select Luna. Both groups can also select the self-hosted model. Sol uses `high` reasoning effort, while Luna uses `max`.
+Admins and PhD researchers can select either the instructor (Sol) or student (Luna) model; students can select Luna. Sol uses `high` reasoning effort, while Luna uses `max`.
 
-**Self-hosted local model (OpenAI-compatible endpoint):**
+**Logos (self-hosted open-weight model, OpenAI-compatible):**
 ```
-LOCAL_LLM_API_KEY=your-key
-LOCAL_LLM_BASE_URL=https://your-llm-host/v1
-LOCAL_LLM_MODEL=openai/gpt-oss-120b
+LOGOS_LLM_API_KEY=your-key
+LOGOS_LLM_BASE_URL=https://logos.aet.cit.tum.de/v1
+LOGOS_LLM_MODEL=Qwen/Qwen3.8-27B
+```
+
+**Morpheus (self-hosted open-weight model, Open WebUI API):**
+```
+MORPHEUS_LLM_API_KEY=your-key
+MORPHEUS_LLM_BASE_URL=https://morpheus.cit.tum.de/api/v1
+MORPHEUS_LLM_MODEL=cyankiwi/Qwen3.8-Flash-Next-AWQ-INT4
 ```
 
 **Optional limits:**

@@ -13,6 +13,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
+import { PROVIDER_LABELS, PROVIDER_TYPES, isProviderType } from "@/types/review";
 
 // ---------------------------------------------------------------------------
 // Types & helpers
@@ -114,7 +115,7 @@ export function ScheduleManager({ initialSchedules }: Props) {
   const [formFrequency, setFormFrequency] = useState<Frequency>("weekly");
   const [formWeekDay, setFormWeekDay] = useState("1");
   const [formMonthDay, setFormMonthDay] = useState(1);
-  const [formProvider, setFormProvider] = useState("azure");
+  const [formProvider, setFormProvider] = useState<string>("cloud");
   const [formTargetUsers, setFormTargetUsers] = useState("");
 
   const clearError = useCallback(() => {
@@ -127,7 +128,7 @@ export function ScheduleManager({ initialSchedules }: Props) {
     setFormFrequency("weekly");
     setFormWeekDay("1");
     setFormMonthDay(1);
-    setFormProvider("azure");
+    setFormProvider("cloud");
     setFormTargetUsers("");
     setEditingId(null);
     setShowForm(false);
@@ -312,7 +313,7 @@ export function ScheduleManager({ initialSchedules }: Props) {
                     </span>
                     <span className="flex items-center gap-1">
                       <Zap className="h-3 w-3" />
-                      {s.provider}
+                      {isProviderType(s.provider) ? PROVIDER_LABELS[s.provider] : s.provider}
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="h-3 w-3" />
@@ -474,7 +475,7 @@ export function ScheduleManager({ initialSchedules }: Props) {
           <div className="mb-3">
             <label className="mb-1 block text-xs text-white/50">Provider</label>
             <div className="flex gap-2">
-              {["azure", "local"].map((p) => (
+              {PROVIDER_TYPES.map((p) => (
                 <button
                   key={p}
                   onClick={() => setFormProvider(p)}
@@ -484,7 +485,7 @@ export function ScheduleManager({ initialSchedules }: Props) {
                       : "bg-white/5 text-white/50 hover:bg-white/10"
                   }`}
                 >
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                  {PROVIDER_LABELS[p]}
                 </button>
               ))}
             </div>

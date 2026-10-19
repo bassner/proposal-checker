@@ -25,8 +25,9 @@ Provider configuration regression tests run with `npm test`.
 ## Environment Variables
 
 Configured via `.env.local` (see `docker/docker-compose.yml` for docker). Key vars:
-- `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_INSTRUCTOR_DEPLOYMENT`, `AZURE_OPENAI_STUDENT_DEPLOYMENT` — role-scoped Azure OpenAI provider
-- `LOCAL_LLM_API_KEY`, `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL` — self-hosted local model (OpenAI-compatible)
+- `CLOUD_LLM_BASE_URL`, `CLOUD_LLM_API_KEY`, `CLOUD_LLM_INSTRUCTOR_MODEL`, `CLOUD_LLM_STUDENT_MODEL` — role-scoped `cloud` provider (Logos gateway or Azure OpenAI endpoint)
+- `LOGOS_LLM_API_KEY`, `LOGOS_LLM_BASE_URL`, `LOGOS_LLM_MODEL` — `logos-local` open-weight model (OpenAI-compatible)
+- `MORPHEUS_LLM_API_KEY`, `MORPHEUS_LLM_BASE_URL`, `MORPHEUS_LLM_MODEL` — `morpheus` open-weight model (Open WebUI API)
 - `MAX_PDF_SIZE_MB` (default: 10), `MAX_PDF_PAGES` (default: 20)
 - `AUTH_SECRET` — Required. Generate with `openssl rand -base64 32`
 - `AUTH_KEYCLOAK_ID`, `AUTH_KEYCLOAK_SECRET`, `AUTH_KEYCLOAK_ISSUER` — Keycloak OIDC
@@ -40,7 +41,7 @@ Configured via `.env.local` (see `docker/docker-compose.yml` for docker). Key va
 
 1. **PDF extraction** (`src/lib/pdf/extract.ts`) — uses `unpdf` to extract per-page text with `=== PAGE N ===` markers
 2. **PDF rendering** (`src/lib/pdf/render.ts`) — renders pages as PNG images via `pdftoppm` (Poppler) (used for visual inspection by the figures, writing-structure, and structure check groups)
-3. **7 parallel LLM checks** (`src/lib/llm/parallel-runner.ts` → `check-runner.ts`) — each check group runs independently with its own system prompt from `prompts.ts`. Uses `p-limit` for concurrency control (unlimited for Azure, 2 for Ollama)
+3. **7 parallel LLM checks** (`src/lib/llm/parallel-runner.ts` → `check-runner.ts`) — each check group runs independently with its own system prompt from `prompts.ts`. Uses `p-limit` for concurrency control (currently unlimited for all providers)
 4. **Merge step** (`src/lib/llm/merger.ts`) — an 8th LLM call deduplicates, consolidates, ranks findings, and produces final 0-25 feedback items with an overall assessment
 
 ### Authentication (`src/auth.ts`, `middleware.ts`)
@@ -49,7 +50,7 @@ Keycloak OIDC via `next-auth` v5. JWT session strategy — roles extracted from 
 
 **Convention**: every API route MUST call `requireAuth()` as its first line. Exceptions: `/api/health` (public healthcheck) and `/api/auth/[...nextauth]` (login/callback flow).
 
-Role-provider mapping in `src/lib/auth/roles.ts`: all roles get Azure and local providers. Admin/PhD users may select the instructor (Sol) or student (Luna) Azure deployment; students may select only Luna. The server validates every requested deployment against that role allowlist. Stream endpoint enforces ownership (IDOR prevention).
+Role-provider mapping is stored in `role_provider_config` (admin-editable; default: all roles get `cloud`, `logos-local`, `morpheus`). Admin/PhD users may select the instructor (Sol) or student (Luna) cloud model; students may select only Luna. The server validates every requested cloud model against that role allowlist (`src/lib/llm/provider-config.ts`). Stream endpoint enforces ownership (IDOR prevention).
 
 ### Session System (`src/lib/sessions.ts`)
 
@@ -70,9 +71,9 @@ All outputs validated against Zod schemas in `src/lib/llm/schemas.ts`.
 
 ### LLM Providers (`src/lib/llm/provider.ts`)
 
-Two providers, both using `ChatOpenAI` from LangChain:
-- **Azure**: Uses Responses API with reasoning (`high` for Sol, `max` for Luna, `summary: "auto"`)
-- **Ollama**: OpenAI-compatible endpoint with `<think>` tag-based reasoning
+Three providers, all using `ChatOpenAI` from LangChain:
+- **cloud**: Responses API with reasoning (`high` for Sol, `max` for Luna, `summary: "auto"`); Azure hosts get `api-version` + `api-key`
+- **logos-local** / **morpheus**: OpenAI-compatible chat completions; raw reasoning in `delta.reasoning`; sampling per model family (Qwen3.8 thinking mode, or gpt-oss)
 
 ### Client-Side
 

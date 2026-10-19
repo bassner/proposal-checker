@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Circle, Hourglass, Loader2, X } from "lucide-react";
 import type { CheckGroupState, ProviderType } from "@/types/review";
+import { streamsRawReasoning } from "@/types/review";
 import { cn, formatTokensK } from "@/lib/utils";
 import { LiveTimer } from "./live-timer";
 import { LiveTokenRate } from "./live-token-rate";
@@ -14,7 +15,7 @@ interface CheckGroupCardProps {
 
 export function CheckGroupCard({ group, provider }: CheckGroupCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const isLocal = provider === "local";
+  const isLocal = streamsRawReasoning(provider);
 
   // Live-tail behavior for the expanded reasoning panel: auto-scroll to the
   // bottom as new chunks arrive, but only when the user hasn't scrolled up.

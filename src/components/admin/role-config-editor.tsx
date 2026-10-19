@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { AppRole } from "@/lib/auth/roles";
 import type { ProviderType } from "@/types/review";
+import { PROVIDER_LABELS, PROVIDER_TYPES } from "@/types/review";
 import { Loader2, Check, AlertCircle } from "lucide-react";
 import {
   Tooltip,
@@ -72,7 +73,7 @@ export function RoleConfigEditor({ initialConfig }: Props) {
     }
   };
 
-  const providers: ProviderType[] = ["azure", "local"];
+  const providers: readonly ProviderType[] = PROVIDER_TYPES;
   const roles: AppRole[] = ["admin", "phd", "student"];
 
   return (
@@ -90,7 +91,7 @@ export function RoleConfigEditor({ initialConfig }: Props) {
               <th className="pb-2 pr-6 text-xs font-medium text-white/40">Role</th>
               {providers.map((p) => (
                 <th key={p} className="pb-2 pr-4 text-center text-xs font-medium text-white/40">
-                  {p}
+                  {PROVIDER_LABELS[p]}
                 </th>
               ))}
               <th className="pb-2 text-xs font-medium text-white/40"></th>

@@ -11,7 +11,7 @@ import { checkRateLimit, REVIEW_RATE_LIMIT, formatWindow } from "@/lib/rate-limi
 import { cacheInvalidate } from "@/lib/cache";
 import type { ProviderType, ReviewMode } from "@/types/review";
 import {
-  getProviderConfig,
+  getStoredReviewProviderConfig,
   ProviderConfigurationError,
 } from "@/lib/llm/provider-config";
 
@@ -81,10 +81,8 @@ export async function POST(
 
   let providerModel: string;
   try {
-    providerModel = getProviderConfig(provider, process.env, {
-      role: session.user.role,
-      model: provider === "azure" ? review.model ?? undefined : undefined,
-    }).model;
+    // A stored cloud model that is no longer offered falls back to the role default.
+    providerModel = getStoredReviewProviderConfig(provider, session.user.role, review.model).model;
   } catch (error) {
     if (error instanceof ProviderConfigurationError) {
       console.error(`[api] ${provider} provider unavailable: ${error.message}`);
@@ -128,7 +126,7 @@ export async function POST(
   }
 
   // Step 5: Atomic DB claim — prevents race conditions on concurrent retries
-  const claimed = await claimReviewForRetry(id);
+  const claimed = await claimReviewForRetry(id, providerModel);
   if (!claimed) {
     return Response.json(
       { error: "This review cannot be retried (it may be running or already completed)" },

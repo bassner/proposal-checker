@@ -199,6 +199,32 @@ const MODE_DESCRIPTIONS: Record<ReviewMode, string> = {
 
 const STORAGE_KEY_GROUPS = "proposal-checker:selectedGroups";
 
+/** Provider names saved by older versions of this page. */
+const LEGACY_PROVIDERS: Record<string, ProviderType> = {
+  azure: "cloud",
+  local: "logos-local",
+  ollama: "logos-local",
+};
+
+/**
+ * Pick the offered model closest to a saved choice that no longer matches
+ * exactly: same provider and, for cloud, the same tier (Sol or Luna).
+ */
+function findClosestModel(
+  models: ModelConfig[],
+  savedModelId: string | null,
+  savedProvider: string | null
+): ModelConfig | undefined {
+  const separator = savedModelId?.indexOf(":") ?? -1;
+  const rawProvider = separator > 0 ? savedModelId!.slice(0, separator) : savedProvider;
+  if (!rawProvider) return undefined;
+  const provider = LEGACY_PROVIDERS[rawProvider] ?? rawProvider;
+  const candidates = models.filter((model) => model.provider === provider);
+  const savedModelName = separator > 0 ? savedModelId!.slice(separator + 1) : "";
+  const tier = /luna/i.test(savedModelName) ? /luna/i : /sol/i.test(savedModelName) ? /sol/i : null;
+  return (tier && candidates.find((model) => tier.test(model.model))) || candidates[0];
+}
+
 function UploadPage() {
   const router = useRouter();
   const { data: sessionData } = useSession();
@@ -241,7 +267,7 @@ function UploadPage() {
   const isBatchMode = batch.files.length > 0;
   const isAnySubmitting = isUploading || batch.isSubmitting;
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? models[0];
-  const provider: ProviderType = selectedModel?.provider ?? "azure";
+  const provider: ProviderType = selectedModel?.provider ?? "cloud";
 
   // Derived values for current mode
   const modeGroups = getCheckGroups(mode);
@@ -331,9 +357,10 @@ function UploadPage() {
         if (savedModel && fetched.some((model) => model.id === savedModel)) {
           setSelectedModelIdRaw(savedModel);
         } else if (fetched.length > 0) {
-          // Backward compatibility: retain the previously selected provider when possible.
+          // Backward compatibility: map a saved choice from before the provider
+          // rename (azure/local) or a model upgrade onto the closest offered model.
           const savedProvider = localStorage.getItem("proposal-checker:provider");
-          const fallback = fetched.find((model) => model.provider === savedProvider) ?? fetched[0];
+          const fallback = findClosestModel(fetched, savedModel, savedProvider) ?? fetched[0];
           setSelectedModelIdRaw(fallback.id);
           localStorage.setItem("proposal-checker:model", fallback.id);
         }
@@ -680,7 +707,7 @@ function UploadPage() {
               I consent to the processing of the uploaded document and my account data
               (name, email, TUM ID, role) for the purpose of generating an automated review.
               I understand that the document content will be sent to the selected language model
-              provider ({provider === "azure" ? "Microsoft Azure OpenAI, EU region" : "a self-hosted open-source model running on TUM infrastructure"})
+              provider ({provider === "cloud" ? "OpenAI models hosted on Microsoft Azure, EU region" : "a self-hosted open-source model running on TUM infrastructure"})
               and that review results are stored on the chair&apos;s servers.
               I have read and accept the{" "}
               <Link

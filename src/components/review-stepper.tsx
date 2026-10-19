@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { ReviewState, StepEvent } from "@/types/review";
+import { streamsRawReasoning } from "@/types/review";
 import { StepItem } from "./step-item";
 import { CheckGroupCard } from "./check-group-card";
 import { LiveTimer } from "./live-timer";
@@ -44,7 +45,7 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
   const outputTokens = totalOutputTokens(state);
   const inputTokens = state.totalInputTokens;
 
-  const isLocal = state.provider === "local";
+  const isLocal = streamsRawReasoning(state.provider);
 
   const mergeHasNoTokensYet =
     state.steps.merge === "active" &&
@@ -221,7 +222,7 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
                   {formatTokensK(outputTokens)} tokens
                 </span>
               )}
-              {state.provider === "azure" && (inputTokens > 0 || outputTokens > 0) && (
+              {state.provider === "cloud" && (inputTokens > 0 || outputTokens > 0) && (
                 <span className="tabular-nums text-blue-300/60">
                   {estimateCost(inputTokens, outputTokens)}
                 </span>
@@ -252,7 +253,7 @@ export function ReviewStepper({ state, onCancel, cancelInFlight }: ReviewStepper
                     {formatTokensK(outputTokens)} tokens
                   </span>
                 )}
-                {state.provider === "azure" && (inputTokens > 0 || outputTokens > 0) && (
+                {state.provider === "cloud" && (inputTokens > 0 || outputTokens > 0) && (
                   <span className="tabular-nums text-slate-400 dark:text-white/30">
                     {estimateCost(inputTokens, outputTokens)}
                   </span>

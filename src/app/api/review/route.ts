@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import type { ProviderType, ReviewMode, CheckGroupId, LLMPhase } from "@/types/review";
-import { REVIEW_MODES, getCheckGroups } from "@/types/review";
+import { REVIEW_MODES, getCheckGroups, isProviderType } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setAbortController, setSessionStatus } from "@/lib/sessions";
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  if (providerRaw !== "azure" && providerRaw !== "local") {
+  if (!isProviderType(providerRaw)) {
     return new Response(JSON.stringify({ error: "Invalid provider" }), {
       status: 400, headers: { "Content-Type": "application/json" },
     });
@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
   try {
     providerModel = getProviderConfig(provider, process.env, {
       role: session.user.role,
-      model: provider === "azure" ? modelRaw ?? undefined : undefined,
+      model: provider === "cloud" ? modelRaw ?? undefined : undefined,
     }).model;
   } catch (error) {
     if (error instanceof ProviderConfigurationError) {

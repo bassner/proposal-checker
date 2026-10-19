@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { LLMPhase, ProviderType, StepStatus } from "@/types/review";
+import { streamsRawReasoning } from "@/types/review";
 
 interface LiveTokenRateProps {
   /** Provider — Azure summarizes reasoning (chunks << real tokens), Local streams 1 chunk ≈ 1 token. */
@@ -70,7 +71,7 @@ export function LiveTokenRate({
     numTokens = tokenCount;
     denomMs = endTime - firstTokenTime;
   } else if (status === "active") {
-    if (provider === "local" && firstTokenTime != null) {
+    if (streamsRawReasoning(provider) && firstTokenTime != null) {
       // 1 chunk ≈ 1 token; rate is accurate from the first token onward.
       numTokens = tokenCount;
       denomMs = now - firstTokenTime;

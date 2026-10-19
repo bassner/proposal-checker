@@ -6,11 +6,12 @@ import {
   deleteSchedule,
   computeNextRun,
 } from "@/lib/db";
+import { PROVIDER_TYPES } from "@/types/review";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const VALID_CRON_RE = /^(daily|weekly:[1-7]|monthly:([1-9]|1\d|2[0-8]))$/;
-const VALID_PROVIDERS = new Set(["azure", "local"]);
+const VALID_PROVIDERS = new Set<string>(PROVIDER_TYPES);
 
 /** GET /api/admin/schedules — List all schedules (admin only). */
 export async function GET() {
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
   }
   if (provider !== undefined) {
     if (typeof provider !== "string" || !VALID_PROVIDERS.has(provider)) {
-      return Response.json({ error: "provider must be 'azure' or 'local'" }, { status: 400 });
+      return Response.json({ error: `provider must be one of: ${PROVIDER_TYPES.join(", ")}` }, { status: 400 });
     }
   }
 
@@ -144,7 +145,7 @@ export async function PUT(request: Request) {
   }
   if (provider !== undefined) {
     if (typeof provider !== "string" || !VALID_PROVIDERS.has(provider)) {
-      return Response.json({ error: "provider must be 'azure' or 'local'" }, { status: 400 });
+      return Response.json({ error: `provider must be one of: ${PROVIDER_TYPES.join(", ")}` }, { status: 400 });
     }
   }
   if (isActive !== undefined && typeof isActive !== "boolean") {

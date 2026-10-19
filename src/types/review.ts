@@ -340,11 +340,29 @@ export interface ReviewState {
   startTime: number | null;
 }
 
-export const PROVIDER_TYPES = ["azure", "local"] as const;
+export const PROVIDER_TYPES = ["cloud", "logos-local", "morpheus"] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
+export const PROVIDER_LABELS: Record<ProviderType, string> = {
+  cloud: "Cloud (OpenAI)",
+  "logos-local": "Logos (TUM)",
+  morpheus: "Morpheus (TUM)",
+};
+
+export function isProviderType(value: unknown): value is ProviderType {
+  return typeof value === "string" && (PROVIDER_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Open-weight providers stream raw chain-of-thought (`delta.reasoning`, about
+ * one chunk per token). The cloud provider streams Responses API summaries.
+ */
+export function streamsRawReasoning(provider: ProviderType | null | undefined): boolean {
+  return provider === "logos-local" || provider === "morpheus";
+}
+
 export interface ModelConfig {
-  /** Stable picker value. Azure has multiple entries for instructor roles. */
+  /** Stable picker value. The cloud provider has multiple entries for instructor roles. */
   id: string;
   provider: ProviderType;
   label: string;

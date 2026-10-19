@@ -416,7 +416,7 @@ function ResultsView({ feedback: initialFeedback, fileName, reviewId, shareToken
           open
           onClose={() => setUploadVersionOpen(false)}
           parentReviewId={reviewId}
-          parentProvider={provider ?? "azure"}
+          parentProvider={provider ?? "cloud"}
         />
       )}
     </div>

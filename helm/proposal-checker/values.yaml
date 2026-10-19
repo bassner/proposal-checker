@@ -32,14 +32,17 @@ env:
 # -- Sensitive environment variables (stored in a Kubernetes Secret)
 # Set these via --set or a secrets values file — don't commit real values!
 secrets:
-  AZURE_OPENAI_API_KEY: ""
-  AZURE_OPENAI_ENDPOINT: ""
-  AZURE_OPENAI_INSTRUCTOR_DEPLOYMENT: "gpt-5.6-sol"
-  AZURE_OPENAI_STUDENT_DEPLOYMENT: "gpt-5.6-luna"
-  AZURE_OPENAI_API_VERSION: "preview"
-  LOCAL_LLM_BASE_URL: ""
-  LOCAL_LLM_API_KEY: ""
-  LOCAL_LLM_MODEL: "openai/gpt-oss-120b"
+  CLOUD_LLM_BASE_URL: ""
+  CLOUD_LLM_API_KEY: ""
+  CLOUD_LLM_INSTRUCTOR_MODEL: "gpt-6.1-sol"
+  CLOUD_LLM_STUDENT_MODEL: "gpt-6-luna"
+  CLOUD_LLM_API_VERSION: "preview"
+  LOGOS_LLM_BASE_URL: "https://logos.aet.cit.tum.de/v1"
+  LOGOS_LLM_API_KEY: ""
+  LOGOS_LLM_MODEL: "Qwen/Qwen3.8-27B"
+  MORPHEUS_LLM_BASE_URL: "https://morpheus.cit.tum.de/api/v1"
+  MORPHEUS_LLM_API_KEY: ""
+  MORPHEUS_LLM_MODEL: "cyankiwi/Qwen3.8-Flash-Next-AWQ-INT4"
   AUTH_SECRET: ""
   AUTH_KEYCLOAK_SECRET: ""
 

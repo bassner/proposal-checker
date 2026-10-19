@@ -47,7 +47,7 @@ export interface PipelineCallbacks {
  * timeout aborts the entire pipeline if any step hangs.
  *
  * @param pdfBuffer - Raw PDF bytes from the uploaded file.
- * @param provider  - Which LLM backend to use ("azure" or "local").
+ * @param provider  - Which LLM backend to use ("cloud", "logos-local" or "morpheus").
  * @param callbacks - Event callbacks wired to the session's SSE emitter.
  */
 export async function runReviewPipeline(

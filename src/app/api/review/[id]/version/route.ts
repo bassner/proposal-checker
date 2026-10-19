@@ -1,5 +1,5 @@
 import type { CheckGroupId, LLMPhase, MergedFeedback, Finding } from "@/types/review";
-import { getCheckGroups } from "@/types/review";
+import { getCheckGroups, isProviderType } from "@/types/review";
 import type { TokenUsage } from "@/lib/llm/structured-invoke";
 import { runReviewPipeline } from "@/lib/pipeline/review-pipeline";
 import { createSession, emitEvent, setAbortController, setSessionStatus } from "@/lib/sessions";
@@ -23,6 +23,7 @@ import { hashPDFContent } from "@/lib/pdf/hash";
 import type { ProviderType, ReviewMode } from "@/types/review";
 import {
   getProviderConfig,
+  getStoredReviewProviderConfig,
   ProviderConfigurationError,
 } from "@/lib/llm/provider-config";
 
@@ -147,7 +148,10 @@ export async function POST(
   }
 
   // Provider: use parent's if not specified
-  const provider: ProviderType = (providerRaw === "azure" || providerRaw === "local")
+  if (providerRaw && !isProviderType(providerRaw)) {
+    return Response.json({ error: "Invalid provider" }, { status: 400 });
+  }
+  const provider: ProviderType = isProviderType(providerRaw)
     ? providerRaw
     : parentReview.provider as ProviderType;
 
@@ -161,12 +165,12 @@ export async function POST(
 
   let providerModel: string;
   try {
-    providerModel = getProviderConfig(provider, process.env, {
-      role: session.user.role,
-      model: provider === "azure" && provider === parentReview.provider
-        ? parentReview.model ?? undefined
-        : undefined,
-    }).model;
+    // Same provider: keep the parent's model if still offered to this role
+    // (else the role default). Other provider: that provider's default.
+    providerModel = (provider === parentReview.provider
+      ? getStoredReviewProviderConfig(provider, session.user.role, parentReview.model)
+      : getProviderConfig(provider, process.env, { role: session.user.role })
+    ).model;
   } catch (error) {
     if (error instanceof ProviderConfigurationError) {
       console.error(`[api] ${provider} provider unavailable: ${error.message}`);

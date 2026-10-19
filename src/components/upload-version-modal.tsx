@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import type { ProviderType } from "@/types/review";
+import type { ModelConfig, ProviderType } from "@/types/review";
+import { PROVIDER_LABELS } from "@/types/review";
 import { cn } from "@/lib/utils";
 import { X, Upload, Loader2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,29 @@ export function UploadVersionModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Providers this user may use and that are configured (from /api/config).
+  // The server re-checks the provider on submit.
+  const [providers, setProviders] = useState<ProviderType[]>([parentProvider]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    fetch("/api/config")
+      .then((res) => (res.ok ? res.json() : { models: [] }))
+      .then((data: { models?: ModelConfig[] }) => {
+        if (cancelled) return;
+        const available = [...new Set((data.models ?? []).map((m) => m.provider))];
+        if (available.length === 0) return;
+        setProviders(available);
+        setProvider((current) => (available.includes(current) ? current : available[0]));
+      })
+      .catch(() => {
+        // Keep the parent's provider; the server decides on submit.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const MAX_SIZE_MB = 10; // Must match MAX_PDF_SIZE_MB env var (default: 10)
 
@@ -179,8 +203,9 @@ export function UploadVersionModal({
               onChange={(e) => setProvider(e.target.value as ProviderType)}
               className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70 outline-none focus:border-white/20"
             >
-              <option value="azure">Azure</option>
-              <option value="local">Local LLM</option>
+              {providers.map((p) => (
+                <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+              ))}
             </select>
           </div>
 

@@ -82,7 +82,7 @@ async function runSchemaInitialization(): Promise<void> {
         user_id TEXT NOT NULL,
         user_email TEXT NOT NULL,
         user_name TEXT NOT NULL,
-        provider TEXT NOT NULL CHECK (provider IN ('azure', 'local')),
+        provider TEXT NOT NULL CHECK (provider IN ('cloud', 'logos-local', 'morpheus')),
         status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'done', 'error')),
         file_name TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -101,46 +101,57 @@ async function runSchemaInitialization(): Promise<void> {
         role TEXT PRIMARY KEY CHECK (role IN ('admin', 'phd', 'student')),
         providers TEXT[] NOT NULL CHECK (
           cardinality(providers) > 0 AND
-          providers <@ ARRAY['azure', 'local']::text[]
+          providers <@ ARRAY['cloud', 'logos-local', 'morpheus']::text[]
         ),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
-      -- Provider rename migration (April 2026): 'ollama' → 'local'.
-      -- MUST run BEFORE the seed INSERT below so existing DBs with the old CHECK
-      -- constraint don't reject the new 'local' values during seed/upsert.
-      -- Idempotent: on fresh DBs this replaces the just-created constraint with an
-      -- identical one; on existing DBs it migrates legacy rows first.
+      -- Provider rename migrations. They MUST run BEFORE the seed INSERT below so
+      -- existing DBs with an old CHECK constraint don't reject the new values.
+      --   April 2026:   'ollama' → 'local'
+      --   October 2026: 'azure' → 'cloud', 'local'/'ollama' → 'logos-local',
+      --                 new provider 'morpheus' (added once to every role)
+      -- Idempotent: only legacy values are rewritten; on fresh DBs this replaces
+      -- the just-created constraint with an identical one.
+      -- Rollback to a pre-October build: scripts/rollback-provider-rename.sql.
       DO $migrate$
       BEGIN
         ALTER TABLE reviews DROP CONSTRAINT IF EXISTS reviews_provider_check;
-        UPDATE reviews SET provider = 'local' WHERE provider = 'ollama';
-        ALTER TABLE reviews ADD CONSTRAINT reviews_provider_check CHECK (provider IN ('azure', 'local'));
+        UPDATE reviews
+          SET provider = CASE provider WHEN 'azure' THEN 'cloud' ELSE 'logos-local' END
+          WHERE provider IN ('azure', 'local', 'ollama');
+        ALTER TABLE reviews ADD CONSTRAINT reviews_provider_check
+          CHECK (provider IN ('cloud', 'logos-local', 'morpheus'));
       END $migrate$;
 
       DO $migrate$
       BEGIN
         ALTER TABLE role_provider_config DROP CONSTRAINT IF EXISTS role_provider_config_providers_check;
+        -- A row with any legacy value has not seen the October migration yet:
+        -- rename its values and add 'morpheus'. Sorted like updateRoleProviders().
         UPDATE role_provider_config
-          SET providers = ARRAY(SELECT CASE WHEN p = 'ollama' THEN 'local' ELSE p END FROM unnest(providers) AS p)
-          WHERE 'ollama' = ANY(providers);
+          SET providers = ARRAY(
+                SELECT DISTINCT CASE p
+                  WHEN 'azure' THEN 'cloud'
+                  WHEN 'local' THEN 'logos-local'
+                  WHEN 'ollama' THEN 'logos-local'
+                  ELSE p
+                END
+                FROM unnest(providers || ARRAY['morpheus']::text[]) AS p
+                ORDER BY 1
+              ),
+              updated_at = NOW()
+          WHERE providers && ARRAY['azure', 'local', 'ollama']::text[];
         ALTER TABLE role_provider_config ADD CONSTRAINT role_provider_config_providers_check
-          CHECK (cardinality(providers) > 0 AND providers <@ ARRAY['azure', 'local']::text[]);
+          CHECK (cardinality(providers) > 0 AND providers <@ ARRAY['cloud', 'logos-local', 'morpheus']::text[]);
       END $migrate$;
 
-      -- Seed with current hardcoded defaults
+      -- Seed with current defaults (fresh DBs only)
       INSERT INTO role_provider_config (role, providers) VALUES
-        ('admin', ARRAY['azure', 'local']::TEXT[]),
-        ('phd', ARRAY['azure', 'local']::TEXT[]),
-        ('student', ARRAY['azure', 'local']::TEXT[])
+        ('admin', ARRAY['cloud', 'logos-local', 'morpheus']::TEXT[]),
+        ('phd', ARRAY['cloud', 'logos-local', 'morpheus']::TEXT[]),
+        ('student', ARRAY['cloud', 'logos-local', 'morpheus']::TEXT[])
       ON CONFLICT (role) DO NOTHING;
-
-      -- August 2026 model-tier rollout: students now get the role-scoped Azure
-      -- model as well as the local model. Limit the migration to the previous
-      -- default so other custom provider combinations remain untouched.
-      UPDATE role_provider_config
-        SET providers = ARRAY['azure', 'local']::TEXT[], updated_at = NOW()
-        WHERE role = 'student' AND providers = ARRAY['local']::TEXT[];
 
       -- Share links: add share_token column (safe for deployed DB)
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS share_token TEXT;
@@ -150,7 +161,7 @@ async function runSchemaInitialization(): Promise<void> {
       -- Review mode: proposal (default) or thesis
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS review_mode TEXT DEFAULT 'proposal';
 
-      -- Exact deployment selected for this review (provider remains azure/local).
+      -- Exact model selected for this review (provider is the backend, e.g. cloud).
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS model TEXT;
 
       -- Finding annotations (user actions on individual findings)
@@ -408,6 +419,11 @@ async function runSchemaInitialization(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      -- October 2026 provider rename (see reviews_provider_check above).
+      UPDATE token_usage
+        SET provider = CASE provider WHEN 'azure' THEN 'cloud' ELSE 'logos-local' END
+        WHERE provider IN ('azure', 'local', 'ollama');
+
       CREATE INDEX IF NOT EXISTS idx_token_usage_review
         ON token_usage(review_id);
       CREATE INDEX IF NOT EXISTS idx_token_usage_created
@@ -603,7 +619,7 @@ async function runSchemaInitialization(): Promise<void> {
         description TEXT,
         cron_expression TEXT NOT NULL,
         target_users TEXT[] DEFAULT '{}',
-        provider TEXT NOT NULL DEFAULT 'azure',
+        provider TEXT NOT NULL DEFAULT 'cloud',
         is_active BOOLEAN DEFAULT true,
         last_run_at TIMESTAMPTZ,
         next_run_at TIMESTAMPTZ,
@@ -613,6 +629,12 @@ async function runSchemaInitialization(): Promise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_review_schedules_active
         ON review_schedules(is_active, next_run_at);
+
+      -- October 2026 provider rename (see reviews_provider_check above).
+      ALTER TABLE review_schedules ALTER COLUMN provider SET DEFAULT 'cloud';
+      UPDATE review_schedules
+        SET provider = CASE provider WHEN 'azure' THEN 'cloud' ELSE 'logos-local' END
+        WHERE provider IN ('azure', 'local', 'ollama');
     `);
 
     // ── Seed users table from existing data (migration for existing DBs) ──
@@ -1029,7 +1051,7 @@ export async function completeReview(
       meta?.userId ?? "",
       meta?.userEmail ?? "",
       meta?.userName ?? "",
-      meta?.provider ?? "azure",
+      meta?.provider ?? "cloud",
       meta?.fileName ?? null,
       meta?.reviewMode ?? "proposal",
       meta?.supervisorId ?? null,
@@ -1096,7 +1118,7 @@ export async function failReview(
       meta?.userId ?? "",
       meta?.userEmail ?? "",
       meta?.userName ?? "",
-      meta?.provider ?? "azure",
+      meta?.provider ?? "cloud",
       meta?.fileName ?? null,
       meta?.reviewMode ?? "proposal",
       meta?.supervisorId ?? null,
@@ -1711,15 +1733,17 @@ const STALE_RUNNING_MS = 20 * 60 * 1000; // 20 minutes — matches client-side t
 /**
  * Atomically claim a review for retry. Only succeeds if the review is in
  * 'error' status or is a stale 'running' review (older than 20 minutes).
- * Resets status to 'running', increments retry_count, clears terminal fields.
+ * Resets status to 'running', increments retry_count, clears terminal fields,
+ * and records the model the retry runs with (it may differ after a model upgrade).
  * Returns the updated row or null if the claim failed (wrong status / race).
  */
-export async function claimReviewForRetry(id: string): Promise<ReviewRow | null> {
+export async function claimReviewForRetry(id: string, model: string): Promise<ReviewRow | null> {
   if (!pool) return null;
   await ensureSchema();
   const result = await pool.query(
     `UPDATE reviews
      SET status = 'running',
+         model = $2,
          error_message = NULL,
          feedback = NULL,
          completed_at = NULL,
@@ -1730,7 +1754,7 @@ export async function claimReviewForRetry(id: string): Promise<ReviewRow | null>
        AND (status = 'error'
             OR (status = 'running' AND updated_at < NOW() - INTERVAL '${Math.floor(STALE_RUNNING_MS / 1000)} seconds'))
      RETURNING *`,
-    [id]
+    [id, model]
   );
   if (result.rows.length === 0) return null;
   return rowToReview(result.rows[0]);
@@ -7357,7 +7381,7 @@ export async function createSchedule(schedule: {
       schedule.description ?? null,
       schedule.cronExpression,
       schedule.targetUsers ?? [],
-      schedule.provider ?? "azure",
+      schedule.provider ?? "cloud",
       nextRun,
       schedule.createdBy,
     ]
